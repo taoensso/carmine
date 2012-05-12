@@ -1,5 +1,10 @@
+docs
 pom.xml
 *jar
 /lib/
+/logs/
 /classes/
+.lein-failures
 .lein-deps-sum
+start.sh
+startr.sh

@@ -1,0 +1,16 @@
+* Docs
+** README.md, TODO.org
+** Generate Marginalia + link from README.
+* API
+** Investigate fast byte reading/writing for deep-freeze, etc.
+** Other response parsing possible & desireable?
+** Pub/Sub reconnects support?
+Waiting on Salvatore: https://github.com/antirez/redis/issues/420
+Recall that reconnects would also require re-establishing p/subscriptions.
+* TESTS
+** Update tests from accession, re-run. Check for regressions.
+** Unit-test for sort* and Lua commands.
+** More unit-tests, generally.
+* MISC
+** Push to GitHub, Clojars.
+** Bench vs clj-redis, accession, redis-clojure, Jedis, redis-cli.
