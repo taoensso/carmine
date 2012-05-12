@@ -1,6 +1,6 @@
 (ns carmine.core
   "Deliberately simple, high-performance Redis (2.0+) client for Clojure.
-  Lightly adapted from 'accession'."
+  Lightly (!) adapted from 'accession'."
   (:refer-clojure :exclude [get set keys type sync sort eval])
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
@@ -331,7 +331,7 @@
 
 (defn zunionstore*
   [dest-key source-keys & options]
-  (apply zunionstore* dest-key
+  (apply zunionstore dest-key
          (count source-keys) (concat source-keys options)))
 
 ;; Adapted from redis-clojure

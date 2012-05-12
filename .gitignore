@@ -8,3 +8,4 @@ pom.xml
 .lein-deps-sum
 start.sh
 startr.sh
+run-tests.sh
