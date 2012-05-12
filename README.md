@@ -87,13 +87,13 @@ Carmine supports Redis's [Publish/Subscribe](http://redis.io/topics/pubsub) feat
 ```clojure
 (def listener
   (redis/make-listener
-   spec {"foo1"  (fn f1 [resp] (println "Channel match: " resp))
-         "foo*"  (fn f2 [resp] (println "Pattern match: " resp))}
-   (redis/subscribe  "foo1" "foo2")
+   spec {"foo1" (fn f1 [resp] (println "Channel match: " resp))
+         "foo*" (fn f2 [resp] (println "Pattern match: " resp))}
+   (redis/subscribe "foo1" "foo2")
    (redis/psubscribe "foo*")))
 ```
 
-Note the map of response handlers. `f1` will trigger when a message is published to channel `foo`. `f2` will trigger when a message is published to `foo1`, `foobar`, foobaz`, etc.
+Note the map of response handlers. `f1` will trigger when a message is published to channel `foo`. `f2` will trigger when a message is published to `foo1`, `foobar`, `foobaz`, etc.
 
 Publish messages:
 
@@ -104,13 +104,13 @@ Publish messages:
 
 Which will trigger:
 
-```
+```clojure
 (f1 '("message" "foo1" "Message to foo1"))
 ;; AND
 (f2 '("pmessage" "foo*" "foo1" "Message to foo1"))
 ```
 
-Adjust subscriptions and/or handlers:
+You can adjust subscriptions and/or handlers:
 
 ```clojure
 (with-open-listener listener
