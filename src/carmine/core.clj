@@ -376,7 +376,7 @@
 ;;   messages) to which it (and only IT) is subscribed. Subscriptions are
 ;;   connection-local and so will be lost when the connection closes.
 ;;
-;; To facilitate the unusual requirements, we define a PubSubListener to be a
+;; To facilitate the unusual requirements we define a PubSubListener to be a
 ;; combination of persistent, non-pooled connection and threaded message
 ;; handler:
 

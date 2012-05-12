@@ -77,21 +77,23 @@ But what if we're pipelining?
   (redis/set "foo" "bar")
   (redis/spop "foo")
   (redis/get "foo"))
-=>  ("OK" #<Exception ERR Operation against ...> "bar")
+=> ("OK" #<Exception ERR Operation against ...> "bar")
 ```
 
 ### Pub/Sub
 
-Carmine supports Redis' [Publish/Subscribe](http://redis.io/topics/pubsub) feature in a convenient, natural way:
+Carmine supports Redis's [Publish/Subscribe](http://redis.io/topics/pubsub) feature in a convenient, natural way:
 
 ```clojure
 (def listener
   (redis/make-listener
-   spec {"foo1"  (fn [x] (println "Channel match: " x))
-         "foo*"  (fn [x] (println "Pattern match: " x))}
+   spec {"foo1"  (fn f1 [resp] (println "Channel match: " resp))
+         "foo*"  (fn f2 [resp] (println "Pattern match: " resp))}
    (redis/subscribe  "foo1" "foo2")
    (redis/psubscribe "foo*")))
 ```
+
+Note the map of response handlers. `f1` will trigger when a message is published to channel `foo`. `f2` will trigger when a message is published to `foo1`, `foobar`, foobaz`, etc.
 
 Publish messages:
 
@@ -100,16 +102,25 @@ Publish messages:
   (redis/publish "foo1" "Message to foo1"))
 ```
 
+Which will trigger:
+
+```
+(f1 '("message" "foo1" "Message to foo1"))
+;; AND
+(f2 '("pmessage" "foo*" "foo1" "Message to foo1"))
+```
+
 Adjust subscriptions and/or handlers:
 
 ```clojure
 (with-open-listener listener
-  (unsubscribe))
+  (unsubscribe) ; Unsubscribe from every channel (leave patterns alone)
+  (subscribe "extra"))
 
 (swap! (:handlers listener) assoc "extra" (fn [x] (println "EXTRA: " x)))
 ```
 
-Finally, close the listener:
+Finally, close the listener when you're done with it:
 
 ```clojure
 (close-listener listener)

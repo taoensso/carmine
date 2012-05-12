@@ -131,7 +131,7 @@
 
 ;; For backwards compatibility with Accession
 (defmacro with-connection
-  "DEPRECATED. Use with-conn instead. Ealuate pipelined Redis commands in the
+  "DEPRECATED. Use with-conn instead. Evaluate pipelined Redis commands in the
   context of a NON-pooled connection to Redis server. When done, close the
   connection and return the server's response."
   [connection-spec & commands]
