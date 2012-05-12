@@ -1,6 +1,6 @@
 (ns carmine.core
   "Deliberately simple, high-performance Redis (2.0+) client for Clojure.
-  Lightly (!) adapted from 'accession'."
+  An Accession fork."
   (:refer-clojure :exclude [get set keys type sync sort eval])
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
@@ -71,7 +71,7 @@
   (let [reply-type (char (.readByte in))]
     (case reply-type
       \+ (.readLine in)
-      \- (throw (Exception. (.readLine in)))
+      \- (Exception. (.readLine in))
       \: (Long/parseLong (.readLine in))
       \$ (let [data-length (Integer/parseInt (.readLine in))]
            (when-not (neg? data-length)
@@ -102,7 +102,10 @@
     (let [in ^DataInputStream (conns/input-stream conn)]
       (if (next queries)
         (doall (repeatedly (count queries) (fn [] (parse-response in))))
-        (parse-response in)))))
+        (let [parsed-response (parse-response in)]
+          (if (instance? Exception parsed-response)
+            (throw parsed-response)
+            parsed-response))))))
 
 ;;;; Commands
 

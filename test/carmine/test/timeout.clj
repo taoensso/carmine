@@ -1,5 +1,4 @@
 (ns carmine.test.timeout
-  "Adapted from 'accession'."
   (:use     [clojure.test])
   (:require [carmine (core :as redis) (connections :as conns)])
   (:import  [java.net ServerSocket]

@@ -1,5 +1,4 @@
 (ns carmine.test.core
-  "Adapted from 'accession'."
   (:use [clojure.test])
   (:require [carmine (core :as redis) (connections :as conns)]))
 

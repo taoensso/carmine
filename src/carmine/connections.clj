@@ -1,6 +1,6 @@
 (ns carmine.connections
   "Connection pooling implemented using Apache Commons Pool, adapted from
-  'redis-clojure'."
+  redis-clojure."
   (:import [java.net Socket]
            [java.io OutputStream BufferedInputStream DataInputStream]
            [org.apache.commons.pool KeyedPoolableObjectFactory]
@@ -108,7 +108,7 @@
              (merge default (apply hash-map options))))))
 
 (def non-pooled-connection-pool
-  "Degenerate connection pool for backwards compatibility with 'accession'."
+  "Degenerate connection pool for backwards compatibility with Accession."
   (NonPooledConnectionPool.))
 
 (defmacro with-conn
@@ -129,7 +129,7 @@
      ;; Failed to get connection from pool
      (catch Exception e# (throw e#))))
 
-;; For backwards compatibility with 'accession'
+;; For backwards compatibility with Accession
 (defmacro with-connection
   "DEPRECATED. Use with-conn instead. Ealuate pipelined Redis commands in the
   context of a NON-pooled connection to Redis server. When done, close the
