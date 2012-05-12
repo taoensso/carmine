@@ -1,6 +1,6 @@
 # Carmine, a Redis client for Clojure
 
-[Redis][http://www.redis.io/] is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
+[Redis](http://www.redis.io/) is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
 
 ## Aren't There Already A Bunch of Clients?
 
@@ -17,7 +17,7 @@ Think of it as an unofficial, "experimental production" branch of Accession. My 
 ## Goals
 
  * Target Redis 2.0+, Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading).
- * Simplicity. That's it. Redis is simple. It's communication protocol is dead simple. IMO everything else (including performance, reliability, feature parity, even documentation!) will flow naturally from keeping the client simple.
+ * Simplicity. That's it. Redis is simple. It's communication protocol is _dead simple_. IMO everything else (including performance, reliability, feature parity, even documentation!) will flow naturally from keeping the client simple.
 
 ## Getting Started
 
@@ -25,7 +25,7 @@ Think of it as an unofficial, "experimental production" branch of Accession. My 
 
 Depend on `[carmine "0.7.0-SNAPSHOT"]` in your `project.clj`.
 
-**NOTE**: I'm struggling to login to Clojars atm- please use a `git clone` in the meantime.
+**NOTE**: I'm struggling to login to Clojars atm so please use a `git clone` in the meantime.
 
 ### Requires
 
@@ -67,7 +67,7 @@ If the server responds with an error, an exception is thrown:
 ```clojure
 (conns/with-conn pool spec
   (redis/spop "foo" "bar"))
-=> Exception: ERR Operation against a key holding the wrong kind of value
+=> Exception ERR Operation against a key holding the wrong kind of value
 ```
 
 But what if we're pipelining?
@@ -77,7 +77,7 @@ But what if we're pipelining?
   (redis/set "foo" "bar")
   (redis/spop "foo")
   (redis/get "foo"))
-=>  ("OK" #<Exception java.lang.Exception: ERR Operation against a key holding the wrong kind of value> "bar")
+=>  ("OK" #<Exception ERR Operation against ...> "bar")
 ```
 
 ### Pub/Sub
