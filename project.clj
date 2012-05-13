@@ -2,7 +2,8 @@
   :description "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
   :url "https://github.com/ptaoussanis/carmine"
   :license {:name "Eclipse Public License"}
-  :dependencies [[commons-pool/commons-pool "1.6"]]
+  :dependencies [[commons-pool/commons-pool   "1.6"]
+                 [commons-codec/commons-codec "1.6"]]
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
              :1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]}

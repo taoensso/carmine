@@ -47,7 +47,7 @@ You'll usually want to define one connection spec and pool that you'll reuse:
                                 :timeout  4000))
 ```
 
-The defaults are sensible, but see [here](http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html) for pool options if you want to fiddle.
+The defaults are sensible but see [here](http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html) for pool options if you want to fiddle.
 
 ### Executing Commands
 
@@ -145,14 +145,25 @@ Note that subscriptions are *connection-local*: you can have three different lis
 
 ### Lua
 
-Redis 2.6 introduced a remarkably powerful feature: [Lua](http://en.wikipedia.org/wiki/Lua_(programming_language)) scripting!
+Redis 2.6 introduced a remarkably powerful feature: [Lua scripting](http://en.wikipedia.org/wiki/Lua_(programming_language)!
 
-You can send a script to Redis:
+You can send a script to be run in the context of the Redis server:
 
 ```clojure
+(conns/with-conn pool spec
+  (redis/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}" ; The script
+              2 "key1" "key2" "arg1" "arg2"))
+=> ("key1" "key2" "arg1" "arg2")
 ```
 
-TODO: Write docs
+Big script? Send the SHA1 of a script you've previously sent:
+
+```clojure
+(conns/with-conn pool spec
+  (redis/evalsha "a42059b356c875f0717db19a51f6aaca9ae659ea" ; The script's hash
+                 2 "key1" "key2" "arg1" "arg2"))
+=> ("key1" "key2" "arg1" "arg2")
+```
 
 ## Performance
 

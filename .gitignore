@@ -6,6 +6,4 @@ pom.xml
 /classes/
 .lein-failures
 .lein-deps-sum
-start.sh
-startr.sh
-run-tests.sh
+*.sh

@@ -320,14 +320,14 @@
 
   ;; Redis 2.6+
   (eval             [script numkeys & more])
-  (evalsha          [sha1   numkeys & more])
+  (evalsha          [sha1   numkeys & more]) ; evalsha* available
   (script-exists    [script & scripts])
   (script-flush     [])
   (script-kill      [])
   (script-load      [script])
   (incrbyfloat      [key increment]))
 
-;;;; Convenience commands
+;;;; Command helpers
 
 (defn zinterstore*
   [dest-key source-keys & options]
@@ -367,6 +367,15 @@
   :mget patterns, :store destination, :alpha, :asc, :desc."
   [key & sort-args]
   (apply sort key (parse-sort-args sort-args)))
+
+(def ^:private hash-script
+  (memoize
+   (fn [script]
+     (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
+
+(defn evalsha*
+  [script numkeys & more]
+  (apply evalsha (hash-script script) numkeys more))
 
 ;;;; Pub/Sub
 
