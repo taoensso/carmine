@@ -319,7 +319,7 @@
   (publish          [channel message])
 
   ;; Redis 2.6+
-  (eval             [script numkeys & more])
+  (eval             [script numkeys & more]) ; eval*-with-conn available
   (evalsha          [sha1   numkeys & more]) ; evalsha* available
   (script-exists    [script & scripts])
   (script-flush     [])
@@ -330,11 +330,13 @@
 ;;;; Command helpers
 
 (defn zinterstore*
+  "Like 'zinterstore' but automatically counts keys."
   [dest-key source-keys & options]
   (apply zinterstore dest-key
          (count source-keys) (concat source-keys options)))
 
 (defn zunionstore*
+  "Like 'zunionstore' but automatically counts keys."
   [dest-key source-keys & options]
   (apply zunionstore dest-key
          (count source-keys) (concat source-keys options)))
@@ -363,8 +365,9 @@
           (throw (Exception. (str "Unknown sort argument: " type))))))))
 
 (defn sort*
-  "Possible arguments are: :by pattern, :limit offset count, :get pattern,
-  :mget patterns, :store destination, :alpha, :asc, :desc."
+  "Like 'sort' but supports Clojure-idiomatic arguments: :by pattern,
+  :limit offset count, :get pattern, :mget patterns, :store destination,
+  :alpha, :asc, :desc."
   [key & sort-args]
   (apply sort key (parse-sort-args sort-args)))
 
@@ -374,8 +377,20 @@
      (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
 
 (defn evalsha*
+  "Like 'evalsha' but automatically computes SHA1 hash for script."
   [script numkeys & more]
   (apply evalsha (hash-script script) numkeys more))
+
+(defn eval*-with-conn
+  "Optimistically try send 'evalsha' command for given script. In the event of a
+  \"NOSCRIPT\" reply, reattempt with 'eval'. Returns the final command's result."
+  [pool spec script numkeys & more]
+  (try
+    (conns/with-conn pool spec (apply evalsha* script numkeys more))
+    (catch Exception e
+      (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
+        (conns/with-conn pool spec (apply eval script numkeys more))
+        (throw e)))))
 
 ;;;; Pub/Sub
 
@@ -489,4 +504,8 @@
   (with-open-listener listener
     (unsubscribe))
 
-  (close-listener listener))
+  (close-listener listener)
+
+  (eval*-with-conn pool spec
+    "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
+    2 "key1" "key2" "arg1" "arg2"))

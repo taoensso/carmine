@@ -19,7 +19,7 @@ Think of it as an unofficial, "experimental production" branch of Accession. My 
 ## Goals
 
  * Stop the insanity! There's *too many clients* and too many people working at reimplementing the *same things* in essentially the *same way*. By bringing together the work of others, I'm hoping to encourage more folks to **pool their efforts** and get behind one banner. (Rah-rah and all that).
- * Target Redis 2.0+, Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading).
+ * Target Redis 2.0+, Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading). Support Redis [2.6](http://antirez.com/post/redis-2.6-is-near.html)+.
  * Simplicity. That's it. Redis is simple. Its communication protocol is _dead simple_. IMO everything else (including performance, reliability, feature parity, even documentation!) will follow naturally from **keeping the client simple**.
 
 ## Getting Started
@@ -145,7 +145,7 @@ Note that subscriptions are *connection-local*: you can have three different lis
 
 ### Lua
 
-Redis 2.6 introduced a remarkably powerful feature: [Lua scripting](http://en.wikipedia.org/wiki/Lua_(programming_language)!
+Redis 2.6 introduced a remarkably powerful feature: [Lua scripting](http://redis.io/commands/eval)!
 
 You can send a script to be run in the context of the Redis server:
 
@@ -156,7 +156,7 @@ You can send a script to be run in the context of the Redis server:
 => ("key1" "key2" "arg1" "arg2")
 ```
 
-Big script? Send the SHA1 of a script you've previously sent:
+Big script? Save on bandwidth by sending the SHA1 of a script you've previously sent:
 
 ```clojure
 (conns/with-conn pool spec
@@ -164,6 +164,37 @@ Big script? Send the SHA1 of a script you've previously sent:
                  2 "key1" "key2" "arg1" "arg2"))
 => ("key1" "key2" "arg1" "arg2")
 ```
+
+Don't know if the script has already been sent or not? Try this:
+
+```clojure
+(redis/eval*-with-conn pool spec
+  "return redis.call('set',KEYS[1],'bar')" ; The script
+  1 "foo")
+=> "OK"
+```
+
+The `eval*-with-conn` instructs Carmine to optimistically try an `evalsha` command, but fall back to `eval` if the script isn't already cached with the server.
+
+And this is a good example of...
+
+### Helpers
+
+Carmine will never surprise you by interfering with the standard Redis [command API](http://redis.io/commands). But there *are* times when it might want to offer you a helping hand (if you want it).
+
+Compare:
+
+```clojure
+(conns/with-conn pool spec
+  (zunionstore "dest-key" 3 "zset1" "zset2" "zset3" "WEIGHTS" 2 3 5))
+;; with
+(conns/with-conn pool spec
+  (zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
+```
+
+Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is a helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
+
+Helpers currently include: `zinterstore*`, `zunionstore*`, `evalsha*`, `eval*-with-conn`, and `sort*`.
 
 ## Performance
 
