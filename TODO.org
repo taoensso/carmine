@@ -1,5 +1,4 @@
 * Docs
-** README.md, TODO.org
 ** Generate Marginalia + link from README.
 * API
 ** Organize commands
@@ -16,9 +15,9 @@ Waiting on Salvatore: https://github.com/antirez/redis/issues/420
 Recall that reconnects would also require re-establishing p/subscriptions.
 ** More helper fns?
 * TESTS
-** Update tests from accession, re-run. Check for regressions.
 ** Unit-test for sort* and Lua commands.
-** More unit-tests, generally.
+Sort* test should be easily adaptable from redis-clojure
+** More unit-tests, generally (take from redis-clojure!!)
 * MISC
 ** Investigate possible performance improvement
 *** Binding (?) to preserve byte arrays into+out-of server.
