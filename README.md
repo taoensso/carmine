@@ -32,7 +32,7 @@ Depend on `[carmine "0.7.0-SNAPSHOT"]` in your `project.clj`.
 
 ```clojure
 (ns my-redis-app
-  (:require [carmine (core :as redis) (connections :as conns)]))
+  (:require [carmine (core :as r) (connections :as conns)]))
 ```
 
 ### Make A Connection
@@ -49,15 +49,23 @@ You'll usually want to define one connection spec and pool that you'll reuse:
 
 The defaults are sensible but see [here](http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html) for pool options if you want to fiddle.
 
+Unless you need the added flexibility of specifying the pool and spec for every command, you can save some typing with a little macro:
+
+```clojure
+(defmacro redis
+  "Like 'with-conn' but doesn't need the pool or spec to be given."
+  [& commands] `(conns/with-conn pool spec ~@commands))
+```
+
 ### Executing Commands
 
 Sending commands is easy:
 
 ```clojure
-(conns/with-conn pool spec
-  (redis/ping)
-  (redis/set "foo" "bar")
-  (redis/get "foo"))
+(redis
+ (r/ping)
+ (r/set "foo" "bar")
+ (r/get "foo"))
 => ("PONG" "OK" "bar")
 ```
 
@@ -66,32 +74,31 @@ Note that sending multiple commands at once like this will employ [pipelining](h
 What about something more elaborate?
 
 ```clojure
-(conns/with-conn pool spec
-  (redis/ping)
-  (redis/hmset "myhash" "field1" "Hello" "field2" "World")
-  (redis/hget  "myhash" "field1")
-  (redis/hmget "myhash" "field1" "field2" "nofield")
-  (redis/set    "foo" "31")
-  (redis/incrby "foo" "42")
-  (redis/get    "foo"))
+(redis
+ (r/ping)
+ (r/hmset  "myhash" "field1" "Hello" "field2" "World")
+ (r/hget   "myhash" "field1")
+ (r/hmget  "myhash" "field1" "field2" "nofield")
+ (r/set    "foo" "31")
+ (r/incrby "foo" "42")
+ (r/get    "foo"))
 => ("PONG" "OK" "Hello" ("Hello" "World" nil) "OK" 73 "73")
 ```
 
 If the server responds with an error, an exception is thrown:
 
 ```clojure
-(conns/with-conn pool spec
-  (redis/spop "foo" "bar"))
+(redis (r/spop "foo" "bar"))
 => Exception ERR Operation against a key holding the wrong kind of value
 ```
 
 But what if we're pipelining?
 
 ```clojure
-(conns/with-conn pool spec
-  (redis/set "foo" "bar")
-  (redis/spop "foo")
-  (redis/get "foo"))
+(redis
+ (r/set  "foo" "bar")
+ (r/spop "foo")
+ (r/get  "foo"))
 => ("OK" #<Exception ERR Operation against ...> "bar")
 ```
 
@@ -101,11 +108,11 @@ Carmine supports Redis's [Publish/Subscribe](http://redis.io/topics/pubsub) feat
 
 ```clojure
 (def listener
-  (redis/make-listener
+  (r/make-listener
    spec {"foobar" (fn f1 [resp] (println "Channel match: " resp))
          "foo*"   (fn f2 [resp] (println "Pattern match: " resp))}
-   (redis/subscribe  "foobar" "foobaz")
-   (redis/psubscribe "foo*")))
+   (r/subscribe  "foobar" "foobaz")
+   (r/psubscribe "foo*")))
 ```
 
 Note the map of response handlers. `f1` will trigger when a message is published to channel `foobar`. `f2` will trigger when a message is published to `foobar`, `foobaz`, `foo Abraham Lincoln`, etc.
@@ -113,8 +120,7 @@ Note the map of response handlers. `f1` will trigger when a message is published
 Publish messages:
 
 ```clojure
-(conns/with-conn pool spec
-  (redis/publish "foobar" "Message to foobar"))
+(redis (r/publish "foobar" "Message to foobar"))
 ```
 
 Which will trigger:
@@ -129,8 +135,8 @@ You can adjust subscriptions and/or handlers:
 
 ```clojure
 (with-open-listener listener
-  (unsubscribe) ; Unsubscribe from every channel (leave patterns alone)
-  (psubscribe "an-extra-channel"))
+  (r/unsubscribe) ; Unsubscribe from every channel (leave patterns alone)
+  (r/psubscribe "an-extra-channel"))
 
 (swap! (:handlers listener) assoc "*extra*" (fn [x] (println "EXTRA: " x)))
 ```
@@ -138,7 +144,7 @@ You can adjust subscriptions and/or handlers:
 **Remember to close the listener** when you're done with it:
 
 ```clojure
-(close-listener listener)
+(r/close-listener listener)
 ```
 
 Note that subscriptions are *connection-local*: you can have three different listeners each listening for different messages, using different handlers. This is great stuff.
@@ -150,25 +156,25 @@ Redis 2.6 introduced a remarkably powerful feature: [Lua scripting](http://redis
 You can send a script to be run in the context of the Redis server:
 
 ```clojure
-(conns/with-conn pool spec
-  (redis/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}" ; The script
-              2 "key1" "key2" "arg1" "arg2"))
+(redis
+ (r/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}" ; The script
+         2 "key1" "key2" "arg1" "arg2"))
 => ("key1" "key2" "arg1" "arg2")
 ```
 
 Big script? Save on bandwidth by sending the SHA1 of a script you've previously sent:
 
 ```clojure
-(conns/with-conn pool spec
-  (redis/evalsha "a42059b356c875f0717db19a51f6aaca9ae659ea" ; The script's hash
-                 2 "key1" "key2" "arg1" "arg2"))
+(redis
+ (r/evalsha "a42059b356c875f0717db19a51f6aaca9ae659ea" ; The script's hash
+            2 "key1" "key2" "arg1" "arg2"))
 => ("key1" "key2" "arg1" "arg2")
 ```
 
 Don't know if the script has already been sent or not? Try this:
 
 ```clojure
-(redis/eval*-with-conn pool spec
+(r/eval*-with-conn pool spec
   "return redis.call('set',KEYS[1],'bar')" ; The script
   1 "foo")
 => "OK"
@@ -185,38 +191,14 @@ Carmine will never surprise you by interfering with the standard Redis [command 
 Compare:
 
 ```clojure
-(conns/with-conn pool spec
-  (zunionstore "dest-key" 3 "zset1" "zset2" "zset3" "WEIGHTS" 2 3 5))
+(redis (zunionstore "dest-key" 3 "zset1" "zset2" "zset3" "WEIGHTS" 2 3 5))
 ;; with
-(conns/with-conn pool spec
-  (zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
+(redis (zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
 ```
 
 Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is a helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
 
 Helpers currently include: `zinterstore*`, `zunionstore*`, `evalsha*`, `eval*-with-conn`, and `sort*`.
-
-### Lazy Much?
-
-Carmine embraces flexibility which sometimes means a little verbosity. But this is Clojure, right? You can hide the flexibility if you don't need it. What you gain is brevity:
-
-```clojure
-(ns my-app (:require [carmine (core :as r) (connections :as conns)])
-
-(def my-pool (conns/make-connection-pool)) ; Global pool
-(def my-spec (conns/make-connection-spec)) ; Global spec
-
-;; Don't make me provide the pool and spec every time:
-(defmacro red [& commands] `(conns/with-conn my-pool my-spec ~@commands))
-```
-
-Which now lets you write:
-
-```clojure
-(red (r/set "foo" "bar")
-     (r/get "foo"))
-=> ("OK" "bar")
-```
 
 ## Performance
 
