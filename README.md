@@ -28,6 +28,8 @@ Think of it as an unofficial, "experimental production" branch of Accession. My 
 
 Depend on `[carmine "0.7.0-SNAPSHOT"]` in your `project.clj`.
 
+[![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png)](http://travis-ci.org/ptaoussanis/carmine)
+
 ### Requires
 
 ```clojure

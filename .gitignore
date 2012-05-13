@@ -7,3 +7,6 @@ pom.xml
 .lein-failures
 .lein-deps-sum
 *.sh
+
+target/
+dump.rdb

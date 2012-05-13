@@ -20,5 +20,19 @@ Recall that reconnects would also require re-establishing p/subscriptions.
 ** Unit-test for sort* and Lua commands.
 ** More unit-tests, generally.
 * MISC
-** Push to GitHub, Clojars.
+** Investigate possible performance improvement
+*** Binding (?) to preserve byte arrays into+out-of server.
+Output is obvious: just modify parse-response to look at *return-bytes?* and
+give 'data' instead of (String. data charset) when appropriate.
+*** Better string<->bytes conversion
+https://groups.google.com/d/msg/jedis_redis/Pm9TVdZosCc/JartyVLWcEYJ
+http://www.javacodegeeks.com/2010/11/java-best-practices-char-to-byte-and.html
+http://3.bp.blogspot.com/_tWwHCKnIbjs/TNhnfKRmzuI/AAAAAAAAACg/oSTyA4hMOqA/s1600/chart1.png
+http://1.bp.blogspot.com/_tWwHCKnIbjs/TNhnm-9iV1I/AAAAAAAAACk/55bj7PI8rwA/s1600/chart2.png
+
+Might be possible to use "fast" encoding for ASCII commands, etc.? Would this
+be worth the effort? Could it be done in a simple way?
+
+Is it possible we're ALREADY doing this? e.g. cmp \+ response handling with \$.
+
 ** Bench vs clj-redis, accession, redis-clojure, Jedis, redis-cli.
