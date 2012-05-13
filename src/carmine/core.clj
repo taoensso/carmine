@@ -183,7 +183,7 @@
 
 ;;;; Standard commands
 
-(defqueries
+(defqueries ; TODO Organize & count commands: see org file.
   (auth             [password])
   (quit             [])
   (select           [index])
@@ -318,12 +318,14 @@
   (punsubscribe     [& patterns])
   (publish          [channel message])
 
+  ;; Redis 2.6+
   (eval             [script numkeys & more])
-  (evalsha          [sha1 numkeys & more])
+  (evalsha          [sha1   numkeys & more])
   (script-exists    [script & scripts])
   (script-flush     [])
   (script-kill      [])
-  (script-load      [script]))
+  (script-load      [script])
+  (incrbyfloat      [key increment]))
 
 ;;;; Convenience commands
 
@@ -449,9 +451,9 @@
   (conns/close-conn conn) ; Actually close connection
 
   ;;; Basic requests
-  (conns/with-pooled-connection pool spec (ping))
-  (conns/with-connection spec (ping))
-  (conns/with-pooled-connection pool spec
+  (conns/with-conn pool spec (ping))
+  (conns/with-conn spec (ping))
+  (conns/with-conn pool spec
     (ping)
     (set "key" "value")
     (incrby "key2" 12)

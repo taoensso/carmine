@@ -2,6 +2,13 @@
 ** README.md, TODO.org
 ** Generate Marginalia + link from README.
 * API
+** Organize commands
+Go through entire command list:
+*** Group by version compatibility (or functionality?)
+Perhaps better to group by functionality (or even alphabetically!) and just
+label commands that require very recent versions?
+*** Clean-up args
+*** Add missing commands
 ** Investigate fast byte reading/writing for deep-freeze, etc.
 ** Other response parsing possible & desireable?
 ** Pub/Sub reconnects support?
