@@ -196,6 +196,28 @@ Both of these calls are equivalent but the latter counted the keys for us. `zuni
 
 Helpers currently include: `zinterstore*`, `zunionstore*`, `evalsha*`, `eval*-with-conn`, and `sort*`.
 
+### Lazy Much?
+
+Carmine embraces flexibility which sometimes means a little verbosity. But this is Clojure, right? You can hide the flexibility if you don't need it. What you gain is brevity:
+
+```clojure
+(ns my-app (:require [carmine (core :as r) (connections :as conns)])
+
+(def my-pool (conns/make-connection-pool)) ; Global pool
+(def my-spec (conns/make-connection-spec)) ; Global spec
+
+;; Don't make me provide the pool and spec every time:
+(defmacro red [& commands] `(conns/with-conn my-pool my-spec ~@commands))
+```
+
+Which now lets you write:
+
+```clojure
+(red (r/set "foo" "bar")
+     (r/get "foo"))
+=> ("OK" "bar")
+```
+
 ## Performance
 
 Redis is probably most famous for being [_fast_](http://redis.io/topics/benchmarks). In principle (mostly because it's so darned simple), it should be possible for Carmine to get "reasonably close to" the reference client's performance.
