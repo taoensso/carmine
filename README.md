@@ -1,38 +1,33 @@
 # Carmine, a Redis client for Clojure
 
-[Redis](http://www.redis.io/) is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
+[Redis](http://www.redis.io/) is *awesome* and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
 
 ## Aren't There Already A Bunch of Clients?
 
-Sort of. There's:
+Plenty. Among them there's [redis-clojure](https://github.com/tavisrudd/redis-clojure), [clj-redis](https://github.com/mmcgrana/clj-redis) based on [Jedis](https://github.com/xetorthio/jedis), [Accession](https://github.com/abedra/accession), and (the newest) [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure).
 
- * [redis-clojure](https://github.com/tavisrudd/redis-clojure) which is mature and capable, but based on an older version of the [Redis protocol](http://redis.io/topics/protocol).
- * [clj-redis](https://github.com/mmcgrana/clj-redis) which is based on [Jedis](https://github.com/xetorthio/jedis), the Java client. Unfortunately it's not particularly mature or active. And the dependence on Jedis brings with it an uncomfortable (and unnecessary) impedence mismatch.
- * [Accession](https://github.com/abedra/accession), the newest, is based on the Redis 2.0 "unified" protocol. It's beautifully simple and very easy to extend to new Redis features. But it lacks connection pooling and some of the niceties from redis-clojure.
+And yet- there remains no easy answer to an obvious question: *which one should you use?*. One choice will leave you with performance but poor feature coverage, another with reliability at the cost of flexibility or an unnecessarily awkward API.
 
-Carmine is basically a little **Accession fork** that attempts to merge **the best bits from Accession and redis-clojure**.
-
-Think of it as an unofficial, "experimental production" branch of Accession. My hope is that if anything useful comes from the experiment, Assession will cherry-pick back into "master".
-
-**Update**: Andreas Bielk also has a [client](https://github.com/wallrat/labs-redis-clojure) that I haven't had a chance to look at yet. Will do shortly!
+Carmine is basically an attempt to **cohesively bring together the best bits from each client**.
 
 ## Goals
 
  * Stop the insanity! There's *too many clients* and too many people working at reimplementing the *same things* in essentially the *same way*. By bringing together the work of others, I'm hoping to encourage more folks to **pool their efforts** and get behind one banner. (Rah-rah and all that).
- * Target Redis 2.0+, Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading). Support Redis [2.6](http://antirez.com/post/redis-2.6-is-near.html)+.
- * Simplicity. That's it. Redis is simple. Its communication protocol is _dead simple_. IMO everything else (including performance, reliability, feature parity, even documentation!) will follow naturally from **keeping the client simple**.
+ * **Modern targets**: Redis 2.0+, Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading). Full support for Redis [2.6](http://antirez.com/post/redis-2.6-is-near.html)+.
+ * **Simplicity**. Redis is simple. Its [communication protocol](http://redis.io/topics/protocol) is *dead simple*. IMO everything else (including performance, reliability, [feature parity](http://redis.io/commands), even documentation!) will follow naturally from *keeping the client simple*.
+ * Balance. Appreciate that simplicity needs to be gauged relative to **power**. Aim to keep the client *as simple as possible, but not one bit simpler*.
 
 ## Getting Started
 
 ### Leiningen [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png)](http://travis-ci.org/ptaoussanis/carmine)
 
-Depend on `[carmine "0.7.0-SNAPSHOT"]` in your `project.clj`.
+Depend on `[carmine "0.8.0-SNAPSHOT"]` in your `project.clj`.
 
 ### Requires
 
 ```clojure
 (ns my-redis-app
-  (:require [carmine (core :as r) (connections :as conns)]))
+  (:require [carmine (core :as r)]))
 ```
 
 ### Make A Connection
@@ -40,11 +35,11 @@ Depend on `[carmine "0.7.0-SNAPSHOT"]` in your `project.clj`.
 You'll usually want to define one connection spec and pool that you'll reuse:
 
 ```clojure
-(def pool (conns/make-conn-pool :test-while-idle true))
-(def spec (conns/make-conn-spec :host     "127.0.0.1"
-                                :port     9000
-                                :password "foobar"
-                                :timeout  4000))
+(def pool (r/make-conn-pool :test-while-idle true))
+(def spec (r/make-conn-spec :host     "127.0.0.1"
+                            :port     9000
+                            :password "foobar"
+                            :timeout  4000))
 ```
 
 The defaults are sensible but see [here](http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html) for pool options if you want to fiddle.
@@ -54,10 +49,10 @@ Unless you need the added flexibility of specifying the pool and spec for every 
 ```clojure
 (defmacro redis
   "Like 'with-conn' but doesn't need the pool or spec to be given."
-  [& commands] `(conns/with-conn pool spec ~@commands))
+  [& body] `(conns/with-conn pool spec ~@body))
 ```
 
-### Executing Commands
+### Executing Basic Commands
 
 Sending commands is easy:
 
@@ -69,9 +64,9 @@ Sending commands is easy:
 => ("PONG" "OK" "bar")
 ```
 
-Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The responses will be queued server-side and returned all at once as a seq.
+Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a seq.
 
-What about something more elaborate?
+What about something a little more elaborate?
 
 ```clojure
 (redis
@@ -102,33 +97,77 @@ But what if we're pipelining?
 => ("OK" #<Exception ERR Operation against ...> "bar")
 ```
 
-### Pub/Sub
+## Documentation and Coverage
 
-Carmine supports Redis's [Publish/Subscribe](http://redis.io/topics/pubsub) feature in a convenient, natural way:
+Like [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure), Carmine uses the [official Redis command reference](https://github.com/antirez/redis-doc/blob/master/commands.json) to generate its own command API.
+
+This means that not only are Carmine's commands *complete* and *up-to-the-minute* but also **fully-documented**:
+
+```clojure
+(use 'clojure.repl)
+(doc r/sort)
+=> "SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
+
+Sort the elements in a list, set or sorted set.
+
+Available since: 1.0.0.
+
+Time complexity: O(N+M*log(M)) where N is the number of elements in the list or set to sort, and M the number of returned elements. When the elements are not sorted, complexity is currently O(N) as there is a copy step that will be avoided in next releases."
+```
+
+*Yeah*. Andreas Bielk, you rock.
+
+## Getting Fancy
+
+### Commands Are Functions
+
+In Carmine, Redis commands are *real functions*. Which means you can *use* them like real functions:
+
+```clojure
+(redis
+  (doall (repeatedly 5 r/ping)))
+=> ("PONG" "PONG" "PONG" "PONG" "PONG")
+
+(redis
+  (let [first-names ["Salvatore"  "Rich"]
+        surnames    ["Sanfilippo" "Hickey"]]
+    (doall (map #(r/set %1 %2) first-names surnames))
+    (doall (map r/get first-names))))
+=> ("OK" "OK" "Sanfilippo" "Hickey")
+
+(redis
+  (doall (map #(r/set (str "key-" %) (rand-int 3)) (range 3)))
+  (doall (map #(r/get (str "key-" %)) (range 3))))
+=> ("OK" "OK" "OK" "OK" "0" "6" "6" "2")
+```
+
+### Listen Closely
+
+Carmine has a flexible **Listener** API to support persistent-connection features like [monitoring](http://redis.io/commands/monitor) and Redis's awesome [Publish/Subscribe](http://redis.io/topics/pubsub) feature:
 
 ```clojure
 (def listener
-  (r/make-listener
-   spec {"foobar" (fn f1 [resp] (println "Channel match: " resp))
-         "foo*"   (fn f2 [resp] (println "Pattern match: " resp))}
+  (r/with-new-pubsub-listener
+   spec {"foobar" (fn f1 [msg] (println "Channel match: " msg))
+         "foo*"   (fn f2 [msg] (println "Pattern match: " msg))}
    (r/subscribe  "foobar" "foobaz")
    (r/psubscribe "foo*")))
 ```
 
-Note the map of response handlers. `f1` will trigger when a message is published to channel `foobar`. `f2` will trigger when a message is published to `foobar`, `foobaz`, `foo Abraham Lincoln`, etc.
+Note the map of message handlers. `f1` will trigger when a message is published to channel `foobar`. `f2` will trigger when a message is published to `foobar`, `foobaz`, `foo Abraham Lincoln`, etc.
 
 Publish messages:
 
 ```clojure
-(redis (r/publish "foobar" "Message to foobar"))
+(redis (r/publish "foobar" "Hello to foobar!"))
 ```
 
 Which will trigger:
 
 ```clojure
-(f1 '("message" "foobar" "Message to foobar"))
+(f1 '("message" "foobar" "Hello to foobar!"))
 ;; AND ALSO
-(f2 '("pmessage" "foo*" "foobar" "Message to foobar"))
+(f2 '("pmessage" "foo*" "foobar" "Hello to foobar!"))
 ```
 
 You can adjust subscriptions and/or handlers:
@@ -138,7 +177,7 @@ You can adjust subscriptions and/or handlers:
   (r/unsubscribe) ; Unsubscribe from every channel (leave patterns alone)
   (r/psubscribe "an-extra-channel"))
 
-(swap! (:handlers listener) assoc "*extra*" (fn [x] (println "EXTRA: " x)))
+(swap! (:state listener) assoc "*extra*" (fn [x] (println "EXTRA: " x)))
 ```
 
 **Remember to close the listener** when you're done with it:
@@ -186,7 +225,7 @@ And this is a good example of...
 
 ### Helpers
 
-Carmine will never surprise you by interfering with the standard Redis [command API](http://redis.io/commands). But there *are* times when it might want to offer you a helping hand (if you want it).
+Carmine will never surprise you by interfering with the standard Redis command API. But there *are* times when it might want to offer you a helping hand (if you want it).
 
 Compare:
 
@@ -206,7 +245,7 @@ Redis is probably most famous for being [_fast_](http://redis.io/topics/benchmar
 
 It'll never be _as_ fast because of the JVM's string handling and the need to un/wrap before communicating with the server. But by avoiding any other unnecessary fluff, I'm hoping that it'll be possible to close-in on the theoretical maximum performance of a JVM-based client.
 
-There's also some interesting serialization possibilities I'd like to look at later...
+**NOTE**: Performance is already looking good, but there's still lots of low-hanging fruit that I'll be looking at shortly...
 
 ### Client Benchmarks
 

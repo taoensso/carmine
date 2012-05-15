@@ -1,17 +1,12 @@
 (ns carmine.test.core
   (:use [clojure.test])
-  (:require [carmine (core :as r) (connections :as conns)]))
+  (:require [carmine (core :as r) (protocol :as protocol)]))
 
-(def p (conns/make-conn-pool))
-(def s (conns/make-conn-spec))
-(defmacro wc [& commands] `(conns/with-conn p s ~@commands))
+(def p (r/make-conn-pool))
+(def s (r/make-conn-spec))
+(defmacro wc [& commands] `(r/with-conn p s ~@commands))
 
 (wc (r/flushall)) ; Start with fresh db
-
-(deftest test-command-construction
-  (is (= "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"
-         (#'r/query "set" "foo" "bar")))
-  (is (= "*2\r\n$3\r\nGET\r\n$3\r\nbar\r\n" (#'r/query "get" "bar"))))
 
 (deftest test-echo
   (is (= "Message" (wc (r/echo "Message"))))
@@ -22,6 +17,7 @@
   (wc (r/set "singularity" "exists"))
   (is (= 1 (wc (r/exists "singularity")))))
 
+;; Note this test fails when evaluating step-by-step in REPL
 (deftest test-keys
   (is (= '("resource:lock" "singularity") (wc (r/keys "*")))))
 
@@ -80,14 +76,19 @@
   (wc (r/rpush "alist" "A")
       (r/rpush "alist" "B")
       (r/lpush "alist" "C"))
-  (is (= ["A" "B"]) (r/lrange "alist" 0 2)))
+  (is (= ["A" "B"]) (wc (r/lrange "alist" 0 2))))
 
 (deftest test-error-handling
-  (is (thrown? Exception (wc "This is a malformed request")))
   (wc (r/set "str-field" "str-value"))
   (is (thrown? Exception (wc (r/incr "str-field"))))
   (is (some #(instance? Exception %)
             (wc (r/ping) (r/incr "str-field") (r/ping)))))
+
+(deftest test-commands-as-real-functions
+  (is (= nil (wc "This is a malformed request")))
+  (is (= "PONG" (wc (r/ping) "This is a malformed request")))
+  (is (= '("PONG" "PONG" "PONG") (wc (doall (repeatedly 3 r/ping)))))
+  (is (= '("A" "B" "C") (wc (doall (map r/echo ["A" "B" "C"]))))))
 
 (deftest test-hashes
   (wc (r/hset "myhash" "field1" "value1"))
@@ -161,9 +162,9 @@
 
 (deftest test-pubsub
   (let [received (atom [])
-        listener (r/make-listener
-                  s {"ps-foo" #(swap! received conj %)}
-                  (r/subscribe "ps-foo"))]
+        listener (r/with-new-pubsub-listener
+                   s {"ps-foo" #(swap! received conj %)}
+                   (r/subscribe "ps-foo"))]
     (wc (r/publish "ps-foo" "one")
         (r/publish "ps-foo" "two")
         (r/publish "ps-foo" "three"))
@@ -175,10 +176,10 @@
                       '("message"   "ps-foo" "three")])))
 
   (let [received (atom [])
-        listener (r/make-listener
-                  s {"ps-foo" #(swap! received conj %)
-                     "ps-baz" #(swap! received conj %)}
-                  (r/subscribe "ps-foo" "ps-baz"))]
+        listener (r/with-new-pubsub-listener
+                   s {"ps-foo" #(swap! received conj %)
+                      "ps-baz" #(swap! received conj %)}
+                   (r/subscribe "ps-foo" "ps-baz"))]
     (wc (r/publish "ps-foo" "one")
         (r/publish "ps-bar" "two")
         (r/publish "ps-baz" "three"))
@@ -190,9 +191,9 @@
                       '("message"   "ps-baz" "three")])))
 
   (let [received (atom [])
-        listener (r/make-listener
-                  s {"ps-*"   #(swap! received conj %)
-                     "ps-foo" #(swap! received conj %)})
+        listener (r/with-new-pubsub-listener
+                   s {"ps-*"   #(swap! received conj %)
+                      "ps-foo" #(swap! received conj %)})
         _ (r/with-open-listener listener
             (r/psubscribe "ps-*")
             (r/subscribe  "ps-foo"))]

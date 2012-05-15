@@ -1,331 +1,67 @@
 (ns carmine.core
-  "Deliberately simple, high-performance Redis (2.0+) client for Clojure.
-  An Accession fork."
-  (:refer-clojure :exclude [get set keys type sync sort eval])
-  (:require [clojure.java.io :as io]
-            [clojure.string :as str]
-            [carmine (connections :as conns)])
-  (:import  [java.io OutputStream DataInputStream]
-            [org.apache.commons.pool.impl GenericKeyedObjectPool]))
+  "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
+  (:refer-clojure :exclude [time get set keys type sync sort eval])
+  (:require [carmine
+             (protocol    :as protocol)
+             (connections :as conns)
+             (commands    :as commands)])
+  (:import  [org.apache.commons.pool.impl GenericKeyedObjectPool]
+            [carmine.connections          ConnectionPool]))
 
-;;;; Redis network protocol
+;;;; Connections
+;; Better to have this stuff here so that library consumers don't need to
+;; require another namespace.
 
-(def ^:private ^:const ^String charset "UTF-8")
-(def ^:private ^:const ^String crlf    "\r\n")
+(defn make-conn-pool
+  "For option documentation see http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html"
+  [& options]
+  (let [;; Defaults stolen from Jedis
+        default {:test-while-idle               true
+                 :num-tests-per-eviction-run    -1
+                 :min-evictable-idle-time-ms    60000
+                 :time-between-eviction-runs-ms 30000}]
+    (ConnectionPool.
+     (reduce conns/set-pool-option
+             (GenericKeyedObjectPool. (conns/make-connection-factory))
+             (merge default (apply hash-map options))))))
 
-(defn- query
-  "Takes a Clojure form like '(set \"mykey\" \"myvalue\")' and returns the
-  equivalent Redis command in its native byte string format. We call this string
-  a \"query\".
+(defn make-conn-spec
+  [& {:keys [host port password timeout db]
+      :or   {host "127.0.0.1" port 6379 password nil timeout 0 db 0}}]
+  {:host host :port port :password password :timeout timeout :db db})
 
-  The new [unified protocol][up] was introduced in Redis 1.2, but it became the
-  standard way for talking with the Redis server in Redis 2.0. In the unified
-  protocol all the arguments sent to the Redis server are binary safe. This is
-  the general form:
+(defmacro with-conn
+  "Evaluates body in the context of a pooled connection to Redis server. Body
+  may contain Redis commands and functions of Redis commands (e.g. 'map').
 
-      *<number of arguments> CR LF
-      $<number of bytes of argument 1> CR LF
-      <argument data> CR LF
-      ...
-      $<number of bytes of argument N> CR LF
-      <argument data> CR LF
+  Sends full request to server as pipeline and returns the server's response.
+  Releases connection back to pool when done.
 
-  See the following example:
+  Use 'make-conn-pool' and 'make-conn-spec' to generate the required arguments."
+  [connection-pool connection-spec & body]
+  `(try
+     (let [conn# (conns/get-conn ~connection-pool ~connection-spec)]
+       (try
+         (let [response# (protocol/with-context-and-response conn# ~@body)]
+           (conns/release-conn ~connection-pool conn#)
+           response#)
 
-      *3
-      $3
-      SET
-      $5
-      mykey
-      $7
-      myvalue
+         ;; Failed to execute body
+         (catch Exception e# (conns/release-conn ~connection-pool conn# e#)
+                (throw e#))))
+     ;; Failed to get connection from pool
+     (catch Exception e# (throw e#))))
 
-  This is how the above command looks as a quoted string, so that it
-  is possible to see the exact value of every byte in the query:
-
-  [up]: http://redis.io/topics/protocol"
-  [name & args]
-  (str "*"
-       (inc (count args))    crlf
-       "$"  (count name)     crlf
-       (str/upper-case name) crlf
-       (str/join
-        crlf
-        (map (fn [a] (str "$" (count (.getBytes (str a) charset)) crlf a))
-             args))
-       crlf))
-;; <pre>"*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$7\r\nmyvalue\r\n\r\n"</pre>
-
-(defn- parse-response
-  "Redis will reply to commands with different kinds of replies. It is possible
-  to check the kind of reply from the first byte sent by the server:
-
-  * With a single line reply the first byte of the reply will be `+`
-  * With an error message the first byte of the reply will be `-`
-  * With an integer number the first byte of the reply will be `:`
-  * With bulk reply the first byte of the reply will be `$`
-  * With multi-bulk reply the first byte of the reply will be `*`
-
-  An exception will be thrown when an error reply is received."
-  [^DataInputStream in]
-  (let [reply-type (char (.readByte in))]
-    (case reply-type
-      \+ (.readLine in)
-      \- (Exception. (.readLine in))
-      \: (Long/parseLong (.readLine in))
-      \$ (let [data-length (Integer/parseInt (.readLine in))]
-           (when-not (neg? data-length)
-             (let [data (byte-array data-length)
-                   crlf (byte-array 2)]
-               (.read in data 0 data-length)
-               (.read in crlf 0 2)
-               (String. data charset))))
-      \* (let [length (Integer/parseInt (.readLine in))]
-           (doall (repeatedly length (fn [] (parse-response in)))))
-      (throw (Exception. (str "Unknown response type: " reply-type))))))
-
-(defn- send-queries
-  [conn & queries]
-  (let [out ^OutputStream (conns/output-stream conn)]
-    ;; Note that we're adding an ADDITIONAL crlf to each query here. This is
-    ;; unnecessary but helps Redis respond with an error message when our
-    ;; queries are malformed (with-conn ... "NOT A QUERY").
-    (dorun (map (fn [q] (.write out (.getBytes (str q crlf) charset)))
-                queries))))
-
-(defn- request
-  "Send a request (pipelined queries/commands) to Redis server then recieve and
-  parse response(s)."
-  [conn & queries]
-  (when (seq queries)
-    (apply send-queries conn queries)
-    (let [in ^DataInputStream (conns/input-stream conn)]
-      (if (next queries)
-        (doall (repeatedly (count queries) (fn [] (parse-response in))))
-        (let [parsed-response (parse-response in)]
-          (if (instance? Exception parsed-response)
-            (throw parsed-response)
-            parsed-response))))))
-
-;;;; Commands
-
-;; We would like to create one function for each command which Redis supports.
-;; The set function would look something like this:
-;;
-;;     (defn set [key value]
-;;       (query "set" key value))
-;;
-;; Similarly, the get function would be:
-;;
-;;     (defn get [key]
-;;       (query "get" key))
-;;
-;; Because each of these functions has the same pattern, we can use a macro to
-;; create them and save a lot of typing.
-
-(defn parameters
-  "This function enables vararg style definitions in the queries. For example
-  you can write:
-
-       (mget [key & keys])
-
-  and the defquery macro will properly expand out into a variable argument
-  function"
-  [params]
-  (let [[args varargs] (split-with #(not= '& %)  params)]
-    (conj (vec args) (last varargs))))
-
-(defmacro defquery
-  "Given a redis command and a parameter list, create a function of the form:
-
-       (defn <name> <parameter-list>
-         (query <command> <p1> <p2> ... <pN>))
-
-  The name which is passed is a symbol and is first used as a symbol for the
-  function name. We convert this symbol to a string and use that string as the
-  command name. Use -'s to separate words for multi-word commands: script-flush
-  for \"SCRIPT FLUSH\" command, etc.
-
-  params is a list of N symbols which represent the parameters to the function.
-  We use this list as the parameter-list when we create the function. Each
-  symbol in this list will be an argument to query after the command. We use
-  unquote splicing (~@) to insert these arguments after the command string."
-  [name params]
-  (let [command (str/replace (str name) #"-" " ")
-        p (parameters params)]
-    `(defn ~name ~params
-       (apply query ~command ~@p))))
-
-;; A call to:
-;;
-;; <pre><code>(defqueries (set [key value]))</code></pre>
-;;
-;; will expand to:
-;;
-;; <pre><code>(do (defn set [key value] (query "set" key value)))</pre></code>
-;;
-
-(defmacro defqueries
-  "Given any number of redis commands and argument lists, convert them to
-  function definitions.
-
-  This is an interesting use of unquote splicing. Unquote splicing works on a
-  sequence and that sequence can be the result of a function call as it is here.
-  The function which produces this sequence maps each argument passed to this
-  macro over a function which takes each list like (set [key value]), binds it
-  to q, and uses unquote splicing again to create a call to defquery which looks
-  like (defquery set [key value]).
-
-  Finally, a macro can only return a single form, so we wrap all of the produced
-  expressions in a do special form."
-  [& queries]
-  `(do ~@(map (fn [q] `(defquery ~@q)) queries)))
+;; For compatibility with other clients
+(defmacro with-connection
+  "DEPRECATED. Use 'with-conn' instead.
+  Like 'with-conn' but uses a one-time, NON-pooled connection."
+  [connection-spec & body]
+  `(with-conn conns/non-pooled-connection-pool ~connection-spec ~@body))
 
 ;;;; Standard commands
 
-(defqueries ; TODO Organize & count commands: see org file.
-  (auth             [password])
-  (quit             [])
-  (select           [index])
-  (bgwriteaof       [])
-  (bgsave           [])
-  (flushdb          [])
-  (flushall         [])
-  (dbsize           [])
-  (info             [])
-  (save             [])
-  (sync             [])
-  (lastsave         [])
-  (shutdown         [])
-  (slaveof          [host port])
-  (slowlog          [command argument])
-  (config-get       [parameter])
-  (config-set       [parameter value])
-  (config-resetstat [])
-  (debug-object     [key])
-  (debug-segfault   [])
-
-  (echo             [message])
-  (ping             [])
-  (discard          [])
-  (exec             [])
-  (monitor          [])
-  (multi            [])
-  (object           [subcommand & arguments])
-
-  (set              [key value])
-  (setex            [key seconds value])
-  (setnx            [key value])
-  (setbit           [key offset value])
-  (mset             [key value & pairs])
-  (msetnx           [key value & pairs])
-  (setrange         [key offset value])
-  (get              [key])
-  (mget             [key & keys])
-  (getbit           [key offset])
-  (getset           [key value])
-  (getrange         [key start end])
-  (append           [key value])
-  (keys             [pattern])
-  (exists           [key])
-  (randomkey        [])
-  (type             [key])
-  (move             [key db])
-  (rename           [key newkey])
-  (renamenx         [key newkey])
-  (strlen           [key])
-  (watch            [key & keys])
-  (unwatch          [])
-  (del              [key & keys])
-  (sort             [key & options]) ; sort* available
-
-  (incr             [key])
-  (incrby           [key increment])
-  (decr             [key])
-  (decrby           [key increment])
-
-  (expire           [key seconds])
-  (expireat         [key seconds])
-  (persist          [key])
-  (ttl              [key])
-
-  (llen             [key])
-  (lpop             [key])
-  (lpush            [key value])
-  (lpushx           [key value & values])
-  (lset             [key value index])
-  (linsert          [key before-after pivot value])
-  (lrem             [key count value])
-  (ltrim            [key start stop])
-  (lrange           [key start end])
-  (lindex           [key index])
-  (rpop             [key])
-  (rpush            [key value & values])
-  (rpushx           [key value])
-  (rpoplpush        [source destination])
-  (blpop            [key timeout])
-  (brpop            [key timeout])
-  (brpoplpush       [source destination timeout])
-
-  (hset             [key field value])
-  (hmset            [key field value & pairs])
-  (hsetnx           [key field value])
-  (hget             [key field])
-  (hmget            [key field & fields])
-  (hexists          [key field])
-  (hdel             [key field & fields])
-  (hgetall          [key])
-  (hincrby          [key field increment])
-  (hkeys            [key])
-  (hvals            [key])
-  (hlen             [key])
-
-  (sadd             [key member & members])
-  (srem             [key member & members])
-  (sismember        [key member])
-  (smembers         [key])
-  (sunion           [key & keys])
-  (sunionstore      [destination key & keys])
-  (sdiff            [key & keys])
-  (sdiffstore       [destination set1 set2])
-  (sinter           [key & keys])
-  (sinterstore      [destination key & keys])
-  (scard            [key])
-  (smove            [source desination member])
-  (spop             [key])
-  (srandmember      [key])
-
-  (zadd             [key score member & more])
-  (zrange           [key start stop & more])
-  (zrangebyscore    [key min max & more])
-  (zrevrange        [key start stop & more])
-  (zrevrangebyscore [key max min & more])
-  (zcard            [key])
-  (zcount           [key min max])
-  (zincrby          [key increment member])
-  (zrank            [member])
-  (zrem             [key member & members])
-  (zremrangebyrank  [key start stop])
-  (zremrangebyscore [key min max])
-  (zrevrank         [key member])
-  (zscore           [key member])
-  (zinterstore      [dest numkeys key & more]) ; zinterscore* available
-  (zunionstore      [dest numkeys key & more]) ; zunionscore* available
-
-  (subscribe        [& channels])
-  (unsubscribe      [& channels])
-  (psubscribe       [& patterns])
-  (punsubscribe     [& patterns])
-  (publish          [channel message])
-
-  ;; Redis 2.6+
-  (eval             [script numkeys & more]) ; eval*-with-conn available
-  (evalsha          [sha1   numkeys & more]) ; evalsha* available
-  (script-exists    [script & scripts])
-  (script-flush     [])
-  (script-kill      [])
-  (script-load      [script])
-  (incrbyfloat      [key increment]))
+(commands/defcommands) ; This kicks ass - big thanks to Andreas Bielk!
 
 ;;;; Command helpers
 
@@ -382,102 +118,120 @@
   (apply evalsha (hash-script script) numkeys more))
 
 (defn eval*-with-conn
-  "Optimistically try send 'evalsha' command for given script. In the event of a
-  \"NOSCRIPT\" reply, reattempt with 'eval'. Returns the final command's result."
+  "Optimistically tries to send 'evalsha' command for given script. In the event
+  of a \"NOSCRIPT\" reply, reattempts with 'eval'. Returns the final command's
+  result."
   [pool spec script numkeys & more]
   (try
-    (conns/with-conn pool spec (apply evalsha* script numkeys more))
+    (with-conn pool spec (apply evalsha* script numkeys more))
     (catch Exception e
       (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
-        (conns/with-conn pool spec (apply eval script numkeys more))
+        (with-conn pool spec (apply eval script numkeys more))
         (throw e)))))
 
-;;;; Pub/Sub
+;;;; Persistent stuff (monitoring, pub/sub, etc.)
 
-;; Once a connection to Redis issues a p/subscribe command, it enters an
-;; idiosyncratic state:
+;; Once a connection to Redis issues a command like 'p/subscribe' or 'monitor'
+;; it enters an idiosyncratic state:
 ;;
-;; * It blocks and can no longer issue any commands besides 'p/un/subscribe'.
-;; * It receives from the server published messages (and ONLY published
-;;   messages) to which it (and only IT) is subscribed. Subscriptions are
-;;   connection-local and so will be lost when the connection closes.
+;;     * It blocks while waiting to receive a stream of special responses issued
+;;       to it (connection-local!) by the server.
+;;     * It can now only issue a subset of the normal commands like
+;;      'p/un/subscribe', 'quit', etc.
 ;;
-;; To facilitate the unusual requirements we define a PubSubListener to be a
-;; combination of persistent, non-pooled connection and threaded message
+;; To facilitate the unusual requirements we define a Listener to be a
+;; combination of persistent, NON-pooled connection and threaded response
 ;; handler:
 
-(defrecord PubSubListener [connection handlers])
+(defrecord Listener [connection handler state])
 
-(defn with-open-listener
-  "Evaluate pipelined Redis commands in the context of a preexisting Pub/Sub
-  listener's persistent connection to Redis server. Returns nil. Only
-  'p/un/subscribe' commands may be issued."
-  [listener & commands] (apply send-queries (:connection listener) commands))
+(defmacro with-new-listener
+  "Creates a persistent connection to Redis server and a thread to listen for
+  server responses on that connection.
+
+  Incoming responses will be dispatched (along with current listener state) to
+  binary handler function.
+
+  Evaluates body within the context of the connection and returns a
+  general-purpose Listener containing:
+
+      1. The underlying persistent connection to facilitate 'close-listener' and
+         'with-open-listener'.
+      2. An atom containing the function given to handle incoming server
+         responses.
+      3. An atom containing any other optional listener state.
+
+  Useful for pub/sub, monitoring, etc."
+  [connection-spec handler initial-state & body]
+  `(let [handler-atom# (atom ~handler)
+         state-atom#   (atom ~initial-state)
+         conn# (conns/make-new-connection (assoc ~connection-spec
+                                            :persistent? true))]
+     (protocol/with-context conn#
+
+       ;; Create a thread to actually listen for and process responses from
+       ;; server. Thread will close when connection closes.
+       (-> (fn [] (@handler-atom# (protocol/get-response! :reply-count 1)
+                                 @state-atom#))
+           repeatedly doall future)
+
+       ~@body
+       (Listener. conn# handler-atom# state-atom#))))
+
+(defmacro with-open-listener
+  "Evaluates body within the context of given listener's preexisting persistent
+  connection. Does NOT get response from server. Returns body's result."
+  [listener & body]
+  `(protocol/with-context (:connection ~listener) ~@body))
 
 (defn close-listener [listener] (conns/close-conn (:connection listener)))
 
-(defn make-listener
-  "Create a persistent connection to Redis server and a thread to listen for
-  published messages from channels that we'll subscribe to using 'p/subscribe'
-  commands.
+(defmacro with-new-pubsub-listener
+  "A wrapper for 'with-new-listener'. Creates a persistent connection to Redis
+  server and a thread to listen for published messages from channels that we'll
+  subscribe to using 'p/subscribe' commands in body.
 
   While listening, incoming messages will be dispatched by source (channel or
-  pattern) to the given handler functions:
+  pattern) to the given message-handler functions:
 
-       {\"channel1\" (fn [response] (prn \"Channel match: \" response))
-        \"user*\"    (fn [response] (prn \"Pattern match: \" response))}
+       {\"channel1\" (fn [message] (prn \"Channel match: \" message))
+        \"user*\"    (fn [message] (prn \"Pattern match: \" message))}
 
-  SUBSCRIBE response:  `[\"message\" channel message]`
-  PSUBSCRIBE response: `[\"pmessage\" pattern matching-channel message]`
+  SUBSCRIBE message:  `[\"message\" channel payload]`
+  PSUBSCRIBE message: `[\"pmessage\" pattern matching-channel payload]`
 
-  Returns a PubSubListener containing:
-    1. The persistent connection to allow manual closing with 'close-listener'
-       and subscription adjustments via 'with-open-listener'.
-    2. An atom containing given handlers to allow handler adjustments.
+  Returns the Listener to allow manual closing and adjustments to
+  message-handlers."
+  [connection-spec message-handlers & subscription-commands]
+  `(with-new-listener (assoc ~connection-spec :pubsub? true)
 
-  Listener's thread will close automatically when it's connection to Redis is
-  closed."
-  ;; TODO Once https://github.com/antirez/redis/issues/420 is implemented, can
-  ;; add timed connection-alive check and auto-reconnect options.
-  [connection-spec handlers & subscription-commands]
-  (let [handlers-atom (atom handlers)
-        conn (#'conns/make-new-connection (assoc connection-spec
-                                            :pubsub-conn? true))
-        in   (conns/input-stream conn)]
+     ;; Response handler (fn [response state])
+     (fn [[_# source-channel# :as incoming-message#] msg-handlers#]
+       (when-let [f# (clojure.core/get msg-handlers# source-channel#)]
+         (f# incoming-message#)))
 
-    ;; Note that future will close when conn is closed
-    (-> (fn receive-published-message! []
-          (let [;; Blocks on input-stream
-                [_ source :as next-response] (parse-response in)]
-            (when-let [f (clojure.core/get @handlers-atom source)]
-              (f next-response))))
-        repeatedly doall future)
-
-    (apply send-queries conn subscription-commands)
-    (PubSubListener. conn handlers-atom)))
+     ~message-handlers ; Initial state
+     ~@subscription-commands))
 
 ;;;; Dev/tests
 
 (comment
-  (def pool (conns/make-conn-pool))
-  (def spec (conns/make-conn-spec))
-  (def spec (conns/make-conn-spec :host "panga.redistogo.com"
-                                  :port 9475
-                                  :password "foobar")) ; Remote
-
-  ;;; Protocol
-  (set "key" "value") ; "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n"
+  (def pool (make-conn-pool))
+  (def spec (make-conn-spec))
+  (def spec (make-conn-spec :host "panga.redistogo.com"
+                            :port 9475
+                            :password "foobar")) ; Remote
 
   ;;; Basic connections
   (def conn (conns/get-conn pool spec))
   (conns/conn-alive? conn)
   (conns/release-conn pool conn) ; Return connection to pool (don't close)
-  (conns/close-conn conn) ; Actually close connection
+  (conns/close-conn conn)        ; Actually close connection
 
   ;;; Basic requests
-  (conns/with-conn pool spec (ping))
-  (conns/with-conn spec (ping))
-  (conns/with-conn pool spec
+  (with-conn pool spec (ping))
+  (with-connection spec (ping)) ; Degenerate pool
+  (with-conn pool spec
     (ping)
     (set "key" "value")
     (incrby "key2" 12)
@@ -486,19 +240,25 @@
     (set "unicode" "año")
     (get "unicode"))
 
-  (conns/with-connection spec "This is invalid") ; Malformed
+  (with-conn pool spec "This is invalid") ; Malformed
+
+  ;;; Advanced requests
+  (with-conn pool spec (doall (repeatedly 5 ping)))
+  (with-conn pool spec
+    (doall
+     (map set ["bob" "sam" "steve"] ["carell" "black" "irwin"])))
 
   ;;; Pub/Sub
   (def listener
-    (make-listener
-     spec {"foo1"  (fn [x] (println "Channel match: " x))
-           "foo*"  (fn [x] (println "Pattern match: " x))
-           "extra" (fn [x] (println "EXTRA: " x))}
-     (subscribe  "foo1" "foo2")
-     (psubscribe "foo*")))
+    (with-new-pubsub-listener
+      spec {"foo1"  (fn [x] (println "Channel match: " x))
+            "foo*"  (fn [x] (println "Pattern match: " x))
+            "extra" (fn [x] (println "EXTRA: " x))}
+      (subscribe  "foo1" "foo2")
+      (psubscribe "foo*")))
 
   (do (println "---")
-      (conns/with-conn pool spec
+      (with-conn pool spec
         (publish "foo1" "Message to foo1")))
 
   (with-open-listener listener
@@ -506,6 +266,7 @@
 
   (close-listener listener)
 
+  ;;; Lua
   (eval*-with-conn pool spec
     "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
     2 "key1" "key2" "arg1" "arg2"))

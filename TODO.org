@@ -1,29 +1,79 @@
+#+STARTUP: overview, hidestars
+#+TAGS: urgent in-progress maybe waiting hammock
 * Docs
-** Generate Marginalia + link from README.
 * API
-** Organize commands
-Go through entire command list:
-*** Group by version compatibility (or functionality?)
-Perhaps better to group by functionality (or even alphabetically!) and just
-label commands that require very recent versions?
-*** Clean-up args
-*** Add missing commands
-** Investigate fast byte reading/writing for deep-freeze, etc.
-** Other response parsing possible & desireable?
-** Pub/Sub reconnects support?
+** Investigate support for byte[] in/out support                      :maybe:
+I.e. support something like a *with-bytes* binding that'll supress auto string
+conversions and keep input/output in native byte[] format for performance and
+flexibility.
+
+redis-clojure offers a similar facility but it appears to be restricted to
+reads.
+
+UPD: This should be trvially easy to do with new protocol contexts.
+** More elaborate response parsing?                           :maybe:hammock:
+Integers, bools, etc.?
+
+Or even prn or deep-freeze serialization (via byte[] support). Would this be
+desirable? Might be better left to library consumer unless it could be light,
+optional, and simple. [Upd: the new send-request! API is *very* flexible here]
+
+(comment
+  (defn encode  [x] (binding [*print-dup* true] (pr-str x)))
+  (defn decode  [x] (with-in-str x (read)))
+  (defn decode2 [x] (read-string x))
+
+  (time (dotimes [n 100000] (decode  (encode true))))
+  (time (dotimes [n 100000] (decode2 (encode true))))
+  (decode (encode "true")))
+
+The problem with serialization (incl. pr-str) is that we need a way to be sure
+it will never get in the way when we don't want it. We've either got to allow
+it to be selectively turned on and off _per command_ (e.g. by defining 2 fns
+for each command that each use a different protocol *context*). OR we need it
+to be smart:
+
+e.g. strings -> strings. nums -> nums. Anything else goes to "^<serialized
+payload>" string. We can then look for the "^" tag when parsing replies to
+trigger a deserialization call.
+
+Either way should be turn this off. Would also be nice if the actual
+serialization stuff was user-pluggable (maybe via *context*)?
+
+Going to require some hammock time.
+
+** Pub/Sub reconnects support?                                      :waiting:
 Waiting on Salvatore: https://github.com/antirez/redis/issues/420
 Recall that reconnects would also require re-establishing p/subscriptions.
 ** More helper fns?
-* TESTS
-** Unit-test for sort* and Lua commands.
+*** Transaction stuff
+Helper(s) for mutli, watchers, etc.?
+
+E.g. an atomic multi* helper to wrap some commands and auto-discard on a thrown
+exception?
+
+redis-clojure has some facilities like this, I think. Should be simple to
+implement.
+
+Likewise, watching should be trivial to impement with new Listener API.
+* TESTS                                                              :urgent:
+** Unit-test for all other commands (adapt from redis-clojure!!)     :urgent:
+** Unit-test for sort* and Lua commands.                             :urgent:
 Sort* test should be easily adaptable from redis-clojure
-** More unit-tests, generally (take from redis-clojure!!)
-* MISC
-** Investigate possible performance improvement
-*** Binding (?) to preserve byte arrays into+out-of server.
-Output is obvious: just modify parse-response to look at *return-bytes?* and
-give 'data' instead of (String. data charset) when appropriate.
-*** Better string<->bytes conversion
+* PERFORMANCE
+** Try DataOutputStream for output (make sure to bench)
+   (out-stream [this] (-> (.getOutputStream socket)
+   (BufferedOutputStream.)
+   (DataOutputStream.)))
+** send-request! implementation is inefficient                  :in:progress:
+'send-request!' currently takes a string, converts to byte[] (for size), then
+back to string. On stream writing, we convert back to byte[].
+
+As a first step, try split up user-args and command stuff.
+** Simple stress benchmark (+ cmp. with other Clojure clients)  :in:progress:
+And add results to README.
+** redis-bench style benchmark (adapt from redis-clojure)
+** Better string<->bytes conversion                                   :maybe:
 https://groups.google.com/d/msg/jedis_redis/Pm9TVdZosCc/JartyVLWcEYJ
 http://www.javacodegeeks.com/2010/11/java-best-practices-char-to-byte-and.html
 http://3.bp.blogspot.com/_tWwHCKnIbjs/TNhnfKRmzuI/AAAAAAAAACg/oSTyA4hMOqA/s1600/chart1.png
@@ -31,7 +81,3 @@ http://1.bp.blogspot.com/_tWwHCKnIbjs/TNhnm-9iV1I/AAAAAAAAACk/55bj7PI8rwA/s1600/
 
 Might be possible to use "fast" encoding for ASCII commands, etc.? Would this
 be worth the effort? Could it be done in a simple way?
-
-Is it possible we're ALREADY doing this? e.g. cmp \+ response handling with \$.
-
-** Bench vs clj-redis, accession, redis-clojure, Jedis, redis-cli.
