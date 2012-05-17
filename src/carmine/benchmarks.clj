@@ -114,20 +114,33 @@
        (carmine/get test-key)
        (carmine/ping)))))
 
+(defn- sorted-map-by-val
+  [m]
+  (into (sorted-map-by #(compare (get m %1) (get m %2))) m))
+
 (defn bench-and-compare-clients
   [opts]
   (println "---")
   (println "Starting benchmarks with"
            (:num-threads opts) "threads and" (:num-laps opts) "laps.")
   (println "Each lap consists of 4 PINGS, 1 SET, 1 GET.")
-  (let [times {:redis-clojure 0 #_(bench-redis-clojure opts)
-               :clj-redis     0 #_(bench-clj-redis opts)
-               :accession     0 #_(bench-accession opts)
+  (let [times {:redis-clojure (bench-redis-clojure opts)
+               :clj-redis     (bench-clj-redis opts)
+               :accession     (bench-accession opts)
                :carmine       (bench-carmine opts)}]
     (println "Done!" "\n")
-    (println "Raw times:" times)))
+    (println "Raw times:" times "\n")
+    (println "Sorted relative times (smaller is better):"
+             (let [min-time (max 0.1 (apply min (vals times)))]
+               (sorted-map-by-val (zipmap (keys times)
+                                          (map #(float (/ % min-time))
+                                               (vals times))))))))
 
 (comment
+
+  (bench-and-compare-clients (make-benching-options :num-laps 10
+                                                    :num-threads 1))
+
   ;; Standard test
   (bench-and-compare-clients (make-benching-options))
 
