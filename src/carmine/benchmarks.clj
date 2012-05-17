@@ -1,4 +1,5 @@
 (ns carmine.benchmarks
+  "Tools for comparing Carmine performance to other Clojure clients."
   (:require [redis
              (core            :as redis-clojure)
              (pipeline        :as redis-clojure-pipeline)]
@@ -8,7 +9,7 @@
 
 (defn make-benching-options
   [& {:keys [num-laps num-threads val-length]
-      :or   {num-laps    1000
+      :or   {num-laps    10000
              num-threads 10
              val-length  10}}]
   {:num-laps num-laps :num-threads num-threads
@@ -16,6 +17,7 @@
    :test-val (->> (str "2 7182818284 5904523536 0287471352 6624977572"
                        "  4709369995 9574966967 6277240766 3035354759"
                        "  4571382178 5251664274")
+                  (cycle)
                   (take val-length)
                   (apply str))})
 
@@ -41,7 +43,7 @@
     (time-threaded-laps opts (Thread/sleep (:num-threads opts)))))
 
 (defn bench-redis-clojure
-  [opts]
+  [{:keys [test-key test-val] :as opts}]
   (println "Benching redis-clojure...")
   (redis-clojure/with-server {}
     (time-threaded-laps
@@ -49,7 +51,7 @@
      ;; SET pipeline
      (redis-clojure-pipeline/pipeline
       (redis-clojure/ping)
-      (redis-clojure/set test-key (:test-val opts))
+      (redis-clojure/set test-key test-val)
       (redis-clojure/ping))
 
      ;; GET pipeline
@@ -60,14 +62,14 @@
 
 (defn bench-clj-redis
   "NOTE: as of 0.0.12, clj-redis has no pipeline facility."
-  [opts]
+  [{:keys [test-key test-val] :as opts}]
   (println "Benching clj-redis...")
   (let [db (clj-redis/init)]
     (time-threaded-laps
      opts
      ;; SET (unpipelined)
      (clj-redis/ping db)
-     (clj-redis/set  db test-key (:test-val opts))
+     (clj-redis/set  db test-key test-val)
      (clj-redis/ping db)
 
      ;; GET (unpipelined)
@@ -76,7 +78,7 @@
      (clj-redis/ping db))))
 
 (defn bench-accession
-  [opts]
+  [{:keys [test-key test-val] :as opts}]
   (println "Benching Accession...")
   (let [spec (accession/connection-map)]
     (time-threaded-laps
@@ -84,7 +86,7 @@
      ;; SET pipeline
      (accession/with-connection spec
        (accession/ping)
-       (accession/set test-key (:test-val opts))
+       (accession/set test-key test-val)
        (accession/ping))
 
      ;; GET pipeline
@@ -94,7 +96,7 @@
        (accession/ping)))))
 
 (defn bench-carmine
-  [opts]
+  [{:keys [test-key test-val] :as opts}]
   (println "Benching Carmine...")
   (let [pool     (carmine/make-conn-pool)
         spec     (carmine/make-conn-spec)]
@@ -103,7 +105,7 @@
      ;; SET pipeline
      (carmine/with-conn pool spec
        (carmine/ping)
-       (carmine/set test-key (:test-val opts))
+       (carmine/set test-key test-val)
        (carmine/ping))
 
      ;; GET pipeline
@@ -116,13 +118,24 @@
   [opts]
   (println "---")
   (println "Starting benchmarks with"
-           num-threads "threads and" num-laps "laps.")
+           (:num-threads opts) "threads and" (:num-laps opts) "laps.")
   (println "Each lap consists of 4 PINGS, 1 SET, 1 GET.")
-  (let [times {:redis-clojure (bench-redis-clojure opts)
-               :clj-redis     (bench-clj-redis opts)
-               :accession     (bench-accession opts)
+  (let [times {:redis-clojure 0 #_(bench-redis-clojure opts)
+               :clj-redis     0 #_(bench-clj-redis opts)
+               :accession     0 #_(bench-accession opts)
                :carmine       (bench-carmine opts)}]
-    (println "DONE! Results: " times)))
+    (println "Done!" "\n")
+    (println "Raw times:" times)))
 
 (comment
-  (bench-and-compare-clients (make-benching-options)))
+  ;; Standard test
+  (bench-and-compare-clients (make-benching-options))
+
+  ;; High threading
+  (bench-and-compare-clients (make-benching-options :num-threads 100))
+
+  ;; No threading
+  (bench-and-compare-clients (make-benching-options :num-threads 1))
+
+  ;; Long values
+  (bench-and-compare-clients (make-benching-options :val-length 1000)))
