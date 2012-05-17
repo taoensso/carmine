@@ -28,26 +28,32 @@
   `(let [laps-per-thread# (int (/ (:num-laps ~opts) (:num-threads ~opts)))
          start-time# (System/nanoTime)]
 
-     (dotimes [_# laps-per-thread#]
-       (->> (fn [] (future ~@body))
-            (repeatedly (:num-threads ~opts))
-            (doall)
-            (map deref)
-            (doall)))
+     (try
 
-     (/ (double (- (System/nanoTime) start-time#)) 1000000.0)))
+       (dotimes [_# laps-per-thread#]
+         (->> (fn [] (future ~@body))
+              (repeatedly (:num-threads ~opts))
+              (doall)
+              (map deref)
+              (dorun)))
+
+       (/ (double (- (System/nanoTime) start-time#)) 1000000.0)
+       (catch Exception e# (println "Exception: " e#) "DNF")
+
+       ;; Give Redis server a breather
+       (finally (Thread/sleep 1000)))))
 
 (comment
   ;; Should be about equal to 'num-laps' plus some threading overhead
-  (let [opts (make-benching-options :num-threads 10 :num-laps 100)]
+  (let [opts (make-benching-options :num-threads 10 :num-laps 1000)]
     (time-threaded-laps opts (Thread/sleep (:num-threads opts)))))
 
 (defn bench-redis-clojure
   [{:keys [test-key test-val] :as opts}]
   (println "Benching redis-clojure...")
-  (redis-clojure/with-server {}
-    (time-threaded-laps
-     opts
+  (time-threaded-laps
+   opts
+   (redis-clojure/with-server {}
      ;; SET pipeline
      (redis-clojure-pipeline/pipeline
       (redis-clojure/ping)
@@ -64,9 +70,9 @@
   "NOTE: as of 0.0.12, clj-redis has no pipeline facility."
   [{:keys [test-key test-val] :as opts}]
   (println "Benching clj-redis...")
-  (let [db (clj-redis/init)]
-    (time-threaded-laps
-     opts
+  (time-threaded-laps
+   opts
+   (let [db (clj-redis/init)]
      ;; SET (unpipelined)
      (clj-redis/ping db)
      (clj-redis/set  db test-key test-val)
@@ -114,9 +120,34 @@
        (carmine/get test-key)
        (carmine/ping)))))
 
-(defn- sorted-map-by-val
+(defn- sorted-map-by-vals
+  "{:a 447.38 :b \"DNF\" :c 112.77 :d 374.47} =>
+  {:c 1.0 :d 3.3 :a 4.0 :b \"DNF\"}"
   [m]
-  (into (sorted-map-by #(compare (get m %1) (get m %2))) m))
+  (let [round-to-one-place
+        (fn [x] (float (/ (Math/round (* (double x) 10)) 10)))
+
+        ;; Like 'compare' but can handle "DNF"/number comparison
+        safe-compare (fn [x y]
+                       (cond (and (number? x) (string? y)) -1
+                             (and (string? x) (number? y)) 1
+                             :else (compare x y)))
+
+        min-time (apply min (filter number? (vals m))) ; 112.77
+
+        ;; {:a 3.9671898 :b "DNF" :c 1.0 :d 3.3206527}
+        relative-times
+        (zipmap (keys m)
+                (map (fn [t] (if-not (number? t) t
+                                    (round-to-one-place (/ t min-time))))
+                     (vals m)))]
+
+    ;; {:c 1.0, :d 3.3206527, :a 3.9671898, :b "DNF"}
+    (into (sorted-map-by #(safe-compare (get relative-times %1)
+                                        (get relative-times %2)))
+          relative-times)))
+
+(comment (sorted-map-by-vals {:a 447.38 :b "DNF" :c 112.77 :d 374.47}))
 
 (defn bench-and-compare-clients
   [opts]
@@ -131,15 +162,13 @@
     (println "Done!" "\n")
     (println "Raw times:" times "\n")
     (println "Sorted relative times (smaller is better):"
-             (let [min-time (max 0.1 (apply min (vals times)))]
-               (sorted-map-by-val (zipmap (keys times)
-                                          (map #(float (/ % min-time))
-                                               (vals times))))))))
+             (sorted-map-by-vals times))))
 
 (comment
 
-  (bench-and-compare-clients (make-benching-options :num-laps 10
-                                                    :num-threads 1))
+  ;; Easy test
+  (bench-and-compare-clients (make-benching-options :num-threads 1
+                                                    :num-laps 10))
 
   ;; Standard test
   (bench-and-compare-clients (make-benching-options))
