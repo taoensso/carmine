@@ -14,8 +14,9 @@
                                     [lein-marginalia "0.7.0"]
                                     [lein-clojars    "0.8.0"]]}
              :bench {:dependencies [[org.clojars.tavisrudd/redis-clojure "1.3.1"]
-                                    [clj-redis "0.0.12"]
-                                    [accession "0.1.1"]]}}
+                                    [clj-redis  "0.0.12"]
+                                    [accession  "0.1.1"]
+                                    #_[labs-redis "0.1.0-SNAPSHOT"]]}}
   :repositories {"sonatype" {:url "http://oss.sonatype.org/content/repositories/releases"
                              :snapshots false
                              :releases {:checksum :fail :update :always}}

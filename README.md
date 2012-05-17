@@ -6,7 +6,7 @@
 
 Plenty. Among them there's [redis-clojure](https://github.com/tavisrudd/redis-clojure), [clj-redis](https://github.com/mmcgrana/clj-redis) based on [Jedis](https://github.com/xetorthio/jedis), [Accession](https://github.com/abedra/accession), and (the newest) [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure).
 
-And yet- there remains no easy answer to an obvious question: *which one should you use?*. One choice will leave you with performance but poor feature coverage, another with reliability at the cost of flexibility or an unnecessarily awkward API.
+Each has its strengths. But these strengths often fail to overlap, leaving one with no easy answer to an obvious question: *which one should you use*?
 
 Carmine is basically an attempt to **cohesively bring together the best bits from each client**.
 
@@ -15,7 +15,7 @@ Carmine is basically an attempt to **cohesively bring together the best bits fro
  * Stop the insanity! There's *too many clients* and too many people working at reimplementing the *same things* in essentially the *same way*. By bringing together the work of others, I'm hoping to encourage more folks to **pool their efforts** and get behind one banner. (Rah-rah and all that).
  * **Modern targets**: Redis 2.0+, Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading). Full support for Redis [2.6](http://antirez.com/post/redis-2.6-is-near.html)+.
  * **Simplicity**. Redis is simple. Its [communication protocol](http://redis.io/topics/protocol) is *dead simple*. IMO everything else (including performance, reliability, [feature parity](http://redis.io/commands), even documentation!) will follow naturally from *keeping the client simple*.
- * Balance. Appreciate that simplicity needs to be gauged relative to **power**. Aim to keep the client *as simple as possible, but not one bit simpler*.
+ * Balance. Appreciate that simplicity needs to be gauged relative to capability or **power**. Aim to keep the client *as simple as possible, but not one bit simpler*.
 
 ## Getting Started
 
@@ -97,11 +97,11 @@ But what if we're pipelining?
 => ("OK" #<Exception ERR Operation against ...> "bar")
 ```
 
-## Documentation and Coverage
+## Documentation and Command Coverage
 
 Like [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure), Carmine uses the [official Redis command reference](https://github.com/antirez/redis-doc/blob/master/commands.json) to generate its own command API.
 
-This means that not only are Carmine's commands *complete* and *up-to-the-minute* but also **fully-documented**:
+This means that not only is Carmine's command coverage *always complete*, but it's also **fully documented**:
 
 ```clojure
 (use 'clojure.repl)
@@ -119,7 +119,7 @@ Time complexity: O(N+M*log(M)) where N is the number of elements in the list or 
 
 ## Getting Fancy
 
-### Commands Are Functions
+### Commands Are (Just) Functions
 
 In Carmine, Redis commands are *real functions*. Which means you can *use* them like real functions:
 
@@ -128,22 +128,37 @@ In Carmine, Redis commands are *real functions*. Which means you can *use* them 
   (doall (repeatedly 5 r/ping)))
 => ("PONG" "PONG" "PONG" "PONG" "PONG")
 
-(redis
-  (let [first-names ["Salvatore"  "Rich"]
-        surnames    ["Sanfilippo" "Hickey"]]
-    (doall (map #(r/set %1 %2) first-names surnames))
-    (doall (map r/get first-names))))
+(let [first-names ["Salvatore"  "Rich"]
+      surnames    ["Sanfilippo" "Hickey"]]
+  (redis
+   (doall (map #(r/set %1 %2) first-names surnames))
+   (doall (map r/get first-names))))
 => ("OK" "OK" "Sanfilippo" "Hickey")
 
 (redis
-  (doall (map #(r/set (str "key-" %) (rand-int 3)) (range 3)))
+  (doall (map #(r/set (str "key-" %) (rand-int 10)) (range 3)))
   (doall (map #(r/get (str "key-" %)) (range 3))))
 => ("OK" "OK" "OK" "OK" "0" "6" "6" "2")
 ```
 
+### What About Composition?
+
+Real functions can compose and so can Carmine's. By nesting `with-conn` (`redis`) calls, you can fully control how composition and pipelining interact:
+
+```clojure
+(let [hash-key "awesome-people"]
+  (redis
+    (r/hmset hash-key "Rich" "Hickey" "Salvatore" "Sanfilippo")
+    (doall (map (partial r/hget hash-key)
+                ;; Execute with own connection & pipeline, then return result
+                ;; for composition:
+                (redis (r/hkeys hash-key))))))
+=> ("OK" "Sanfilippo" "Hickey")
+```
+
 ### Listen Closely
 
-Carmine has a flexible **Listener** API to support persistent-connection features like [monitoring](http://redis.io/commands/monitor) and Redis's awesome [Publish/Subscribe](http://redis.io/topics/pubsub) feature:
+Carmine has a flexible **Listener** API to support persistent-connection features like [monitoring](http://redis.io/commands/monitor) and Redis's fantastic [Publish/Subscribe](http://redis.io/topics/pubsub) feature:
 
 ```clojure
 (def listener
