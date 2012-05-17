@@ -8,11 +8,10 @@
             [carmine.core     :as carmine]))
 
 (defn make-benching-options
-  [& {:keys [num-laps num-threads val-length]
-      :or   {num-laps    10000
-             num-threads 10
+  [& {:keys [num-laps val-length]
+      :or   {num-laps    100000
              val-length  10}}]
-  {:num-laps num-laps :num-threads num-threads
+  {:num-laps num-laps
    :test-key "this-is-a-test-key"
    :test-val (->> (str "2 7182818284 5904523536 0287471352 6624977572"
                        "  4709369995 9574966967 6277240766 3035354759"
@@ -21,39 +20,26 @@
                   (take val-length)
                   (apply str))})
 
-(defmacro time-threaded-laps
-  "Excutue body (/ 'num-laps' 'num-threads') times in 'num-threads'
-  threads. Returns how long execution took in msecs."
+(defmacro time-laps
+  "Execute body 'num-laps' times and return how long execution took in msecs
+  or \"DNF\" if laps couldn't complete."
   [opts & body]
-  `(let [laps-per-thread# (int (/ (:num-laps ~opts) (:num-threads ~opts)))
-         start-time# (System/nanoTime)]
-
+  `(let [start-time# (System/nanoTime)]
      (try
-
-       (dotimes [_# laps-per-thread#]
-         (->> (fn [] (future ~@body))
-              (repeatedly (:num-threads ~opts))
-              (doall)
-              (map deref)
-              (dorun)))
+       (dorun (repeatedly (:num-laps ~opts) (fn [] ~@body)))
 
        (/ (double (- (System/nanoTime) start-time#)) 1000000.0)
        (catch Exception e# (println "Exception: " e#) "DNF")
 
        ;; Give Redis server a breather
-       (finally (Thread/sleep 1000)))))
-
-(comment
-  ;; Should be about equal to 'num-laps' plus some threading overhead
-  (let [opts (make-benching-options :num-threads 10 :num-laps 1000)]
-    (time-threaded-laps opts (Thread/sleep (:num-threads opts)))))
+       (finally (Thread/sleep 2000)))))
 
 (defn bench-redis-clojure
   [{:keys [test-key test-val] :as opts}]
   (println "Benching redis-clojure...")
-  (time-threaded-laps
+  (time-laps
    opts
-   (redis-clojure/with-server {}
+   (redis-clojure/with-server {} ; Uses pool behind-the-scenes
      ;; SET pipeline
      (redis-clojure-pipeline/pipeline
       (redis-clojure/ping)
@@ -70,9 +56,9 @@
   "NOTE: as of 0.0.12, clj-redis has no pipeline facility."
   [{:keys [test-key test-val] :as opts}]
   (println "Benching clj-redis...")
-  (time-threaded-laps
-   opts
-   (let [db (clj-redis/init)]
+  (let [db (clj-redis/init)]
+    (time-laps
+     opts
      ;; SET (unpipelined)
      (clj-redis/ping db)
      (clj-redis/set  db test-key test-val)
@@ -87,7 +73,7 @@
   [{:keys [test-key test-val] :as opts}]
   (println "Benching Accession...")
   (let [spec (accession/connection-map)]
-    (time-threaded-laps
+    (time-laps
      opts
      ;; SET pipeline
      (accession/with-connection spec
@@ -106,7 +92,7 @@
   (println "Benching Carmine...")
   (let [pool     (carmine/make-conn-pool)
         spec     (carmine/make-conn-spec)]
-    (time-threaded-laps
+    (time-laps
      opts
      ;; SET pipeline
      (carmine/with-conn pool spec
@@ -120,64 +106,54 @@
        (carmine/get test-key)
        (carmine/ping)))))
 
-(defn- sorted-map-by-vals
-  "{:a 447.38 :b \"DNF\" :c 112.77 :d 374.47} =>
-  {:c 1.0 :d 3.3 :a 4.0 :b \"DNF\"}"
+(defn- sort-times
+  "{:a 447.38 :b \"DNF\" :c 112.77 :d 374.47 :e 374.47} =>
+  '([:c 1.0] [:d 3.3] [:e 3.3] [:a 4.0] [:b \"DNF\"])"
   [m]
-  (let [round-to-one-place
-        (fn [x] (float (/ (Math/round (* (double x) 10)) 10)))
+  (let [round #(float (/ (Math/round (double (* % 100))) 100)) ; 2 places
 
-        ;; Like 'compare' but can handle "DNF"/number comparison
-        safe-compare (fn [x y]
-                       (cond (and (number? x) (string? y)) -1
-                             (and (string? x) (number? y)) 1
-                             :else (compare x y)))
+        ;; Like standard compare, but allows comparison of strings and numbers
+        ;; (numbers always sort first)
+        mixed-compare (fn [x y] (cond (and (number? x) (string? y)) -1
+                                     (and (string? x) (number? y)) 1
+                                     :else (compare x y)))
 
         min-time (apply min (filter number? (vals m))) ; 112.77
 
-        ;; {:a 3.9671898 :b "DNF" :c 1.0 :d 3.3206527}
-        relative-times
-        (zipmap (keys m)
-                (map (fn [t] (if-not (number? t) t
-                                    (round-to-one-place (/ t min-time))))
-                     (vals m)))]
+        relative-val (fn [t] (if-not (number? t) t
+                                    (round (/ t min-time))))]
 
-    ;; {:c 1.0, :d 3.3206527, :a 3.9671898, :b "DNF"}
-    (into (sorted-map-by #(safe-compare (get relative-times %1)
-                                        (get relative-times %2)))
-          relative-times)))
+    (sort-by second mixed-compare
+             (map (fn [k] [k (relative-val (get m k))]) (keys m)))))
 
-(comment (sorted-map-by-vals {:a 447.38 :b "DNF" :c 112.77 :d 374.47}))
+(comment (sort-times {:a 447.38 :b "DNF" :c 112.77 :d 374.47 :e 374.47}))
 
 (defn bench-and-compare-clients
   [opts]
   (println "---")
-  (println "Starting benchmarks with"
-           (:num-threads opts) "threads and" (:num-laps opts) "laps.")
+  (println "Starting benchmarks with" (:num-laps opts) "laps.")
   (println "Each lap consists of 4 PINGS, 1 SET, 1 GET.")
   (let [times {:redis-clojure (bench-redis-clojure opts)
-               :clj-redis     (bench-clj-redis opts)
-               :accession     (bench-accession opts)
-               :carmine       (bench-carmine opts)}]
+               :clj-redis     (bench-clj-redis     opts)
+               ;; Doesn't seem to close its sockets!
+               ;;:accession     (bench-accession     opts)
+               :carmine       (bench-carmine       opts)}]
     (println "Done!" "\n")
     (println "Raw times:" times "\n")
-    (println "Sorted relative times (smaller is better):"
-             (sorted-map-by-vals times))))
+    (println "Sorted relative times (smaller is better):" (sort-times times))))
 
 (comment
 
-  ;; Easy test
-  (bench-and-compare-clients (make-benching-options :num-threads 1
-                                                    :num-laps 10))
+  ;; Standard
+  (bench-and-compare-clients (make-benching-options :num-laps 10000))
+  ;; '([:carmine 1.0] [:redis-clojure 1.25] [:clj-redis 1.36] [:accession "DNF")
 
-  ;; Standard test
-  (bench-and-compare-clients (make-benching-options))
+  ;; Big values
+  (bench-and-compare-clients (make-benching-options :num-laps 10000
+                                                    :val-length 1000))
+  ;; '([:carmine 1.0] [:redis-clojure 1.36] [:clj-redis 1.37] [:accession "DNF")
 
-  ;; High threading
-  (bench-and-compare-clients (make-benching-options :num-threads 100))
-
-  ;; No threading
-  (bench-and-compare-clients (make-benching-options :num-threads 1))
-
-  ;; Long values
-  (bench-and-compare-clients (make-benching-options :val-length 1000)))
+  (bench-carmine (make-benching-options :num-laps    10000
+                                        :val-length  100))
+  ;; Snapshot: +/- 1300ms
+  )

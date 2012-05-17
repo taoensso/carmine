@@ -16,8 +16,7 @@
   "For option documentation see http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html"
   [& options]
   (let [;; Defaults adapted from Jedis
-        default {:lifo?                         true
-                 :test-while-idle?              true
+        default {:test-while-idle?              true
                  :num-tests-per-eviction-run    -1
                  :min-evictable-idle-time-ms    60000
                  :time-between-eviction-runs-ms 30000}]

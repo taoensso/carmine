@@ -254,15 +254,13 @@ Helpers currently include: `zinterstore*`, `zunionstore*`, `evalsha*`, `eval*-wi
 
 ## Performance
 
-Redis is probably most famous for being [_fast_](http://redis.io/topics/benchmarks). In principle (mostly because it's so darned simple), it should be possible for Carmine to get "reasonably close to" the reference client's performance.
+Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmarks). In principle (mostly because it's so darned simple), it should be possible for Carmine to get "reasonably close to" the reference client's performance.
 
-It'll never be _as_ fast because of the JVM's string handling and the need to un/wrap before communicating with the server. But by avoiding any other unnecessary fluff, I'm hoping that it'll be possible to close-in on the theoretical maximum performance of a JVM-based client.
+It'll never be *as* fast because of the JVM's string handling and the need to un/wrap before communicating with the server. But by avoiding any other unnecessary fluff, I'm hoping that it'll be possible to close-in on the theoretical maximum performance of a JVM-based client.
 
-**NOTE**: Performance is already looking good, but there's still lots of low-hanging fruit that I'll be looking at shortly...
+Currently Carmine is *at least as fast* as the clients I've tested it against. It's usually on the order of **20% to 40% faster** depending on the environment and configuration.
 
-### Client Benchmarks
-
-TODO: Comparison benchmarks
+**NOTE**: Performance is already good, but there's still lots of low-hanging fruit that I'll be looking at shortly...
 
 ## Testing
 
