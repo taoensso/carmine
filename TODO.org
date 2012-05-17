@@ -70,9 +70,6 @@ Sort* test should be easily adaptable from redis-clojure
 back to string. On stream writing, we convert back to byte[].
 
 As a first step, try split up user-args and command stuff.
-** Simple stress benchmark (+ cmp. with other Clojure clients)  :in:progress:
-And add results to README.
-** redis-bench style benchmark (adapt from redis-clojure)
 ** Better string<->bytes conversion                                   :maybe:
 https://groups.google.com/d/msg/jedis_redis/Pm9TVdZosCc/JartyVLWcEYJ
 http://www.javacodegeeks.com/2010/11/java-best-practices-char-to-byte-and.html
