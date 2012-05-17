@@ -141,9 +141,7 @@ In Carmine, Redis commands are *real functions*. Which means you can *use* them 
 => ("OK" "OK" "OK" "OK" "0" "6" "6" "2")
 ```
 
-### What About Composition?
-
-Real functions can compose and so can Carmine's. By nesting `with-conn` (`redis`) calls, you can fully control how composition and pipelining interact:
+And since real functions can compose, so can Carmine's. By nesting `with-conn` (`redis`) calls, you can fully control how composition and pipelining interact:
 
 ```clojure
 (let [hash-key "awesome-people"]
