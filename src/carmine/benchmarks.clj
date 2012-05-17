@@ -39,7 +39,7 @@
   (println "Benching redis-clojure...")
   (time-laps
    opts
-   (redis-clojure/with-server {} ; Uses pool behind-the-scenes
+   (redis-clojure/with-server {}
      ;; SET pipeline
      (redis-clojure-pipeline/pipeline
       (redis-clojure/ping)
@@ -136,13 +136,17 @@
   (let [times {:redis-clojure (bench-redis-clojure opts)
                :clj-redis     (bench-clj-redis     opts)
                ;; Doesn't seem to close its sockets!
-               ;;:accession     (bench-accession     opts)
+               ;; :accession  (bench-accession     opts)
                :carmine       (bench-carmine       opts)}]
     (println "Done!" "\n")
     (println "Raw times:" times "\n")
     (println "Sorted relative times (smaller is better):" (sort-times times))))
 
 (comment
+
+  ;; Easy (required to get Accession to bench)
+  (bench-and-compare-clients (make-benching-options :num-laps 100))
+  ;; '([:carmine 1.0] [:redis-clojure 1.06] [:clj-redis 1.12] [:accession 1.84])
 
   ;; Standard
   (bench-and-compare-clients (make-benching-options :num-laps 10000))
