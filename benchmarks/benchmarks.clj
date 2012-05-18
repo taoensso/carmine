@@ -1,111 +1,65 @@
 (ns carmine.benchmarks
-  "Tools for comparing Carmine performance to other Clojure clients."
-  (:require [redis
-             (core            :as redis-clojure)
-             (pipeline        :as redis-clojure-pipeline)]
+  "Tools for comparing Carmine performance to other clients."
+  (:require [redis.core       :as redis-clojure]
             [clj-redis.client :as clj-redis]
             [accession.core   :as accession]
             [carmine.core     :as carmine]))
 
-;;; Setup connection pools only ONCE
-(defonce clj-redis-pool (clj-redis/init))
-(defonce carmine-pool   (carmine/make-conn-pool))
+;;;; TODO
+;; * Gather results (incl. redis-benchmark) and graph for README.
 
 (defn make-benching-options
-  [& {:keys [num-laps data-size]
-      :or   {num-laps  100000
-             data-size 32}}]
-  {:num-laps  num-laps
-   :data  (apply str (repeat (int (/ data-size 2)) "x"))
-   :k1    "carmine-benchmark:key1"
-   :k2    "carmine-benchmark:key2"})
+  [& {:keys [requests clients data-size carmine-pool carmine-spec
+             clj-redis-pool accession-spec] :as opts}]
+  (let [merged-opts (merge {:requests  10000
+                            :clients   5
+                            :data-size 32
+                            :data-key  "carmine-benchmark:data-key"} opts)]
+    (assoc merged-opts
+      :data (apply str (repeat (:data-size merged-opts) "x")))))
 
-(defmacro time-laps
-  "Execute body 'num-laps' times and return how long execution took in msecs
-  or \"DNF\" if laps couldn't complete."
+(defmacro time-requests
+  "Executes threaded requests and returns total execution time in msecs or
+  \"DNF\" if there was a problem."
   [opts & body]
-  `(let [start-time# (System/nanoTime)]
+  `(let [start-time#          (System/nanoTime)
+         requests-per-client# (int (/ (:requests ~opts)
+                                      (:clients  ~opts)))]
      (try
-       (dorun (repeatedly (:num-laps ~opts) (fn [] ~@body)))
+       (->> (fn [] (future (dotimes [_# requests-per-client#] ~@body)))
+            (repeatedly (:clients ~opts))
+            (doall) ; Make sure all the threads have started
+            (map deref)
+            (dorun) ; Wait for all the threads to complete
+            )
        (/ (double (- (System/nanoTime) start-time#)) 1000000.0)
+       (catch Exception e# (println "Exception: " e#) "DNF"))))
 
-       (catch Exception e# (println "Exception: " e#) "DNF")
-
-       ;; Give Redis server a breather
-       (finally (Thread/sleep 2000)))))
+(comment (time-requests (make-benching-options :requests 9
+                                               :clients  3)
+                        (Thread/sleep 1000)))
 
 (defn bench-redis-clojure
-  [{:keys [k1 k2 data] :as opts}]
+  [{:keys [data-key data] :as opts}]
   (println "Benching redis-clojure...")
-  (time-laps
-   opts
-   (redis-clojure/with-server {}
-     ;; SET pipeline
-     (redis-clojure-pipeline/pipeline
-      (redis-clojure/ping)
-      (redis-clojure/mset k1 data k2 data)
-      (redis-clojure/ping))
-
-     ;; GET pipeline
-     (redis-clojure-pipeline/pipeline
-      (redis-clojure/ping)
-      (redis-clojure/mget k1 k2)
-      (redis-clojure/ping)))))
+  {:ping (time-requests opts (redis-clojure/with-server {}
+                               (redis-clojure/ping)))})
 
 (defn bench-clj-redis
-  "NOTE: as of 0.0.12, clj-redis has no pipeline facility. This fact will
-  dominate timings."
-  [{:keys [k1 k2 data] :as opts}]
+  [{:keys [data-key data] db :clj-redis-pool :as opts}]
   (println "Benching clj-redis...")
-  (let [db clj-redis-pool]
-    (time-laps
-     opts
-     ;; SET (unpipelined)
-     (clj-redis/ping db)
-     (clj-redis/mset db k1 data k2 data)
-     (clj-redis/ping db)
-
-     ;; GET (unpipelined)
-     (clj-redis/ping db)
-     (clj-redis/mget db k1 k2)
-     (clj-redis/ping db))))
+  {:ping (time-requests opts (clj-redis/ping db))})
 
 (defn bench-accession
-  [{:keys [k1 k2 data] :as opts}]
+  [{:keys [data-key data] spec :accession-spec :as opts}]
   (println "Benching Accession...")
-  (let [spec (accession/connection-map)]
-    (time-laps
-     opts
-     ;; SET pipeline
-     (accession/with-connection spec
-       (accession/ping)
-       (accession/mset k1 data k2 data)
-       (accession/ping))
-
-     ;; GET pipeline
-     (accession/with-connection spec
-       (accession/ping)
-       (accession/mget k1 k2)
-       (accession/ping)))))
+  {:ping (time-requests opts (accession/with-connection spec
+                               (accession/ping)))})
 
 (defn bench-carmine
-  [{:keys [k1 k2 data] :as opts}]
+  [{:keys [data-key data] pool :carmine-pool spec :carmine-spec :as opts}]
   (println "Benching Carmine...")
-  (let [pool carmine-pool
-        spec (carmine/make-conn-spec)]
-    (time-laps
-     opts
-     ;; SET pipeline
-     (carmine/with-conn pool spec
-       (carmine/ping)
-       (carmine/mset k1 data k2 data)
-       (carmine/ping))
-
-     ;; GET pipeline
-     (carmine/with-conn pool spec
-       (carmine/ping)
-       (carmine/mget k1 k2)
-       (carmine/ping)))))
+  {:ping (time-requests opts (carmine/with-conn pool spec (carmine/ping)))})
 
 (defn- sort-times
   "{:a 447.38 :b \"DNF\" :c 112.77 :d 374.47 :e 374.47} =>
@@ -132,27 +86,37 @@
 (defn bench-and-compare-clients
   [opts]
   (println "---")
-  (println "Starting benchmarks with" (:num-laps opts) "laps.")
-  (println "Each lap consists of 4 PINGS, 1 MSET (2 keys), 1 MGET (2 keys).")
-  (let [times {:redis-clojure (bench-redis-clojure opts)
-               :clj-redis     (bench-clj-redis     opts)
+  (println "Starting benchmarks with options:" opts)
+  (let [times {;;:redis-clojure (bench-redis-clojure opts)
+               ;;:clj-redis     (bench-clj-redis     opts)
                ;; Doesn't seem to close its sockets!
                ;; :Accession  (bench-accession     opts)
                :Carmine       (bench-carmine       opts)}]
     (println "Done!" "\n")
     (println "Raw times:" times "\n")
-    (println "Sorted relative times (smaller is better):" (sort-times times))))
+    ;;(println "Sorted relative times (smaller is better):" (sort-times times))
+    ))
 
 (comment
-  (bench-and-compare-clients (make-benching-options :num-laps 1000))
-  ;; ([:Carmine 1.0] [:clj-r  edis 1.51] [:redis-clojure 1.72] [:Accession 4.19])
+  ;; Define pools and stuff only ONCE
+  (def std-opts
+    (make-benching-options :carmine-spec   (carmine/make-conn-spec)
+                           :carmine-pool   (carmine/make-conn-pool)
+                           :accession-spec (accession/connection-map)
+                           :clj-redis-pool (clj-redis/init)))
 
-  (bench-and-compare-clients (make-benching-options :num-laps 10000))
-  ;; ([:Carmine 1.0] [:clj-redis 1.58] [:redis-clojure 1.7] [:Accession "DNF"])
+  ;; Ad hoc
+  (bench-carmine       (assoc std-opts :requests 1000 :clients 1 :data-size 10))
+  (bench-accession     (assoc std-opts :requests 1000 :clients 1 :data-size 10))
+  (bench-clj-redis     (assoc std-opts :requests 1000 :clients 1 :data-size 10))
+  (bench-redis-clojure (assoc std-opts :requests 1000 :clients 1 :data-size 10))
 
-  (bench-and-compare-clients (make-benching-options :num-laps  1000
-                                                    :data-size 1000))
+  ;; Comparisons
+  (bench-and-compare-clients
+   (assoc std-opts :requests 1000 :clients 1 :data-size 10))
+
+  ;; Deprecated
+  ;; ([:Carmine 1.0] [:clj-redis 1.51] [:redis-clojure 1.72] [:Accession 4.19])
+  ;; ([:Carmine 1.0] [:clj-redis 1.58] [:redis-clojure 1.7]  [:Accession "DNF"])
   ;; ([:Carmine 1.0] [:clj-redis 1.36] [:redis-clojure 1.43] [:Accession 2.47])
-
-  (bench-carmine (make-benching-options :num-laps  10000
-                                        :data-size 100)))
+  )

@@ -1,6 +1,6 @@
 #+STARTUP: overview, hidestars
 #+TAGS: urgent in-progress maybe waiting hammock
-* Docs
+* DOCS
 * API
 ** Investigate support for byte[] in/out support                      :maybe:
 IN: Carmine already transparently supports byte[] args.
@@ -49,6 +49,8 @@ other stuff -> (.getBytes (str "`clj`" this) charset), etc.
 
 We'd also need to look for numbers and other things though - will require some
 research to know what types Redis has functions for (e.g. incr, etc.).
+
+LOOK INTO .mark and .reset for possible bulk-reply `clj` parsing.
 ** Pub/Sub reconnects support?                                      :waiting:
 Waiting on Salvatore: https://github.com/antirez/redis/issues/420
 Recall that reconnects would also require re-establishing p/subscriptions.
@@ -68,7 +70,7 @@ Likewise, watching should be trivial to impement with new Listener API.
 ** Unit-test for sort* and Lua commands.                             :urgent:
 Sort* test should be easily adaptable from redis-clojure
 ** Unit-test for very big requests (> output buffer size)            :urgent:
-* Performance
+* PERFORMANCE
 ** send-request! implementation could be more efficient
 Marginally so.
 Basically, we're currently calling (bytestring command-name) and then getting
@@ -79,3 +81,6 @@ The problem is that the Clojure reader doesn't support byte[]s, so passing
 the pre-computed bytestrings is incredibly awkward.
 
 Try find a way that isn't awkward.
+
+* MISC
+*** Pull-request to be added to official client list.
