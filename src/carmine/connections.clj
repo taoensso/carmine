@@ -4,7 +4,7 @@
   (:require [carmine.utils    :as utils]
             [carmine.protocol :as protocol])
   (:import  [java.net Socket]
-            [java.io  OutputStream BufferedInputStream DataInputStream]
+            [java.io  BufferedInputStream DataInputStream BufferedOutputStream]
             [org.apache.commons.pool      KeyedPoolableObjectFactory]
             [org.apache.commons.pool.impl GenericKeyedObjectPool]))
 
@@ -28,7 +28,8 @@
   (in-stream   [this] (-> (.getInputStream socket)
                           (BufferedInputStream.)
                           (DataInputStream.)))
-  (out-stream  [this] (-> (.getOutputStream socket)))
+  (out-stream  [this] (-> (.getOutputStream socket)
+                          (BufferedOutputStream.)))
   (conn-alive? [this]
     (if (:pubsub? spec) true ; TODO See .org file
         (= "PONG" (try (carmine.protocol/with-context-and-response this

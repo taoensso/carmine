@@ -56,7 +56,7 @@
                 "->" ~(str fn-params))
       `(defn ~(symbol fn-name) ~fn-doc-string ~fn-params
          (apply protocol/send-request! nil
-                ~command-name ~(count command-name)
+                ~command-name
                 ~@apply-params)))))
 
 (defn- get-command-reference

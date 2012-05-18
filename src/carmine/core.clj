@@ -229,6 +229,7 @@
   (conns/close-conn conn)        ; Actually close connection
 
   ;;; Basic requests
+  (with-conn (make-conn-pool) (make-conn-spec) (ping))
   (with-conn pool spec (ping))
   (with-connection spec (ping)) ; Degenerate pool
   (with-conn pool spec

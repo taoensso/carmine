@@ -3,7 +3,7 @@
   request/response protocol. Originally adapted from Accession."
   (:require [clojure.string :as str]
             [carmine.utils  :as utils])
-  (:import  [java.io OutputStream DataInputStream]))
+  (:import  [java.io DataInputStream BufferedOutputStream]))
 
 ;; Hack to allow cleaner separation of ns concerns
 (utils/declare-remote carmine.connections/in-stream
@@ -22,16 +22,42 @@
         'with-conn' to take arbitrary body forms for power & flexibility."
   nil)
 
-(def ^:private ^:const charset "UTF-8")
-(def ^:private ^:const crlf    "\r\n")
-(defn as-bytes [s] (.getBytes ^String s charset))
 (def ^:private no-context-error
   (Exception. (str "Redis commands must be executed within the context of a"
                    " connection to Redis server. See 'with-conn'.")))
 
+(def ^:private ^:const charset     "UTF-8")
+(def ^:private ^:const bytes-class (Class/forName "[B"))
+
+(defn bytestring
+  "Redis communicates with clients using a (binary-safe) byte string protocol.
+  This is the equivalent of the byte array representation of a Java String.
+  Binary safe: won't munge input that's already a byte array."
+  [x]
+  (if (instance? bytes-class x) x ; Already a bytestring
+      (.getBytes (str x) charset)))
+
+;;; Request delimiters
+(def bs-crlf ^bytes (bytestring "\r\n"))
+(def bs-*    ^bytes (bytestring "*"))
+(def bs-$    ^bytes (bytestring "$"))
+
+;;; Fns to actually send data to stream
+(defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
+(defn send-*    [^BufferedOutputStream out] (.write out bs-*    0 1))
+(defn send-$    [^BufferedOutputStream out] (.write out bs-$    0 1))
+(defn send-arg
+  "Send arbitrary argument along with information about its size:
+  $<size of arg> crlf
+  <arg data>     crlf"
+  [^BufferedOutputStream out arg]
+  (let [^bytes bs (bytestring arg)
+        size      (int (count bs))]
+    (send-$ out) (.write out ^bytes (bytestring size)) (send-crlf out)
+    (.write out bs 0 size) (send-crlf out)))
+
 (defn send-request!
-  "Actually sends a command to Redis server. First encodes command and its
-  arguments into Redis's simple bytestring-based communication protocol:
+  "Sends a command to Redis server using its byte string protocol:
 
       *<no. of args>     crlf
       [ $<size of arg N> crlf
@@ -39,25 +65,21 @@
 
   Ref: http://redis.io/topics/protocol. If explicit context isn't provided,
   uses thread-bound *context*."
-  [{:keys [out-stream] :as ?context} command-name command-name-length & args]
-  (let [context           (merge *context* ?context)
-        ^OutputStream out (or (:out-stream context)
-                              (throw no-context-error))
+  [{:keys [out-stream] :as ?context} command-name & command-args]
+  (let [context               (merge *context* ?context)
+        ^BufferedOutputStream out (or (:out-stream context)
+                                      (throw no-context-error))
+        request-args (cons command-name command-args)]
 
-        ;; This COULD be done more efficiently by working directly with bytes
-        ;; but the trade-off would be much disproportionately greater complexity
-        payload
-        (str "*" (inc (count args))  crlf ;; +1 for command itself
-             "$" command-name-length crlf
-             command-name            crlf
+    (send-* out)
+    (.write out ^bytes (bytestring (count request-args)))
+    (send-crlf out)
 
-             ;; User arguments (i.e. arguments TO command)
-             (apply str (map (fn [a] (str "$" (count (as-bytes (str a))) crlf
-                                         a crlf))
-                             args)))]
+    (dorun (map (partial send-arg out) request-args))
+    (.flush out)
 
-    (when-let [c (:atomic-reply-count context)] (swap! c inc))
-    (.write out ^bytes (as-bytes payload))))
+    ;; Keep track of how many responses are queued with server
+    (when-let [c (:atomic-reply-count context)] (swap! c inc))))
 
 (defn get-response!
   "BLOCKs to receive queued replies from Redis server. Parses and returns them.
@@ -92,10 +114,9 @@
               \: (Long/parseLong (.readLine in))
               \$ (let [data-length (Integer/parseInt (.readLine in))]
                    (when-not (neg? data-length)
-                     (let [data (byte-array data-length)
-                           crlf (byte-array 2)]
+                     (let [data (byte-array data-length)]
                        (.read in data 0 data-length)
-                       (.read in crlf 0 2)
+                       (.skip in 2) ; Final crlf
                        (String. data charset))))
               \* (let [length (Integer/parseInt (.readLine in))]
                    (doall (repeatedly length get-reply!)))
