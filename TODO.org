@@ -1,5 +1,5 @@
 #+STARTUP: overview, hidestars
-#+TAGS: urgent in-progress maybe waiting hammock
+#+TAGS: urgent in-progress maybe waiting hammock big-payoff?
 * DOCS
 * API
 ** Investigate support for byte[] in/out support                      :maybe:
@@ -71,8 +71,7 @@ Likewise, watching should be trivial to impement with new Listener API.
 Sort* test should be easily adaptable from redis-clojure
 ** Unit-test for very big requests (> output buffer size)            :urgent:
 * PERFORMANCE
-** Tweak client (esp. protocol) in response to bench results.
-** Custom client-side buffer for writes to Redis?
+** Custom client-side buffer for writes to Redis?               :big:payoff?:
 BufferedOutputStream buffers writes, but it's probably less efficient than it
 could be if we were writing directly to byte[]s in memory before handing
 anything off to the stream.
@@ -88,6 +87,9 @@ The problem is that the Clojure reader doesn't support byte[]s, so passing
 the pre-computed bytestrings is incredibly awkward.
 
 Try find a way that isn't awkward.
+
+UPDATE: Benchmarks show a pretty insignificant +/- 10ms saving per 10k requests
+if a solution can be found. Probably not worth the effort/complication.
 
 * MISC
 *** Pull-request to be added to official client list.

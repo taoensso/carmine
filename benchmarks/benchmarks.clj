@@ -155,4 +155,16 @@
 
    ;; Reference benchmark
    :redis-benchmark
-   (constantly {:ping 430 :get 460 :set 460})))
+   (constantly {:ping 430 :get 460 :set 460}))
+
+
+  ;;; Dev testing
+  (bench-carmine (opts :requests 1000 :clients 1 :data-size 100))
+  ;; {:ping 91.7, :set 104.161, :get 94.538} ; Dispatching bytestring
+
+  ;; Atom overhead: +/- 5ms per 10k PINGs
+  (time (dotimes [n 10000] (let [a (atom 0)] (swap! a inc) @a)))
+
+  ;; Command-parsing overhead: +/- 6ms per 10k PINGs
+  (time (dotimes [n 10000] (let [bs (carmine.protocol/bytestring "PING")]
+                             (int (count bs))))))

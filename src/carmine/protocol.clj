@@ -34,18 +34,18 @@
   This is the equivalent of the byte array representation of a Java String.
   Binary safe: won't munge input that's already a byte array."
   [x]
-  (if (instance? bytes-class x) x ; Already a bytestring
+  (if (instance? bytes-class x) x ; For binary safety
       (.getBytes (str x) charset)))
 
 ;;; Request delimiters
-(def bs-crlf ^bytes (bytestring "\r\n"))
-(def bs-*    ^bytes (bytestring "*"))
-(def bs-$    ^bytes (bytestring "$"))
+(def ^bytes   bs-crlf (bytestring "\r\n"))
+(def ^Integer bs-*    (int (first (bytestring "*"))))
+(def ^Integer bs-$    (int (first (bytestring "$"))))
 
 ;;; Fns to actually send data to stream
 (defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
-(defn send-*    [^BufferedOutputStream out] (.write out bs-*    0 1))
-(defn send-$    [^BufferedOutputStream out] (.write out bs-$    0 1))
+(defn send-*    [^BufferedOutputStream out] (.write out bs-*))
+(defn send-$    [^BufferedOutputStream out] (.write out bs-$))
 (defn send-arg
   "Send arbitrary argument along with information about its size:
   $<size of arg> crlf
