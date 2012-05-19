@@ -141,7 +141,7 @@ In Carmine, Redis commands are *real functions*. Which means you can *use* them 
 => ("OK" "OK" "OK" "OK" "0" "6" "6" "2")
 ```
 
-And since real functions can compose, so can Carmine's. By nesting `with-conn` (`redis`) calls, you can fully control how composition and pipelining interact:
+And since real functions can compose, so can Carmine's. By nesting `with-conn`/`redis` calls, you can fully control how composition and pipelining interact:
 
 ```clojure
 (let [hash-key "awesome-people"]
@@ -258,9 +258,9 @@ Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmar
 
 ![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart20120519.png)
 
-Accession did not finish the test. [Detailed benchmark information] (https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
+Accession could not complete the requests. [Detailed benchmark information] (https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
 
-In principle it should be possible to close-in on the theoretical maximum performance of a JVM-based client. This will be an ongoing effort.
+In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort. But please note that my concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small performance penalty to transparently support binary-safe arguments and again to support composable commands.
 
 ## Testing
 
