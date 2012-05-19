@@ -254,7 +254,11 @@ Helpers currently include: `zinterstore*`, `zunionstore*`, `evalsha*`, `eval*-wi
 
 ## Performance
 
-Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently **outperforms every Clojure client I've tested it against**.
+Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently performs well:
+
+[!Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart20120519.png)
+
+Accession did not finish the test. Detailed times are available on [Google Docs](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE)
 
 In principle it should be possible to close-in on the theoretical maximum performance of a JVM-based client. This will be an ongoing effort.
 
