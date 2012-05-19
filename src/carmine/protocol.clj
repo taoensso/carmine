@@ -117,7 +117,7 @@
                      (let [data (byte-array data-length)]
                        (.read in data 0 data-length)
                        (.skip in 2) ; Final crlf
-                       (String. data charset))))
+                       (String. data 0 data-length charset))))
               \* (let [length (Integer/parseInt (.readLine in))]
                    (doall (repeatedly length get-reply!)))
               (throw (Exception. (str "Server returned unknown reply type: "
