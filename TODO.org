@@ -1,5 +1,5 @@
 #+STARTUP: overview, hidestars
-#+TAGS: urgent in-progress maybe waiting hammock big-payoff?
+#+TAGS: urgent underway maybe waiting hammock impact
 * DOCS
 * API
 ** Investigate support for byte[] in/out support                      :maybe:
@@ -55,7 +55,7 @@ LOOK INTO .mark and .reset for possible bulk-reply `clj` parsing.
 Waiting on Salvatore: https://github.com/antirez/redis/issues/420
 Recall that reconnects would also require re-establishing p/subscriptions.
 ** More helper fns?
-*** Transaction stuff
+*** Transaction stuff                                                  :easy:
 Helper(s) for mutli, watchers, etc.?
 
 E.g. an atomic multi* helper to wrap some commands and auto-discard on a thrown
@@ -71,12 +71,23 @@ Likewise, watching should be trivial to impement with new Listener API.
 Sort* test should be easily adaptable from redis-clojure
 ** Unit-test for very big requests (> output buffer size)            :urgent:
 * PERFORMANCE
-** Custom client-side buffer for writes to Redis?               :big:payoff?:
+** Custom client-side buffer for writes to Redis?              :maybe:impact:
 BufferedOutputStream buffers writes, but it's probably less efficient than it
 could be if we were writing directly to byte[]s in memory before handing
 anything off to the stream.
 
 In this case, could probably switch to vanilla OutputStream too.
+
+UPDATE: I tried a ByteBuffer implementation and it was _very_ marginally faster
+and much more complicated (mostly because of the need to manually handle
+buffer overruns).
+** Alternative output stream type                              :maybe:impact:
+E.g. SocketChannel, unsynchronized output stream, even Jedis' own streams!
+
+Refs:
+http://www.evanjones.ca/software/java-bytebuffers.html
+http://fastutil.dsi.unimi.it/docs/it/unimi/dsi/fastutil/io/FastBufferedOutputStream.htm
+https://github.com/xetorthio/jedis/blob/master/src/main/java/redis/clients/util/RedisOutputStream.javal
 ** send-request! implementation could be more efficient
 Marginally so.
 Basically, we're currently calling (bytestring command-name) and then getting

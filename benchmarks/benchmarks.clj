@@ -122,10 +122,10 @@
 
 (comment
   ;; Define pools and stuff only ONCE
-  (defonce shared-opts {:carmine-spec   (carmine/make-conn-spec)
-                        :carmine-pool   (carmine/make-conn-pool)
-                        :accession-spec (accession/connection-map)
-                        :clj-redis-pool (clj-redis/init)})
+  (def shared-opts {:carmine-spec   (carmine/make-conn-spec)
+                    :carmine-pool   (carmine/make-conn-pool)
+                    :accession-spec (accession/connection-map)
+                    :clj-redis-pool (clj-redis/init)})
 
   (defn opts [& opts] (make-benching-options
                        (merge shared-opts (apply hash-map opts))))
@@ -160,7 +160,7 @@
 
   ;;; Dev testing
   (bench-carmine (opts :requests 1000 :clients 1 :data-size 100))
-  ;; {:ping 91.7, :set 104.161, :get 94.538} ; Dispatching bytestring
+  ;; {:ping 86.923, :set 86.607, :get 98.474} ; After good warm-up
 
   ;; Atom overhead: +/- 5ms per 10k PINGs
   (time (dotimes [n 10000] (let [a (atom 0)] (swap! a inc) @a)))

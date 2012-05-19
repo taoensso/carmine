@@ -33,7 +33,7 @@
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String.
   Binary safe: won't munge input that's already a byte array."
-  [x]
+  ^bytes [x]
   (if (instance? bytes-class x) x ; For binary safety
       (.getBytes (str x) charset)))
 
@@ -51,9 +51,9 @@
   $<size of arg> crlf
   <arg data>     crlf"
   [^BufferedOutputStream out arg]
-  (let [^bytes bs (bytestring arg)
-        size      (int (count bs))]
-    (send-$ out) (.write out ^bytes (bytestring size)) (send-crlf out)
+  (let [bs   (bytestring arg)
+        size (int (count bs))]
+    (send-$ out) (.write out (bytestring size)) (send-crlf out)
     (.write out bs 0 size) (send-crlf out)))
 
 (defn send-request!
@@ -72,7 +72,7 @@
         request-args (cons command-name command-args)]
 
     (send-* out)
-    (.write out ^bytes (bytestring (count request-args)))
+    (.write out (bytestring (count request-args)))
     (send-crlf out)
 
     (dorun (map (partial send-arg out) request-args))
