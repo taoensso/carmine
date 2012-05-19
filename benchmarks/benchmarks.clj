@@ -131,19 +131,19 @@
                        (merge shared-opts (apply hash-map opts))))
 
   ;; Ad hoc
-  (bench-carmine       (opts :requests 1000 :clients 1 :data-size 100))
-  ;; {:ping 94.761, :set 104.272, :get 100.872}
-  (bench-accession     (opts :requests 1000 :clients 1 :data-size 100))
-  ;; {:ping 270.123, :set 291.792, :get 290.766}
-  (bench-clj-redis     (opts :requests 1000 :clients 1 :data-size 100))
-  ;; {:ping 65.474, :set 73.926, :get 64.811}
-  (bench-redis-clojure (opts :requests 1000 :clients 1 :data-size 100))
-  ;; {:ping 201.87, :set 268.725, :get 241.736}
+  (bench-carmine       (opts :requests 10000 :clients 1 :data-size 100))
+  ;; {:ping 829.496, :set 933.46, :get 882.737}
+  (bench-accession     (opts :requests 10000 :clients 1 :data-size 100))
+  ;; {:ping 2418.782, :set "DNF", :get "DNF"}
+  (bench-clj-redis     (opts :requests 10000 :clients 1 :data-size 100))
+  ;; {:ping 613.685, :set 631.608, :get 620.953}
+  (bench-redis-clojure (opts :requests 10000 :clients 1 :data-size 100))
+  ;; {:ping 1585.879, :set 1833.997, :get 1882.774}
 
-  ;; ./redis-benchmark -n 1000 -d 100 -c 1
-  ;; PING-INLINE 1000 requests completed in 0.05 seconds
-  ;; SET         1000 requests completed in 0.05 seconds
-  ;; GET         1000 requests completed in 0.05 seconds
+  ;; ./redis-benchmark -n 10000 -d 100 -c 1
+  ;; PING-INLINE 1000 requests completed in 0.43 seconds
+  ;; SET         1000 requests completed in 0.46 seconds
+  ;; GET         1000 requests completed in 0.46 seconds
 
   ;; Comparisons
   (bench-and-compare-clients
@@ -155,4 +155,4 @@
 
    ;; Reference benchmark
    :redis-benchmark
-   (constantly {:ping 50 :get 50 :set 50})))
+   (constantly {:ping 430 :get 460 :set 460})))
