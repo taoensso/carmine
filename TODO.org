@@ -88,6 +88,8 @@ Refs:
 http://www.evanjones.ca/software/java-bytebuffers.html
 http://fastutil.dsi.unimi.it/docs/it/unimi/dsi/fastutil/io/FastBufferedOutputStream.htm
 https://github.com/xetorthio/jedis/blob/master/src/main/java/redis/clients/util/RedisOutputStream.javal
+
+UPD: RedisOutputStream doesn't seem to buy any extra perf.
 ** send-request! implementation could be more efficient
 Marginally so.
 Basically, we're currently calling (bytestring command-name) and then getting

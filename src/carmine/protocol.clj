@@ -42,7 +42,7 @@
 (def ^Integer bs-*    (int (first (bytestring "*"))))
 (def ^Integer bs-$    (int (first (bytestring "$"))))
 
-;;; Fns to actually send data to stream
+;;; Fns to actually send data to stream buffer
 (defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
 (defn send-*    [^BufferedOutputStream out] (.write out bs-*))
 (defn send-$    [^BufferedOutputStream out] (.write out bs-$))
