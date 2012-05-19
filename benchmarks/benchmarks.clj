@@ -5,13 +5,9 @@
             [accession.core   :as accession]
             [carmine.core     :as carmine]))
 
-;;;; TODO
-;; * Gather results (incl. redis-benchmark) and graph for README.
-;; * Tweak client (esp. protocol design) in response to results.
-
 (defn make-benching-options
   [{:keys [requests clients data-size carmine-pool carmine-spec
-             clj-redis-pool accession-spec] :as opts}]
+           clj-redis-pool accession-spec] :as opts}]
   (let [merged-opts (merge {:requests  10000
                             :clients   5
                             :data-size 32
@@ -77,7 +73,7 @@
    :get  (time-requests opts (carmine/with-conn pool spec
                                (carmine/get data-key)))})
 
-(defn- sort-times
+(defn- sort-relative-times
   "{:a 447.38 :b \"DNF\" :c 112.77 :d 374.47 :e 374.47} =>
   '([:c 1.0] [:d 3.3] [:e 3.3] [:a 4.0] [:b \"DNF\"])"
   [m]
@@ -97,21 +93,30 @@
     (sort-by second mixed-compare
              (map (fn [k] [k (relative-val (get m k))]) (keys m)))))
 
-(comment (sort-times {:a 447.38 :b "DNF" :c 112.77 :d 374.47 :e 374.47}))
+(comment
+  (sort-relative-times {:a 447.38 :b "DNF" :c 112.77 :d 374.47 :e 374.47}))
 
 (defn bench-and-compare-clients
-  [opts]
+  "(bench-and-compare-clients (make-benching-options) :carmine bench-carmine ...)"
+  [opts & client-benchmark-fn-pairs]
   (println "---")
   (println "Starting benchmarks with options:" opts)
-  (let [times {;;:redis-clojure (bench-redis-clojure opts)
-               ;;:clj-redis     (bench-clj-redis     opts)
-               ;; Doesn't seem to close its sockets!
-               ;; :Accession  (bench-accession     opts)
-               :Carmine       (bench-carmine       opts)}]
-    (println "Done!" "\n")
-    (println "Raw times:" times "\n")
-    ;;(println "Sorted relative times (smaller is better):" (sort-times times))
-    ))
+  (let [times (let [m (apply hash-map client-benchmark-fn-pairs)]
+                (zipmap (keys m)
+                        (map (fn [bench-fn] (bench-fn opts)) (vals m))))]
+    (println "Done!\n")
+    (println "RAW TIMES:\n" times "\n")
+
+    ;; Analysis
+    (let [clients  (keys times)
+          subtests (keys (get times (first clients)))
+          times-by-test
+          (apply merge-with (partial merge-with merge)
+                 (for [s subtests c clients] {s {c (get-in times [c s])}}))]
+
+      (println "SORTED RELATIVE TIMES (smaller is better):\n"
+               (zipmap (keys times-by-test)
+                       (map sort-relative-times (vals times-by-test)))))))
 
 (comment
   ;; Define pools and stuff only ONCE
@@ -135,5 +140,12 @@
 
   ;; Comparisons
   (bench-and-compare-clients
-   (assoc std-opts :requests 1000 :clients 1 :data-size 10))
-  )
+   (assoc std-opts :requests 1000 :clients 1 :data-size 10)
+   :carmine       bench-carmine
+   :redis-clojure bench-redis-clojure
+   ;; :clj-redis     bench-clj-redis
+   ;; :accession     bench-accession ; WARNING: Doesn't seem to close sockets!
+
+   ;; Reference benchmark ; TODO
+   :redis-benchmark
+   (constantly {:ping 100 :get 100 :set 100})))

@@ -71,6 +71,13 @@ Likewise, watching should be trivial to impement with new Listener API.
 Sort* test should be easily adaptable from redis-clojure
 ** Unit-test for very big requests (> output buffer size)            :urgent:
 * PERFORMANCE
+** Tweak client (esp. protocol) in response to bench results.
+** Custom client-side buffer for writes to Redis?
+BufferedOutputStream buffers writes, but it's probably less efficient than it
+could be if we were writing directly to byte[]s in memory before handing
+anything off to the stream.
+
+In this case, could probably switch to vanilla OutputStream too.
 ** send-request! implementation could be more efficient
 Marginally so.
 Basically, we're currently calling (bytestring command-name) and then getting
