@@ -260,7 +260,7 @@ Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmar
 
 Accession could not complete the requests. [Detailed benchmark information] (https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
 
-In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort. But please note that my concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small performance penalty to transparently support binary-safe arguments and again to support composable commands.
+In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort. But please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again to have composable commands.
 
 ## Testing
 
