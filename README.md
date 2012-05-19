@@ -258,7 +258,7 @@ Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmar
 
 ![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart20120519.png)
 
-Accession did not finish the test. Detailed times are available on [Google Docs](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE)
+Accession did not finish the test. [Detailed benchmark information] (https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
 
 In principle it should be possible to close-in on the theoretical maximum performance of a JVM-based client. This will be an ongoing effort.
 
