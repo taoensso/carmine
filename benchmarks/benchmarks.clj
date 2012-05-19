@@ -30,7 +30,9 @@
             (dorun) ; Wait for all the threads to complete
             )
        (/ (double (- (System/nanoTime) start-time#)) 1000000.0)
-       (catch Exception e# (println "Exception: " e#) "DNF"))))
+       (catch Exception e# (println "Exception: " e#) "DNF")
+       (finally (Thread/sleep 500)) ; Let server rest
+       )))
 
 (comment (time-requests (make-benching-options {:requests 9
                                                 :clients  3})
@@ -138,14 +140,19 @@
   (bench-redis-clojure (opts :requests 1000 :clients 1 :data-size 100))
   ;; {:ping 201.87, :set 268.725, :get 241.736}
 
+  ;; ./redis-benchmark -n 1000 -d 100 -c 1
+  ;; PING-INLINE 1000 requests completed in 0.05 seconds
+  ;; SET         1000 requests completed in 0.05 seconds
+  ;; GET         1000 requests completed in 0.05 seconds
+
   ;; Comparisons
   (bench-and-compare-clients
-   (assoc std-opts :requests 1000 :clients 1 :data-size 10)
+   (assoc shared-opts :requests 1000 :clients 1 :data-size 100)
    :carmine       bench-carmine
    :redis-clojure bench-redis-clojure
-   ;; :clj-redis     bench-clj-redis
-   ;; :accession     bench-accession ; WARNING: Doesn't seem to close sockets!
+   :clj-redis     bench-clj-redis
+   :accession     bench-accession ; WARNING: Doesn't seem to close sockets!
 
-   ;; Reference benchmark ; TODO
+   ;; Reference benchmark
    :redis-benchmark
-   (constantly {:ping 100 :get 100 :set 100})))
+   (constantly {:ping 50 :get 50 :set 50})))
