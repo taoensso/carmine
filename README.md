@@ -49,7 +49,7 @@ Unless you need the added flexibility of specifying the pool and spec for each r
 ```clojure
 (defmacro redis
   "Basically like (partial with-conn pool spec-server1)."
-  [& body] `(conns/with-conn pool spec-server1 ~@body))
+  [& body] `(r/with-conn pool spec-server1 ~@body))
 ```
 
 ### Basic Commands
@@ -91,7 +91,7 @@ Carmine understands Clojure's rich data types and lets you use them with Redis p
 (redis
   (r/set "clj-key" {:keyword [(/ 22 7) "Boo!"] :cool? true})
   (r/get "clj-key"))
-=> ("OK" {:keyword [22/7 "Boo!" :cool? true]})
+=> ("OK" {:keyword [22/7 "Boo!"] :cool? true})
 ```
 
 Any argument to a Redis command that's *not* a string will be automatically serialized using a **high-speed, binary-safe protocol** that falls back to Clojure's own Reader for tougher jobs.
