@@ -1,10 +1,11 @@
-(defproject carmine "0.8.0-SNAPSHOT"
+(defproject carmine "0.8.1-SNAPSHOT"
   :description "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
   :url "https://github.com/ptaoussanis/carmine"
   :license {:name "Eclipse Public License"}
-  :dependencies [[commons-pool/commons-pool   "1.6"]
-                 [commons-codec/commons-codec "1.6"]
-                 [org.clojure/data.json       "0.1.2"
+  :dependencies [[commons-pool/commons-pool     "1.6"]
+                 [commons-codec/commons-codec   "1.6"]
+                 [org.xerial.snappy/snappy-java "1.0.4.1"]
+                 [org.clojure/data.json         "0.1.2"
                   :exclusions [org.clojure/clojure]]]
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
              :1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}

@@ -31,7 +31,7 @@
   {:host host :port port :password password :timeout timeout :db db})
 
 (defmacro with-conn
-  "Evaluates body in the context of a pooled connection to Redis server. Body
+  "Evaluates body in the context of a pooled connection to a Redis server. Body
   may contain Redis commands and functions of Redis commands (e.g. 'map').
 
   Sends full request to server as pipeline and returns the server's response.
@@ -40,24 +40,14 @@
   Use 'make-conn-pool' and 'make-conn-spec' to generate the required arguments."
   [connection-pool connection-spec & body]
   `(try
-     (let [conn# (conns/get-conn ~connection-pool ~connection-spec)]
+     (let [pool# (or ~connection-pool conns/non-pooled-connection-pool)
+           spec# (or ~connection-spec (make-conn-spec))
+           conn# (conns/get-conn pool# spec#)]
        (try
          (let [response# (protocol/with-context-and-response conn# ~@body)]
-           (conns/release-conn ~connection-pool conn#)
-           response#)
-
-         ;; Failed to execute body
-         (catch Exception e# (conns/release-conn ~connection-pool conn# e#)
-                (throw e#))))
-     ;; Failed to get connection from pool
+           (conns/release-conn pool# conn#) response#)
+         (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#))))
      (catch Exception e# (throw e#))))
-
-;; For compatibility with other clients
-(defmacro with-connection
-  "DEPRECATED. Use 'with-conn' instead.
-  Like 'with-conn' but uses a one-time, NON-pooled connection."
-  [connection-spec & body]
-  `(with-conn conns/non-pooled-connection-pool ~connection-spec ~@body))
 
 ;;;; Standard commands
 
@@ -69,13 +59,13 @@
   "Like 'zinterstore' but automatically counts keys."
   [dest-key source-keys & options]
   (apply zinterstore dest-key
-         (count source-keys) (concat source-keys options)))
+         (str (count source-keys)) (concat source-keys options)))
 
 (defn zunionstore*
   "Like 'zunionstore' but automatically counts keys."
   [dest-key source-keys & options]
   (apply zunionstore dest-key
-         (count source-keys) (concat source-keys options)))
+         (str (count source-keys)) (concat source-keys options)))
 
 ;; Adapted from redis-clojure
 (defn- parse-sort-args [args]
@@ -101,7 +91,7 @@
           (throw (Exception. (str "Unknown sort argument: " type))))))))
 
 (defn sort*
-  "Like 'sort' but supports Clojure-idiomatic arguments: :by pattern,
+  "Like 'sort' but supports idiomatic Clojure arguments: :by pattern,
   :limit offset count, :get pattern, :mget patterns, :store destination,
   :alpha, :asc, :desc."
   [key & sort-args]
@@ -229,9 +219,9 @@
   (conns/close-conn conn)        ; Actually close connection
 
   ;;; Basic requests
+  (with-conn nil nil (ping)) ; Degenerate pool, default spec
   (with-conn (make-conn-pool) (make-conn-spec) (ping))
   (with-conn pool spec (ping))
-  (with-connection spec (ping)) ; Degenerate pool
   (with-conn pool spec
     (ping)
     (set "key" "value")
@@ -246,8 +236,7 @@
   ;;; Advanced requests
   (with-conn pool spec (doall (repeatedly 5 ping)))
   (with-conn pool spec
-    (doall
-     (map set ["bob" "sam" "steve"] ["carell" "black" "irwin"])))
+    (doall (map set ["bob" "sam" "steve"] ["carell" "black" "irwin"])))
 
   ;;; Pub/Sub
   (def listener
@@ -270,4 +259,18 @@
   ;;; Lua
   (eval*-with-conn pool spec
     "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
-    2 "key1" "key2" "arg1" "arg2"))
+    2 "key1" "key2" "arg1" "arg2")
+
+  ;;; Binary-safety
+  (with-conn nil nil
+    (set "key1" (byte-array [(byte 3) (byte 1) (byte 4)]))
+    (get "key1"))
+  (seq (first (with-conn nil nil (get "key1"))))
+
+  ;;; Serialization
+  (with-conn nil nil
+    (set "str-key"   "string")
+    (set "float-key" 22)
+    (set "bool-key"  true)
+    (set "coll-key"  [:a :A :b :B :c :C])
+    (doall (map get ["str-key" "float-key" "bool-key" "coll-key"]))))

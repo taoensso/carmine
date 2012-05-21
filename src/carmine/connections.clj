@@ -16,15 +16,14 @@
 ;; Interface for socket connections to Redis server
 (defprotocol IConnection
   (get-spec    [conn])
-  (close-conn  [conn])
   (in-stream   [conn])
   (out-stream  [conn])
-  (conn-alive? [conn]))
+  (conn-alive? [conn])
+  (close-conn  [conn]))
 
 (defrecord Connection [^Socket socket spec]
   IConnection
   (get-spec    [this] spec)
-  (close-conn  [this] (.close socket))
   (in-stream   [this] (-> (.getInputStream socket)
                           (BufferedInputStream.)
                           (DataInputStream.)))
@@ -34,7 +33,8 @@
     (if (:pubsub? spec) true ; TODO See .org file
         (= "PONG" (try (carmine.protocol/with-context-and-response this
                          (carmine.core/ping))
-                       (catch Exception _))))))
+                       (catch Exception _)))))
+  (close-conn  [this] (.close socket)))
 
 ;; Interface for a pool of socket connections
 (defprotocol IConnectionPool

@@ -1,6 +1,6 @@
 (ns carmine.test.core
   (:use [clojure.test])
-  (:require [carmine (core :as r) (protocol :as protocol)]))
+  (:require [carmine (core :as r) (serialization :as ser)]))
 
 (def p (r/make-conn-pool))
 (def s (r/make-conn-spec))
@@ -16,10 +16,6 @@
   (is (= 0 (wc (r/exists "singularity"))))
   (wc (r/set "singularity" "exists"))
   (is (= 1 (wc (r/exists "singularity")))))
-
-;; Note this test fails when evaluating step-by-step in REPL
-(deftest test-keys
-  (is (= '("resource:lock" "singularity") (wc (r/keys "*")))))
 
 (deftest test-set-get
   (is (= "OK" (wc (r/set "server:name" "fido"))))
@@ -70,13 +66,14 @@
   (is (= "OK" (wc (r/set "spanish" "year->año"))))
   (is (= "year->año" (wc (r/get "spanish")))))
 
-(deftest test-non-string-params
-  (is (= "OK" (wc (r/set "statement" "I am doing well"))))
-  (is (= "doing well" (wc (r/getrange "statement" 5 14))))
-  (wc (r/rpush "alist" "A")
-      (r/rpush "alist" "B")
-      (r/lpush "alist" "C"))
-  (is (= ["A" "B"]) (wc (r/lrange "alist" 0 2))))
+;; Deprecated as of 0.8.4 due to auto-serialization
+;; (deftest test-non-string-params
+;;   (is (= "OK" (wc (r/set "statement" "I am doing well"))))
+;;   (is (= "doing well" (wc (r/getrange "statement" 5 14))))
+;;   (wc (r/rpush "alist" "A")
+;;       (r/rpush "alist" "B")
+;;       (r/lpush "alist" "C"))
+;;   (is (= ["A" "B"]) (wc (r/lrange "alist" 0 2))))
 
 (deftest test-error-handling
   (wc (r/set "str-field" "str-value"))
@@ -217,5 +214,9 @@
                       '("unsubscribe" "ps-foo" 1)
                       '("pmessage"    "ps-*"   "ps-foo" "four")
                       '("pmessage"    "ps-*"   "ps-baz" "five")]))))
+
+(deftest test-serialization
+  (wc (r/set "stress-data" ser/stress-data))
+  (is (= ser/stress-data (wc (r/get "stress-data")))))
 
 (wc (r/flushall)) ; Leave with a fresh db

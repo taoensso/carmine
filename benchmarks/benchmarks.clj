@@ -38,42 +38,45 @@
                                                 :clients  3})
                         (Thread/sleep 1000)))
 
+(defmacro wrc [& body]
+  `(time-requests ~'opts (redis-clojure/with-server {} ~@body)))
+
 (defn bench-redis-clojure
   [{:keys [data-key data] :as opts}]
   (println "Benching redis-clojure...")
-  {:ping (time-requests opts (redis-clojure/with-server {}
-                               (redis-clojure/ping)))
-   :set  (time-requests opts (redis-clojure/with-server {}
-                               (redis-clojure/set data-key data)))
-   :get  (time-requests opts (redis-clojure/with-server {}
-                               (redis-clojure/get data-key)))})
+  {:ping (wrc (redis-clojure/ping))
+   :set  (wrc (redis-clojure/set data-key data))
+   :get  (wrc (redis-clojure/get data-key))})
+
+(defmacro wcr [& body]
+  `(time-requests ~'opts (-> ~'db ~@body)))
 
 (defn bench-clj-redis
   [{:keys [data-key data] db :clj-redis-pool :as opts}]
   (println "Benching clj-redis...")
-  {:ping (time-requests opts (clj-redis/ping db))
-   :set  (time-requests opts (clj-redis/set db data-key data))
-   :get  (time-requests opts (clj-redis/get db data-key))})
+  {:ping (wcr (clj-redis/ping))
+   :set  (wcr (clj-redis/set data-key data))
+   :get  (wcr (clj-redis/get data-key))})
+
+(defmacro wa [& body]
+  `(time-requests ~'opts (accession/with-connection ~'spec ~@body)))
 
 (defn bench-accession
   [{:keys [data-key data] spec :accession-spec :as opts}]
   (println "Benching Accession...")
-  {:ping (time-requests opts (accession/with-connection spec
-                               (accession/ping)))
-   :set  (time-requests opts (accession/with-connection spec
-                               (accession/set data-key data)))
-   :get  (time-requests opts (accession/with-connection spec
-                               (accession/get data-key)))})
+  {:ping (wa (accession/ping))
+   :set  (wa (accession/set data-key data))
+   :get  (wa (accession/get data-key))})
+
+(defmacro wc [& body]
+  `(time-requests ~'opts (carmine/with-conn ~'pool ~'spec ~@body)))
 
 (defn bench-carmine
   [{:keys [data-key data] pool :carmine-pool spec :carmine-spec :as opts}]
   (println "Benching Carmine...")
-  {:ping (time-requests opts (carmine/with-conn pool spec
-                               (carmine/ping)))
-   :set  (time-requests opts (carmine/with-conn pool spec
-                               (carmine/set data-key data)))
-   :get  (time-requests opts (carmine/with-conn pool spec
-                               (carmine/get data-key)))})
+  {:ping (wc (carmine/ping))
+   :set  (wc (carmine/set data-key data))
+   :get  (wc (carmine/get data-key))})
 
 (defn- sort-relative-times
   "{:a 447.38 :b \"DNF\" :c 112.77 :d 374.47 :e 374.47} =>
@@ -132,7 +135,8 @@
 
   ;; Ad hoc
   (bench-carmine       (opts :requests 10000 :clients 1 :data-size 100))
-  ;; {:ping 829.496, :set 933.46, :get 882.737}
+  ;; {:ping 829.496, :set 933.46,  :get 882.737}
+  ;; {:ping 865.845, :set 979.341, :get 986.603} ; With full bin, clj support
   (bench-accession     (opts :requests 10000 :clients 1 :data-size 100))
   ;; {:ping 2418.782, :set "DNF", :get "DNF"}
   (bench-clj-redis     (opts :requests 10000 :clients 1 :data-size 100))
@@ -151,20 +155,16 @@
    :carmine       bench-carmine
    :redis-clojure bench-redis-clojure
    :clj-redis     bench-clj-redis
-   :accession     bench-accession ; WARNING: Doesn't seem to close sockets!
+   ;;:accession     bench-accession ; WARNING: Doesn't seem to close sockets!
 
    ;; Reference benchmark
    :redis-benchmark
    (constantly {:ping 430 :get 460 :set 460}))
 
-
   ;;; Dev testing
-  (bench-carmine (opts :requests 1000 :clients 1 :data-size 100))
-  ;; {:ping 86.923, :set 86.607, :get 98.474} ; After good warm-up
+  (bench-carmine (opts :requests 10000 :clients 1 :data-size 1000)) ; Warm-up
+  (bench-carmine (opts :requests 1000  :clients 1 :data-size 100))
+  ;; {:ping 86.923, :set 86.607,  :get 98.474}  ; After good warm-up
+  ;; {:ping 92.654, :set 106.562, :get 112.864} ; After w/u, with bin, clj!
 
-  ;; Atom overhead: +/- 5ms per 10k PINGs
-  (time (dotimes [n 10000] (let [a (atom 0)] (swap! a inc) @a)))
-
-  ;; Command-parsing overhead: +/- 6ms per 10k PINGs
-  (time (dotimes [n 10000] (let [bs (carmine.protocol/bytestring "PING")]
-                             (int (count bs))))))
+  )

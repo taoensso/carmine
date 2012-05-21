@@ -2,7 +2,7 @@
   "Facilities for actually communicating with Redis server using its
   request/response protocol. Originally adapted from Accession."
   (:require [clojure.string :as str]
-            [carmine.utils  :as utils])
+            [carmine (utils :as utils) (serialization :as ser)])
   (:import  [java.io DataInputStream BufferedOutputStream]))
 
 ;; Hack to allow cleaner separation of ns concerns
@@ -31,30 +31,50 @@
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
-  This is the equivalent of the byte array representation of a Java String.
-  Binary safe: won't munge input that's already a byte array."
-  ^bytes [x]
-  (if (instance? bytes-class x) x ; For binary safety
-      (.getBytes (str x) charset)))
+  This is the equivalent of the byte array representation of a Java String."
+  ^bytes [^String s] (.getBytes s charset))
 
 ;;; Request delimiters
-(def ^bytes   bs-crlf (bytestring "\r\n"))
-(def ^Integer bs-*    (int (first (bytestring "*"))))
-(def ^Integer bs-$    (int (first (bytestring "$"))))
+(def ^bytes   bs-crlf  (bytestring "\r\n"))
+(def ^Integer bs-*     (int (first (bytestring "*"))))
+(def ^Integer bs-$     (int (first (bytestring "$"))))
+
+;; Carmine-only markers that'll be used _within_ bulk data to indicate that
+;; the data requires special reply handling. Note the inclusion of
+;; commonly-escaped characters to help mitigate risk of injection attack.
+(def ^bytes   bs-bin   (bytestring ">\u0000'")) ; Binary data marker
+(def ^bytes   bs-clj   (bytestring "<\u0000'")) ; Serialized data marker
 
 ;;; Fns to actually send data to stream buffer
 (defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
+(defn send-bin  [^BufferedOutputStream out] (.write out bs-bin  0 3))
+(defn send-clj  [^BufferedOutputStream out] (.write out bs-clj  0 3))
 (defn send-*    [^BufferedOutputStream out] (.write out bs-*))
 (defn send-$    [^BufferedOutputStream out] (.write out bs-$))
 (defn send-arg
   "Send arbitrary argument along with information about its size:
   $<size of arg> crlf
-  <arg data>     crlf"
+  <arg data>     crlf
+
+  Binary arguments will be passed through un-munged.
+  String arguments will be turned into byte strings.
+  All other arguments (including numbers!) will be serialized."
   [^BufferedOutputStream out arg]
-  (let [bs   (bytestring arg)
-        size (int (count bs))]
-    (send-$ out) (.write out (bytestring size)) (send-crlf out)
-    (.write out bs 0 size) (send-crlf out)))
+  (let [type (cond (string? arg)               :str ; Check most common first!
+                   (instance? bytes-class arg) :bin
+                   :else                       :clj)
+
+        ^bytes ba (case type
+                    :str (bytestring arg)
+                    :bin arg
+                    :clj (ser/freeze-to-bytes arg :compress? true))
+
+        payload-size (alength ba)
+        data-size    (if (= type :str) payload-size (+ payload-size 3))]
+
+    (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
+    (case type :bin (send-bin out) :clj (send-clj out) nil) ; Add marker
+    (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!
   "Sends a command to Redis server using its byte string protocol:
@@ -72,7 +92,7 @@
         request-args (cons command-name command-args)]
 
     (send-* out)
-    (.write out (bytestring (count request-args)))
+    (.write out (bytestring (str (count request-args))))
     (send-crlf out)
 
     (dorun (map (partial send-arg out) request-args))
@@ -80,6 +100,8 @@
 
     ;; Keep track of how many responses are queued with server
     (when-let [c (:atomic-reply-count context)] (swap! c inc))))
+
+(defn =ba? [^bytes x ^bytes y] (java.util.Arrays/equals x y))
 
 (defn get-response!
   "BLOCKs to receive queued replies from Redis server. Parses and returns them.
@@ -112,14 +134,35 @@
               \+ (.readLine in)
               \- (Exception. (.readLine in))
               \: (Long/parseLong (.readLine in))
-              \$ (let [data-length (Integer/parseInt (.readLine in))]
-                   (when-not (neg? data-length)
-                     (let [data (byte-array data-length)]
-                       (.read in data 0 data-length)
+
+              ;; Bulk data replies need checking for special in-data markers
+              \$ (let [data-size (Integer/parseInt (.readLine in))]
+                   (when-not (neg? data-size)
+                     (let [possibly-special-type? (> data-size 3)
+                           type (or (when possibly-special-type?
+                                      (.mark in 3)
+                                      (let [h (byte-array 3)]
+                                        (.read in h 0 3)
+                                        (condp =ba? h
+                                          bs-clj :clj
+                                          bs-bin :bin
+                                          nil))) :str)
+
+                           str?         (= type :str)
+                           payload-size (if str? data-size (- data-size 3))
+                           payload      (byte-array payload-size)]
+
+                       (when (and possibly-special-type? str? (.reset in)))
+                       (.read in payload 0 payload-size)
                        (.skip in 2) ; Final crlf
-                       (String. data 0 data-length charset))))
-              \* (let [length (Integer/parseInt (.readLine in))]
-                   (doall (repeatedly length get-reply!)))
+
+                       (case type
+                         :str (String. payload 0 ^Integer payload-size charset)
+                         :clj (ser/thaw-from-bytes payload true)
+                         :bin [payload payload-size]))))
+
+              \* (let [count (Integer/parseInt (.readLine in))]
+                   (doall (repeatedly count get-reply!)))
               (throw (Exception. (str "Server returned unknown reply type: "
                                       reply-type))))))]
 
