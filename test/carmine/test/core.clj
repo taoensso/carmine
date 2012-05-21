@@ -66,7 +66,7 @@
   (is (= "OK" (wc (r/set "spanish" "year->año"))))
   (is (= "year->año" (wc (r/get "spanish")))))
 
-;; Deprecated as of 0.8.4 due to auto-serialization
+;; Deprecated as of 0.8.1 due to auto-serialization
 ;; (deftest test-non-string-params
 ;;   (is (= "OK" (wc (r/set "statement" "I am doing well"))))
 ;;   (is (= "doing well" (wc (r/getrange "statement" 5 14))))
