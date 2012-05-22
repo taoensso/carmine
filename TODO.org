@@ -1,6 +1,7 @@
 #+STARTUP: overview, hidestars
-#+TAGS: urgent underway maybe waiting hammock
+#+TAGS: urgent underway maybe waiting hammock next
 * DOCS
+** Split README stuff up into GitHub wiki pages.                       :next:
 * API
 ** Pub/Sub reconnects support?                                      :waiting:
 Waiting on Salvatore: https://github.com/antirez/redis/issues/420
@@ -47,4 +48,5 @@ Try find a way that isn't awkward.
 UPDATE: Benchmarks show a pretty insignificant +/- 10ms saving per 10k requests
 if a solution can be found. Probably not worth the effort/complication.
 * MISC
-*** Finalize pull-request to be added to official client list.     :underway:
+** Finalize pull-request to be added to official client list.      :underway:
+** Officially announce.                                                :next:
