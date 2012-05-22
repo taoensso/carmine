@@ -18,6 +18,9 @@ implement.
 
 Likewise, watching should be trivial to impement with new Listener API.
 * TESTS                                                              :urgent:
+** URGENT: Testing currently flushes entire db. Shouldn't.           :urgent:
+Just use a prepend like "Carmine:" for all keys- then delete those as
+necessary. This is ridiculous.
 ** Unit-test for all other commands (adapt from redis-clojure!!)     :urgent:
 ** Unit-test for sort* and Lua commands.                             :urgent:
 Sort* test should be easily adaptable from redis-clojure

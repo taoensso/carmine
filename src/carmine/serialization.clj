@@ -153,7 +153,7 @@
 ;;;; Thawing
 
 (defmacro case-eval
-  "Like case but evaluates test constants for their compile-time value."
+  "Like 'case' but evaluates test constants for their compile-time value."
   [e & clauses]
   (let [;; Don't evaluate default expression!
         default (when (odd? (count clauses)) (last clauses))
