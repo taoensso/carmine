@@ -244,8 +244,12 @@
                       '("pmessage"    "ps-*"   "ps-baz" "five")]))))
 
 (deftest test-serialization
-  (let [k (test-key "stress-data")]
-    (wc (r/set k ser/stress-data))
-    (is (= ser/stress-data (wc (r/get k))))))
+  (let [k1 (test-key "stress-data")
+        k2 (test-key "stress-data-hash")]
+    (wc (r/set k1 ser/stress-data))
+    (is (= ser/stress-data (wc (r/get k1))))
+    (wc (r/hmset k2 "field1" ser/stress-data "field2" "just a string"))
+    (is (= ser/stress-data (wc (r/hget k2 "field1"))))
+    (is (= "just a string" (wc (r/hget k2 "field2"))))))
 
 (clean-up!) ; Leave with a fresh db
