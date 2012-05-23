@@ -22,9 +22,8 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 
 ## Status
 
-Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. Don't say I didn't warn you, because I did.
+Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
 
-To run tests against all supported Clojure versions, use
 ```bash
 lein2 all test
 ```
