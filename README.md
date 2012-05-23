@@ -18,7 +18,16 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Composable, **first-class command functions**.
  * Flexible, high-performance **binary-safe serialization**.
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
- * **Command helpers**.
+ * **Command helpers** ('sort*', etc.).
+
+## Status
+
+Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. Don't say I didn't warn you, because I did.
+
+To run tests against all supported Clojure versions, use
+```bash
+lein2 all test
+```
 
 ## Getting Started
 
@@ -35,7 +44,7 @@ Depend on `[carmine "0.8.1-SNAPSHOT"]` in your `project.clj` and `require` the l
 You'll usually want to define one connection pool and spec that you'll reuse:
 
 ```clojure
-(def pool (r/make-conn-pool :test-while-idle true))
+(def pool (r/make-conn-pool :test-while-idle? true))
 (def spec-server1 (r/make-conn-spec :host     "127.0.0.1"
                                     :port     9000
                                     :password "foobar"
@@ -292,15 +301,6 @@ Accession could not complete the requests. [Detailed benchmark information] (htt
 In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort but please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again for composable commands. 
 
 Likewise, I'll happily trade a little less throughput for simpler code.
-
-## Testing
-
-Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. Don't say I didn't warn you, because I did.
-
-To run tests against all supported Clojure versions, use
-```bash
-lein2 all test
-```
 
 ## Contact & Contribution
 
