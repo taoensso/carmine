@@ -252,4 +252,16 @@
     (is (= ser/stress-data (wc (r/hget k2 "field1"))))
     (is (= "just a string" (wc (r/hget k2 "field2"))))))
 
+(deftest test-prohibited
+  (let [k (test-key "prohibited")]
+    (wc (r/set k nil))
+    (is (= nil (wc (r/get k))))
+    (wc (r/set k ""))
+    (is (= "" (wc (r/get k))))
+    (wc (r/set k " "))
+    (is (= " " (wc (r/get k))))
+    (wc (r/set k (byte-array 0)))
+    (is (= 0 (second (wc (r/get k)))))
+    (is (thrown? Exception (wc (r/set k "\u0000Foobar"))))))
+
 (clean-up!) ; Leave with a fresh db

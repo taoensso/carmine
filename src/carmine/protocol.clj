@@ -40,15 +40,14 @@
 (def ^Integer bs-$     (int (first (bytestring "$"))))
 
 ;; Carmine-only markers that'll be used _within_ bulk data to indicate that
-;; the data requires special reply handling. Note the inclusion of
-;; commonly-escaped characters to help mitigate risk of injection attack.
-(def ^bytes   bs-bin   (bytestring ">\u0000'")) ; Binary data marker
-(def ^bytes   bs-clj   (bytestring "<\u0000'")) ; Serialized data marker
+;; the data requires special reply handling
+(def ^bytes bs-bin     (bytestring "\u0000<")) ; Binary data marker
+(def ^bytes bs-clj     (bytestring "\u0000>")) ; Serialized data marker
 
 ;;; Fns to actually send data to stream buffer
 (defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
-(defn send-bin  [^BufferedOutputStream out] (.write out bs-bin  0 3))
-(defn send-clj  [^BufferedOutputStream out] (.write out bs-clj  0 3))
+(defn send-bin  [^BufferedOutputStream out] (.write out bs-bin  0 2))
+(defn send-clj  [^BufferedOutputStream out] (.write out bs-clj  0 2))
 (defn send-*    [^BufferedOutputStream out] (.write out bs-*))
 (defn send-$    [^BufferedOutputStream out] (.write out bs-$))
 (defn send-arg
@@ -70,7 +69,14 @@
                     :clj (ser/freeze-to-bytes arg :compress? true))
 
         payload-size (alength ba)
-        data-size    (if (= type :str) payload-size (+ payload-size 3))]
+        data-size    (if (= type :str) payload-size (+ payload-size 2))]
+
+    ;; Prevent writing of data that conflicts with our special markers and so
+    ;; would confuse reply parser
+    (when (and (not (zero? payload-size))
+               (zero? ^Byte (aget ba 0)))
+      (throw (Exception. (str "Arguments cannot begin with the null terminator:"
+                              arg))))
 
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (case type :bin (send-bin out) :clj (send-clj out) nil) ; Add marker
@@ -138,18 +144,18 @@
               ;; Bulk data replies need checking for special in-data markers
               \$ (let [data-size (Integer/parseInt (.readLine in))]
                    (when-not (neg? data-size)
-                     (let [possibly-special-type? (> data-size 3)
+                     (let [possibly-special-type? (>= data-size 2)
                            type (or (when possibly-special-type?
-                                      (.mark in 3)
-                                      (let [h (byte-array 3)]
-                                        (.read in h 0 3)
+                                      (.mark in 2)
+                                      (let [h (byte-array 2)]
+                                        (.read in h 0 2)
                                         (condp =ba? h
                                           bs-clj :clj
                                           bs-bin :bin
                                           nil))) :str)
 
                            str?         (= type :str)
-                           payload-size (if str? data-size (- data-size 3))
+                           payload-size (if str? data-size (- data-size 2))
                            payload      (byte-array payload-size)]
 
                        (when (and possibly-special-type? str? (.reset in)))
