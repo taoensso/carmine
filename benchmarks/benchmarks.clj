@@ -11,7 +11,7 @@
   (let [merged-opts (merge {:requests  10000
                             :clients   5
                             :data-size 32
-                            :data-key  "carmine-benchmark:data-key"} opts)]
+                            :data-key  "carmine:benchmark:data-key"} opts)]
     (assoc merged-opts
       :data (apply str (repeat (:data-size merged-opts) "x")))))
 

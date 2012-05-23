@@ -6,80 +6,89 @@
 (def s (r/make-conn-spec))
 (defmacro wc [& commands] `(r/with-conn p s ~@commands))
 
-(wc (r/flushall)) ; Start with fresh db
+;;; Prefix all keys used in testing for easy removal
+(defn test-key [key] (str "carmine:test:" key))
+(defn clean-up!
+  []
+  (let [test-keys (wc (r/keys (test-key "*")))]
+    (when (seq test-keys)
+      (wc (apply r/del test-keys)))))
+
+(clean-up!) ; Start with a fresh db
 
 (deftest test-echo
   (is (= "Message" (wc (r/echo "Message"))))
-  (is (= "PONG" (wc (r/ping)))))
+  (is (= "PONG"    (wc (r/ping)))))
 
 (deftest test-exists
-  (is (= 0 (wc (r/exists "singularity"))))
-  (wc (r/set "singularity" "exists"))
-  (is (= 1 (wc (r/exists "singularity")))))
+  (let [k (test-key "singularity")]
+    (is (= 0 (wc (r/exists k))))
+    (wc (r/set k "exists"))
+    (is (= 1 (wc (r/exists k))))))
 
 (deftest test-set-get
-  (is (= "OK" (wc (r/set "server:name" "fido"))))
-  (is (= "fido" (wc (r/get "server:name"))))
-  (is (= 15 (wc (r/append "server:name" " [shutdown]"))))
-  (is (= "fido [shutdown]" (wc (r/getset "server:name" "fido [running]"))))
-  (is (= "running" (wc (r/getrange "server:name" "6" "12"))))
-  (wc (r/setbit "mykey" "7" "1"))
-  (is (= 1 (wc (r/getbit "mykey" "7"))))
-  (is (= "OK" (wc (r/set "multiline" "Redis\r\nDemo"))))
-  (is (= "Redis\r\nDemo" (wc (r/get "multiline")))))
+  (let [k (test-key "server:name")]
+    (is (= "OK" (wc (r/set k "fido"))))
+    (is (= "fido" (wc (r/get k))))
+    (is (= 15 (wc (r/append k " [shutdown]"))))
+    (is (= "fido [shutdown]" (wc (r/getset k "fido [running]"))))
+    (is (= "running" (wc (r/getrange k "6" "12")))))
+  (let [k (test-key "mykey")]
+    (wc (r/setbit k "7" "1"))
+    (is (= 1 (wc (r/getbit k "7")))))
+  (let [k (test-key "multiline")]
+    (is (= "OK" (wc (r/set k "Redis\r\nDemo"))))
+    (is (= "Redis\r\nDemo" (wc (r/get k))))))
 
 (deftest test-incr-decr
-  (wc (r/set "connections" "10"))
-  (is (= 11 (wc (r/incr "connections"))))
-  (is (= 20 (wc (r/incrby "connections" "9"))))
-  (is (= 19 (wc (r/decr "connections"))))
-  (is (= 10 (wc (r/decrby "connections" "9")))))
+  (let [k (test-key "connections")]
+    (wc (r/set k "10"))
+    (is (= 11 (wc (r/incr k))))
+    (is (= 20 (wc (r/incrby k "9"))))
+    (is (= 19 (wc (r/decr k))))
+    (is (= 10 (wc (r/decrby k "9"))))))
 
 (deftest test-del
-  (wc (r/set "something" "foo"))
-  (is (= 1 (wc (r/del "something")))))
+  (let [k (test-key "something")]
+    (wc (r/set k "foo"))
+    (is (= 1 (wc (r/del k))))))
 
 (deftest test-expiry
-  (wc (r/set "resource:lock" "Redis Demo"))
-  (is (= 1 (wc (r/expire "resource:lock" "120"))))
-  (is (< 0 (wc (r/ttl "resource:lock"))))
-  (is (= -1 (wc (r/ttl "count")))))
+  (let [k (test-key "resource:lock")]
+    (wc (r/set k "Redis Demo"))
+    (is (= -1 (wc (r/ttl k))))
+    (is (= 1 (wc (r/expire k "120"))))
+    (is (< 0 (wc (r/ttl k))))))
 
 (deftest test-lists
-  (wc (r/rpush "friends" "Tom"))
-  (wc (r/rpush "friends" "Bob"))
-  (wc (r/lpush "friends" "Sam"))
-  (is (= '("Sam" "Tom" "Bob")
-         (wc (r/lrange "friends" "0" "-1"))))
-  (is (= '("Sam" "Tom")
-         (wc (r/lrange "friends" "0" "1"))))
-  (is (= '("Sam" "Tom" "Bob")
-         (wc (r/lrange "friends" "0" "2"))))
-  (is (= 3 (wc (r/llen "friends"))))
-  (is (= "Sam" (wc (r/lpop "friends"))))
-  (is (= "Bob" (wc (r/rpop "friends"))))
-  (is (= 1 (wc (r/llen "friends"))))
-  (is (= '("Tom") (wc (r/lrange "friends" "0" "-1"))))
-  (wc (r/del "friends")))
+  (let [k (test-key "friends")]
+    (wc (r/rpush k "Tom"))
+    (wc (r/rpush k "Bob"))
+    (wc (r/lpush k "Sam"))
+    (is (= '("Sam" "Tom" "Bob")
+           (wc (r/lrange k "0" "-1"))))
+    (is (= '("Sam" "Tom")
+           (wc (r/lrange k "0" "1"))))
+    (is (= '("Sam" "Tom" "Bob")
+           (wc (r/lrange k "0" "2"))))
+    (is (= 3 (wc (r/llen k))))
+    (is (= "Sam" (wc (r/lpop k))))
+    (is (= "Bob" (wc (r/rpop k))))
+    (is (= 1 (wc (r/llen k))))
+    (is (= '("Tom") (wc (r/lrange k "0" "-1"))))
+    (wc (r/del k))))
 
 (deftest test-non-ascii-params
-  (is (= "OK" (wc (r/set "spanish" "year->año"))))
-  (is (= "year->año" (wc (r/get "spanish")))))
-
-;; Deprecated as of 0.8.1 due to auto-serialization
-;; (deftest test-non-string-params
-;;   (is (= "OK" (wc (r/set "statement" "I am doing well"))))
-;;   (is (= "doing well" (wc (r/getrange "statement" 5 14))))
-;;   (wc (r/rpush "alist" "A")
-;;       (r/rpush "alist" "B")
-;;       (r/lpush "alist" "C"))
-;;   (is (= ["A" "B"]) (wc (r/lrange "alist" 0 2))))
+  (let [k (test-key "spanish")]
+    (is (= "OK" (wc (r/set k "year->año"))))
+    (is (= "year->año" (wc (r/get k))))))
 
 (deftest test-error-handling
-  (wc (r/set "str-field" "str-value"))
-  (is (thrown? Exception (wc (r/incr "str-field"))))
-  (is (some #(instance? Exception %)
-            (wc (r/ping) (r/incr "str-field") (r/ping)))))
+  (let [k (test-key "str-field")]
+    (wc (r/set k "str-value"))
+    (is (thrown? Exception (wc (r/incr k))))
+    (is (some #(instance? Exception %)
+              (wc (r/ping) (r/incr k) (r/ping))))))
 
 (deftest test-commands-as-real-functions
   (is (= nil (wc "This is a malformed request")))
@@ -88,74 +97,76 @@
   (is (= '("A" "B" "C") (wc (doall (map r/echo ["A" "B" "C"]))))))
 
 (deftest test-hashes
-  (wc (r/hset "myhash" "field1" "value1"))
-  (is (= "value1" (wc (r/hget "myhash" "field1"))))
-  (wc (r/hsetnx "myhash" "field1" "newvalue"))
-  (is (= "value1" (wc (r/hget "myhash" "field1"))))
-  (is (= 1 (wc (r/hexists "myhash" "field1"))))
-  (is (= '("field1" "value1") (wc (r/hgetall "myhash"))))
-  (wc (r/hset "myhash" "field2" "1"))
-  (is (= 3 (wc (r/hincrby "myhash" "field2" "2"))))
-  (is (= '("field1" "field2") (wc (r/hkeys "myhash"))))
-  (is (= '("value1" "3") (wc (r/hvals "myhash"))))
-  (is (= 2 (wc (r/hlen "myhash"))))
-  (wc (r/hdel "myhash" "field1"))
-  (is (= 0 (wc (r/hexists "myhash" "field1")))))
+  (let [k (test-key "myhash")]
+    (wc (r/hset k "field1" "value1"))
+    (is (= "value1" (wc (r/hget k "field1"))))
+    (wc (r/hsetnx k "field1" "newvalue"))
+    (is (= "value1" (wc (r/hget k "field1"))))
+    (is (= 1 (wc (r/hexists k "field1"))))
+    (is (= '("field1" "value1") (wc (r/hgetall k))))
+    (wc (r/hset k "field2" "1"))
+    (is (= 3 (wc (r/hincrby k "field2" "2"))))
+    (is (= '("field1" "field2") (wc (r/hkeys k))))
+    (is (= '("value1" "3") (wc (r/hvals k))))
+    (is (= 2 (wc (r/hlen k))))
+    (wc (r/hdel k "field1"))
+    (is (= 0 (wc (r/hexists k "field1"))))))
 
 (deftest test-sets
-  (wc (r/sadd "superpowers" "flight"))
-  (wc (r/sadd "superpowers" "x-ray vision"))
-  (wc (r/sadd "superpowers" "reflexes"))
-  (wc (r/srem "superpowers" "reflexes"))
-  (is (= 1 (wc (r/sismember "superpowers" "flight"))))
-  (is (= 0 (wc (r/sismember "superpowers" "reflexes"))))
-  (wc (r/sadd "birdpowers" "pecking"))
-  (wc (r/sadd "birdpowers" "flight"))
-  (is (= '("pecking" "x-ray vision" "flight")
-         (wc (r/sunion "superpowers" "birdpowers")))))
+  (let [k1 (test-key "superpowers")
+        k2 (test-key "birdpowers")]
+    (wc (r/sadd k1 "flight"))
+    (wc (r/sadd k1 "x-ray vision"))
+    (wc (r/sadd k1 "reflexes"))
+    (wc (r/srem k1 "reflexes"))
+    (is (= 1 (wc (r/sismember k1 "flight"))))
+    (is (= 0 (wc (r/sismember k1 "reflexes"))))
+    (wc (r/sadd k2 "pecking"))
+    (wc (r/sadd k2 "flight"))
+    (is (= '("pecking" "x-ray vision" "flight")
+           (wc (r/sunion k1 k2))))))
 
 (deftest test-sorted-sets
-  (wc (r/zadd "hackers" "1940" "Alan Kay"))
-  (wc (r/zadd "hackers" "1953" "Richard Stallman"))
-  (wc (r/zadd "hackers" "1965" "Yukihiro Matsumoto"))
-  (wc (r/zadd "hackers" "1916" "Claude Shannon"))
-  (wc (r/zadd "hackers" "1969" "Linus Torvalds"))
-  (wc (r/zadd "hackers" "1912" "Alan Turing"))
-  (wc (r/zadd "hackers" "1972" "Dade Murphy"))
-  (wc (r/zadd "hackers" "1970" "Emmanuel Goldstein"))
-  (wc (r/zadd "slackers" "1968" "Pauly Shore"))
-  (wc (r/zadd "slackers" "1972" "Dade Murphy"))
-  (wc (r/zadd "slackers" "1970" "Emmanuel Goldstein"))
-  (wc (r/zadd "slackers" "1966" "Adam Sandler"))
-  (wc (r/zadd "slackers" "1962" "Ferris Beuler"))
-  (wc (r/zadd "slackers" "1871" "Theodore Dreiser"))
-  (wc (r/zunionstore* "hackersnslackers" ["hackers" "slackers"]))
-  (wc (r/zinterstore* "hackerslackers" ["hackers" "slackers"]))
-  (is (= '("Alan Kay" "Richard Stallman" "Yukihiro Matsumoto")
-         (wc (r/zrange "hackers" "2" "4"))))
-  (is (= '("Claude Shannon" "Alan Kay" "Richard Stallman" "Ferris Beuler")
-         (wc (r/zrange "hackersnslackers" "2" "5"))))
-  (is (= '("Emmanuel Goldstein" "Dade Murphy")
-         (wc (r/zrange "hackerslackers" "0" "1")))))
-
-(deftest test-dbsize
-  (wc (r/flushdb))
-  (wc (r/set "something" "with a value"))
-  (is (= 1 (wc (r/dbsize))))
-  (wc (r/flushall))
-  (is (= 0 (wc (r/dbsize)))))
+  (let [k1 (test-key "hackers")
+        k2 (test-key "slackers")
+        k1-U-k2 (test-key "hackersnslackers")
+        k1-I-k2 (test-key "hackerslackers")]
+    (wc (r/zadd k1 "1940" "Alan Kay"))
+    (wc (r/zadd k1 "1953" "Richard Stallman"))
+    (wc (r/zadd k1 "1965" "Yukihiro Matsumoto"))
+    (wc (r/zadd k1 "1916" "Claude Shannon"))
+    (wc (r/zadd k1 "1969" "Linus Torvalds"))
+    (wc (r/zadd k1 "1912" "Alan Turing"))
+    (wc (r/zadd k1 "1972" "Dade Murphy"))
+    (wc (r/zadd k1 "1970" "Emmanuel Goldstein"))
+    (wc (r/zadd k2 "1968" "Pauly Shore"))
+    (wc (r/zadd k2 "1972" "Dade Murphy"))
+    (wc (r/zadd k2 "1970" "Emmanuel Goldstein"))
+    (wc (r/zadd k2 "1966" "Adam Sandler"))
+    (wc (r/zadd k2 "1962" "Ferris Beuler"))
+    (wc (r/zadd k2 "1871" "Theodore Dreiser"))
+    (wc (r/zunionstore* k1-U-k2 [k1 k2]))
+    (wc (r/zinterstore* k1-I-k2 [k1 k2]))
+    (is (= '("Alan Kay" "Richard Stallman" "Yukihiro Matsumoto")
+           (wc (r/zrange k1 "2" "4"))))
+    (is (= '("Claude Shannon" "Alan Kay" "Richard Stallman" "Ferris Beuler")
+           (wc (r/zrange k1-U-k2 "2" "5"))))
+    (is (= '("Emmanuel Goldstein" "Dade Murphy")
+           (wc (r/zrange k1-I-k2 "0" "1"))))))
 
 (deftest test-pipeline
-  (wc (r/rpush "children" "A")
-      (r/rpush "children" "B")
-      (r/rpush "children" "C"))
-  (wc (r/set "favorite:child" "B"))
-  (is (= ["B" "B"] (wc (r/get "favorite:child")
-                       (r/get "favorite:child"))))
-  (is (= ["B" ["A" "B" "C"] "B"]
-         (wc (r/get "favorite:child")
-             (r/lrange "children" "0" "3")
-             (r/get "favorite:child")))))
+  (let [k1 (test-key "children")
+        k2 (test-key "favorite:child")]
+    (wc (r/rpush k1 "A")
+        (r/rpush k1 "B")
+        (r/rpush k1 "C"))
+    (wc (r/set k2 "B"))
+    (is (= ["B" "B"] (wc (r/get k2)
+                         (r/get k2))))
+    (is (= ["B" ["A" "B" "C"] "B"]
+           (wc (r/get k2)
+               (r/lrange k1 "0" "3")
+               (r/get k2))))))
 
 (deftest test-pubsub
   (let [received (atom [])
@@ -216,7 +227,8 @@
                       '("pmessage"    "ps-*"   "ps-baz" "five")]))))
 
 (deftest test-serialization
-  (wc (r/set "stress-data" ser/stress-data))
-  (is (= ser/stress-data (wc (r/get "stress-data")))))
+  (let [k (test-key "stress-data")]
+    (wc (r/set k ser/stress-data))
+    (is (= ser/stress-data (wc (r/get k))))))
 
-(wc (r/flushall)) ; Leave with a fresh db
+(clean-up!) ; Leave with a fresh db
