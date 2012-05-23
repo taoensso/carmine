@@ -96,6 +96,23 @@
   (is (= '("PONG" "PONG" "PONG") (wc (doall (repeatedly 3 r/ping)))))
   (is (= '("A" "B" "C") (wc (doall (map r/echo ["A" "B" "C"]))))))
 
+(deftest test-composition
+  (let [out-k (test-key "outside-key")
+        in-k  (test-key "inside-key")]
+    (wc (r/set in-k  "inside value")
+        (r/set out-k in-k))
+    (is (= "inside value" (wc (r/get (last (wc (r/ping) (r/get out-k)))))))))
+
+(deftest test-parallelism
+  (let [k (test-key "parallel-key")]
+    (wc (r/set k "0"))
+    (->> (fn [] (future (dotimes [n 100] (wc (r/incr k)))))
+         (repeatedly 100) ; No. of parallel clients
+         (doall)
+         (map deref)
+         (dorun))
+    (is (= (wc (r/get k)) "10000"))))
+
 (deftest test-hashes
   (let [k (test-key "myhash")]
     (wc (r/hset k "field1" "value1"))

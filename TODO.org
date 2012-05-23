@@ -21,7 +21,6 @@ Likewise, watching should be trivial to impement with new Listener API.
 ** Unit-test for all other commands (adapt from redis-clojure!!)     :urgent:
 ** Unit-test for sort* and Lua commands.                             :urgent:
 Sort* test should be easily adaptable from redis-clojure
-** Unit-test for very big requests (> output buffer size)            :urgent:
 * PERFORMANCE
 ** Why is Jedis still so much faster than Carmine?
 Profile and determine the exact bottlenecks. They may or may _not_ turn out to
