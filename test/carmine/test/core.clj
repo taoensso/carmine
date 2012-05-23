@@ -262,6 +262,8 @@
     (is (= " " (wc (r/get k))))
     (wc (r/set k (byte-array 0)))
     (is (= 0 (second (wc (r/get k)))))
+    (wc (r/set k "Foobar\u0000"))
+    (is (= "Foobar\u0000" (wc (r/get k))))
     (is (thrown? Exception (wc (r/set k "\u0000Foobar"))))))
 
 (clean-up!) ; Leave with a fresh db
