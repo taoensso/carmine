@@ -18,9 +18,9 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Composable, **first-class command functions**.
  * Flexible, high-performance **binary-safe serialization**.
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
- * **Command helpers** ('sort*', etc.).
+ * **Command helpers** (`sort*`, etc.).
 
-## Status
+## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png)](http://travis-ci.org/ptaoussanis/carmine)
 
 Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
 
@@ -30,7 +30,7 @@ lein2 all test
 
 ## Getting Started
 
-### Leiningen [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png)](http://travis-ci.org/ptaoussanis/carmine)
+### Leiningen
 
 Depend on `[carmine "0.8.1-SNAPSHOT"]` in your `project.clj` and `require` the library:
 
