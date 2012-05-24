@@ -66,17 +66,18 @@
         ^bytes ba (case type
                     :str (bytestring arg)
                     :bin arg
-                    :clj (ser/freeze-to-bytes arg :compress? true))
+                    :clj (ser/freeze-to-bytes arg true))
 
         payload-size (alength ba)
         data-size    (if (= type :str) payload-size (+ payload-size 2))]
 
-    ;; Prevent writing of data that conflicts with our special markers and so
-    ;; would confuse reply parser
-    (when (and (not (zero? payload-size))
-               (zero? ^Byte (aget ba 0)))
-      (throw (Exception. (str "Arguments cannot begin with the null terminator:"
-                              arg))))
+    ;; To support appropriate automatic reply parsing for specially marked
+    ;; types, we need to prohibits strings that could be confused for special
+    ;; markers
+    (when (and (= type :str) (.startsWith ^String arg "\u0000"))
+      (throw (Exception.
+              (str "String arguments cannot begin with the null terminator: "
+                   arg))))
 
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (case type :bin (send-bin out) :clj (send-clj out) nil) ; Add marker

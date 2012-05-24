@@ -32,7 +32,7 @@ lein2 all test
 
 ### Leiningen
 
-Depend on `[carmine "0.8.1-SNAPSHOT"]` in your `project.clj` and `require` the library:
+Depend on `[carmine "0.8.2-SNAPSHOT"]` in your `project.clj` and `require` the library:
 
 ```clojure
 (ns my-app (:require [carmine (core :as r)]))
@@ -97,9 +97,16 @@ Carmine understands Clojure's rich data types and lets you use them with Redis p
 
 ```clojure
 (redis
-  (r/set "clj-key" {:keyword [(/ 22 7) "Boo!"] :cool? true})
-  (r/get "clj-key"))
-=> ("OK" {:keyword [22/7 "Boo!"] :cool? true})
+  (r/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
+                    :vec    (vec (range 5))
+                    :set    #{true false :a :b :c :d}
+                    :bytes (byte-array 5)} ; etc.
+         )
+  (r/get "clj-key")
+=> ("OK" {:bigint 31415926535897932384626433832795N
+          :vec    [0 1 2 3 4]
+          :set    #{true false :a :c :b :d}
+          :bytes  #<byte [] [B@4d66ea88>})
 ```
 
 Any argument to a Redis command that's *not* a string will be automatically serialized using a **high-speed, binary-safe protocol** that falls back to Clojure's own Reader for tougher jobs.
@@ -278,15 +285,15 @@ Both of these calls are equivalent but the latter counted the keys for us. `zuni
 
 Helpers currently include: `zinterstore*`, `zunionstore*`, `evalsha*`, `eval*-with-conn`, and `sort*`.
 
-### Binary Data
+### Low-level Binary Data
 
-Need something a little more low-level? Carmine let's you send and receive arbitrary byte arrays with zero unnecessary overhead. Ask for byte data and you'll get back a vector with the raw data and its length to do with as you please:
+Carmine's serializer has no problem handling arbitrary byte[] data. But the serializer involves overhead that may not always be desireable. So for maximum flexibility Carmine gives you automatic, *zero-overhead* read and write facilities for raw binary data:
 
 ```clojure
 (redis
   (r/set "bin-key" (byte-array 50))
   (r/get "bin-key"))
-=> ("OK" [#<byte [] [B@7c3ab3b4> 50]])
+=> ("OK" [#<byte[] [B@7c3ab3b4> 50])
 ```
 
 ## Performance

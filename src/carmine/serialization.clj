@@ -7,10 +7,10 @@
 
 ;;;; Define type IDs
 
-(def ^:const id-reader  (int 0)) ; Fallback: *print-dup* pr-str output
-(def ^:const id-bytes   (int 1))
-(def ^:const id-nil     (int 2))
-(def ^:const id-boolean (int 3))
+(def ^:const id-reader  (int 1)) ; Fallback: *print-dup* pr-str output
+(def ^:const id-bytes   (int 2))
+(def ^:const id-nil     (int 3))
+(def ^:const id-boolean (int 4))
 
 (def ^:const id-char    (int 10))
 (def ^:const id-string  (int 11))
@@ -41,15 +41,15 @@
 
 (defn- write-bytes!
   [^DataOutputStream stream ^bytes ba]
-  (let [len (alength ba)]
-    (.writeShort stream len) ; Encode size of byte array
-    (.write stream ba 0 len)))
+  (let [size (alength ba)]
+    (.writeInt stream size) ; Encode size of byte array
+    (.write stream ba 0 size)))
 
 (defn- read-bytes!
   ^bytes [^DataInputStream stream]
-  (let [len (.readShort stream)
-        ba  (byte-array len)]
-    (.read stream ba 0 len) ba))
+  (let [size (.readInt stream)
+        ba   (byte-array size)]
+    (.read stream ba 0 size) ba))
 
 (defn- write-as-bytes!
   "Write arbitrary object as bytes using reflection."
@@ -122,7 +122,7 @@
          (write-as-bytes! s (.numerator   x))
          (write-as-bytes! s (.denominator x)))
 
-;; Use Clojure's own reader as final fallback (useful for records, etc.)
+;; Use Clojure's own reader as final fallback
 (freezer Object id-reader (.writeUTF s (pr-str x)))
 
 (defn- freeze-to-stream!* [^DataOutputStream s x]
@@ -138,17 +138,14 @@
     (freeze-to-stream!* data-output-stream x)))
 
 (defn freeze-to-bytes
-  "Serializes x to a byte array and returns the array.
-
-  Note that a buffer is used during serialization and its initial size is
-  heavily tuned for small data (e.g. single values or small collections)."
-  ^bytes [x & {:keys [compress? initial-ba-size]
-               :or   {compress? true initial-ba-size 32}}]
-  (let [ba     (ByteArrayOutputStream. initial-ba-size)
-        stream (DataOutputStream. ba)]
-    (freeze-to-stream! stream x)
-    (let [ba (.toByteArray ba)]
-      (if compress? (Snappy/compress ba) ba))))
+  "Serializes x to a byte array and returns the array."
+  (^bytes [x] (freeze-to-bytes x true))
+  (^bytes [x compress?]
+          (let [ba     (ByteArrayOutputStream.)
+                stream (DataOutputStream. ba)]
+            (freeze-to-stream! stream x)
+            (let [ba (.toByteArray ba)]
+              (if compress? (Snappy/compress ba) ba)))))
 
 ;;;; Thawing
 
@@ -254,9 +251,9 @@
 ;;;; Dev/tests
 (comment
   (defn- roundtrip
-    [x & opts]
-    (thaw-from-bytes (apply freeze-to-bytes x opts)
-                     (:compress? (apply hash-map opts))))
+    ([x] (roundtrip x true))
+    ([x compress?]
+       (thaw-from-bytes (freeze-to-bytes x compress?) compress?)))
   (defn- reader-roundtrip
     [x] (binding [*print-dup* false ; To allow stress-data forms
                   *read-eval* false]
@@ -268,13 +265,13 @@
   (good-roundtrip? roundtrip stress-data) ; true
   (good-roundtrip? reader-roundtrip stress-data) ; false (without *print-dup*)
 
-  (time (dotimes [_ 1000] (roundtrip stress-data :compress? false)))
-  ;; 950ms after w/u, no compression
-  ;; 1000ms after w/u, compression
+  (time (dotimes [_ 1000] (roundtrip stress-data false)))
+  ;; 1050s after w/u, no compression
+  ;; 1150ms after w/u, compression
 
   (pr-str stress-data)
   (time (dotimes [_ 1000] (reader-roundtrip stress-data)))
-  ;; 6200ms after w/u
+  ;; 6800ms after w/u
 
   (time (dotimes [_ 10000] (roundtrip 12)))        ; 25ms
   (time (dotimes [_ 10000] (reader-roundtrip 12))) ; 50ms

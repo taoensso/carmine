@@ -166,5 +166,6 @@
   (bench-carmine (opts :requests 1000  :clients 1 :data-size 100))
   ;; {:ping 86.923, :set 86.607,  :get 98.474}  ; After good warm-up
   ;; {:ping 92.654, :set 106.562, :get 112.864} ; After w/u, with bin, clj!
+  ;; {:ping 90.494, :set 101.51,  :get 104.775} ; After w/u, 0.8.2
 
   )

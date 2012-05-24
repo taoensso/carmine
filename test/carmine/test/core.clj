@@ -252,8 +252,8 @@
     (is (= ser/stress-data (wc (r/hget k2 "field1"))))
     (is (= "just a string" (wc (r/hget k2 "field2"))))))
 
-(deftest test-prohibited
-  (let [k (test-key "prohibited")]
+(deftest test-nulls
+  (let [k (test-key "nulls")]
     (wc (r/set k nil))
     (is (= nil (wc (r/get k))))
     (wc (r/set k ""))
@@ -262,6 +262,8 @@
     (is (= " " (wc (r/get k))))
     (wc (r/set k (byte-array 0)))
     (is (= 0 (second (wc (r/get k)))))
+    (wc (r/set k (.getBytes "\u0000" "UTF-8")))
+    (is (= 1 (second (wc (r/get k)))))
     (wc (r/set k "Foobar\u0000"))
     (is (= "Foobar\u0000" (wc (r/get k))))
     (is (thrown? Exception (wc (r/set k "\u0000Foobar"))))))
