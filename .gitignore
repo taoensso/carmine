@@ -3,9 +3,9 @@
 /logs/
 /classes/
 /target/
+/checkouts/
 *.jar
 *.sh
-pom.xml
+.lein*
 dump.rdb
-.lein-failures
-.lein-deps-sum
+pom.xml

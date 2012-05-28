@@ -1,5 +1,6 @@
 (ns carmine.core
   "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
+  {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set keys type sync sort eval])
   (:require [carmine
              (protocol    :as protocol)

@@ -10,10 +10,7 @@
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
              :1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]}
-             :dev   {:dependencies [[marginalia      "0.7.0"]]
-                     :plugins      [[lein-swank      "1.4.4"]
-                                    [lein-marginalia "0.7.0"]
-                                    [lein-clojars    "0.8.0"]]}
+             :dev   {:dependencies [[ring/ring-core  "1.1.0"]]}
              :bench {:dependencies [[org.clojars.tavisrudd/redis-clojure "1.3.1"]
                                     [clj-redis  "0.0.12"]
                                     [accession  "0.1.1"]
