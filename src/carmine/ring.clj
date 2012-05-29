@@ -4,7 +4,7 @@
             [carmine.core :as carmine])
   (:import  [java.util UUID]))
 
-(defn new-session-key [prefix] (str prefix ":" (str (UUID/randomUUID))))
+(defn new-session-key [prefix] (str prefix ":" (UUID/randomUUID)))
 
 (defmacro wc [& body] `(carmine.core/with-conn ~'pool ~'spec ~@body))
 
