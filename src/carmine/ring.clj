@@ -6,9 +6,15 @@
 
 (defn new-session-key [prefix] (str prefix ":" (UUID/randomUUID)))
 
-(defmacro wc [& body] `(carmine.core/with-conn ~'pool ~'spec ~@body))
+(defmacro wc [& body]
+  `(carmine.core/with-conn @~'pool-atom @~'spec-atom
+     ~@body))
 
-(defrecord CarmineSessionStore [pool spec prefix expiration]
+(defprotocol ICarmineSessionStore
+  (set-pool [this pool])
+  (set-spec [this spec]))
+
+(defrecord CarmineSessionStore [pool-atom spec-atom prefix expiration]
   session-store/SessionStore
   (read-session   [_ key] (or (when key (wc (carmine/get key))) {}))
   (delete-session [_ key] (wc (carmine/del key)) nil)
@@ -17,14 +23,18 @@
       (if expiration
         (wc (carmine/setex key expiration data))
         (wc (carmine/set key data)))
-      key)))
+      key))
+
+  ICarmineSessionStore
+  (set-pool [_ pool] (reset! pool-atom pool))
+  (set-spec [_ spec] (reset! spec-atom spec)))
 
 (defn make-carmine-store
-  "Create and return a Carmine-backed Ring SessionStore. Use 'expiration-secs'
+  "Creates and returns a Carmine-backed Ring SessionStore. Use 'expiration-secs'
   to specify how long session data will survive after last write. When nil,
   sessions will never expire."
   [& {:keys [connection-pool connection-spec key-prefix expiration-secs]
       :or   {key-prefix       "carmine-session"
              expiration-secs  (str #=(* 60 60 24 30))}}]
-  (CarmineSessionStore. connection-pool connection-spec
+  (CarmineSessionStore. (atom connection-pool) (atom connection-spec)
                         key-prefix (str expiration-secs)))
