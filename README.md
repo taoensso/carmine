@@ -12,7 +12,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 
 ## What's In The Box?
  * A **high-performance**, all-Clojure client.
- * **Modern targets**: Redis 2.0+ (with full [2.6](http://antirez.com/post/redis-2.6-is-near.html) support), Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading).
+ * **Modern targets**: Redis 2.0+ (with full [2.6](http://antirez.com/post/redis-2.6-is-near.html) support), Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading) support (not mandatory).
  * Industrial strength **connection pooling**.
  * Complete and accurate command definitions with **full documentation**.
  * Composable, **first-class command functions**.
