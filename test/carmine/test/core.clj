@@ -268,4 +268,10 @@
     (is (= "Foobar\u0000" (wc (r/get k))))
     (is (thrown? Exception (wc (r/set k "\u0000Foobar"))))))
 
+(deftest test-big-responses
+  (let [k (test-key "big-list")
+        n 250000]
+    (wc (dorun (repeatedly n (fn [] (r/rpush k "value")))))
+    (is (= (repeat n "value") (wc (r/lrange k "0" "-1"))))))
+
 (clean-up!) ; Leave with a fresh db

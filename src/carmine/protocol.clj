@@ -149,7 +149,7 @@
                            type (or (when possibly-special-type?
                                       (.mark in 2)
                                       (let [h (byte-array 2)]
-                                        (.read in h 0 2)
+                                        (.readFully in h 0 2)
                                         (condp =ba? h
                                           bs-clj :clj
                                           bs-bin :bin
@@ -160,11 +160,11 @@
                            payload      (byte-array payload-size)]
 
                        (when (and possibly-special-type? str? (.reset in)))
-                       (.read in payload 0 payload-size)
-                       (.skip in 2) ; Final crlf
+                       (.readFully in payload 0 payload-size)
+                       (.readFully in (byte-array 2) 0 2) ; Discard final crlf
 
                        (case type
-                         :str (String. payload 0 ^Integer payload-size charset)
+                         :str (String. payload 0 payload-size charset)
                          :clj (ser/thaw-from-bytes payload true)
                          :bin [payload payload-size]))))
 
