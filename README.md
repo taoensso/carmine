@@ -43,9 +43,9 @@ Depend on `[carmine "0.8.2-SNAPSHOT"]` in your `project.clj` and `require` the l
 You'll usually want to define one connection pool and spec that you'll reuse:
 
 ```clojure
-(def pool (r/make-conn-pool :test-while-idle? true))
+(def pool (r/make-conn-pool :max-active 8))
 (def spec-server1 (r/make-conn-spec :host     "127.0.0.1"
-                                    :port     9000
+                                    :port     6379
                                     :password "foobar"
                                     :timeout  4000))
 ```
