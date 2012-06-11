@@ -137,6 +137,7 @@
   (bench-carmine       (opts :requests 10000 :clients 1 :data-size 100))
   ;; {:ping 829.496, :set 933.46,  :get 882.737}
   ;; {:ping 865.845, :set 979.341, :get 986.603} ; With full bin, clj support
+  ;; {:ping 717.882, :set 811.658, :get 860.322} ; 0.8.2 snapshot 2012 Jun 11
   (bench-accession     (opts :requests 10000 :clients 1 :data-size 100))
   ;; {:ping 2418.782, :set "DNF", :get "DNF"}
   (bench-clj-redis     (opts :requests 10000 :clients 1 :data-size 100))
