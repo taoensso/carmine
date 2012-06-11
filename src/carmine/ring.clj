@@ -35,6 +35,6 @@
   sessions will never expire."
   [& {:keys [connection-pool connection-spec key-prefix expiration-secs]
       :or   {key-prefix       "carmine-session"
-             expiration-secs  (str #=(* 60 60 24 30))}}]
+             expiration-secs  (str (* 60 60 24 30))}}]
   (CarmineSessionStore. (atom connection-pool) (atom connection-spec)
                         key-prefix (str expiration-secs)))

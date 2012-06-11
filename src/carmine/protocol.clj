@@ -23,7 +23,7 @@
   nil)
 
 (def ^:private no-context-error
-  (Exception. (str "Redis commands must be executed within the context of a"
+  (Exception. (str "Redis commands must be called within the context of a"
                    " connection to Redis server. See 'with-conn'.")))
 
 (def ^:private ^:const charset     "UTF-8")

@@ -17,6 +17,18 @@ redis-clojure has some facilities like this, I think. Should be simple to
 implement.
 
 Likewise, watching should be trivial to impement with new Listener API.
+** Support for response-centric helpers?                            :hammock:
+E.g. hgetall returns a sequence that could be run through (apply hash-map ...).
+But doing this as hgetall* would currently require an ugly with-connection
+helper since the "help" essentially occurs response-time.
+
+Look into support for writing response-centric helpers that push their own
+response-parser onto a stack that would allow writing things like this cleanly
+and easily?
+
+A stack could get unnecessarily expensive though since most custom parsers
+would be (very) sparse. Might be better to have a {response-num parser-fn} map
+that could leverage the pipeline counter?
 * TESTS                                                              :urgent:
 ** Unit-test for all other commands (adapt from redis-clojure!!)     :urgent:
 ** Unit-test for sort* and Lua commands.                             :urgent:
