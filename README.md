@@ -19,6 +19,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Flexible, high-performance **binary-safe serialization**.
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
  * **Command helpers** (`sort*`, etc.).
+ * Pluggable Ring session-store.
 
 ## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png)](http://travis-ci.org/ptaoussanis/carmine)
 
