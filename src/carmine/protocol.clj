@@ -1,6 +1,7 @@
 (ns carmine.protocol
   "Facilities for actually communicating with Redis server using its
   request/response protocol. Originally adapted from Accession."
+  {:author "Peter Taoussanis"}
   (:require [clojure.string :as str]
             [carmine (utils :as utils) (serialization :as ser)])
   (:import  [java.io DataInputStream BufferedOutputStream]))

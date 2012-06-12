@@ -3,6 +3,7 @@
   parsing the official Redis command reference (JSON) which includes up-to-date
   doc-strings, argument specs, etc. This awesome approach was adapted from
   labs-redis-clojure."
+  {:author "Peter Taoussanis"}
   (:require [clojure.java.io   :as io]
             [clojure.string    :as str]
             [clojure.data.json :as json]

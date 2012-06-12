@@ -1,6 +1,7 @@
 (ns carmine.connections
   "Handles life cycle of socket connections to Redis server. Connection pool is
   implemented using Apache Commons pool. Adapted from redis-clojure."
+  {:author "Peter Taoussanis"}
   (:require [carmine.utils    :as utils]
             [carmine.protocol :as protocol])
   (:import  [java.net Socket]

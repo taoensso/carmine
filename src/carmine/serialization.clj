@@ -1,6 +1,7 @@
 (ns carmine.serialization
   "Deliberately simple, high-performance de/serializer for Clojure. Adapted from
   Deep-Freeze."
+  {:author "Peter Taoussanis"}
   (:import [java.io DataInputStream DataOutputStream ByteArrayOutputStream
             ByteArrayInputStream]
            [org.xerial.snappy Snappy]))
