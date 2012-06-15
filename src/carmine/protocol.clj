@@ -157,7 +157,7 @@
                                           nil))) :str)
 
                            str?         (= type :str)
-                           payload-size (if str? data-size (- data-size 2))
+                           payload-size (int (if str? data-size (- data-size 2)))
                            payload      (byte-array payload-size)]
 
                        (when (and possibly-special-type? str? (.reset in)))
