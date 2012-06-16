@@ -309,6 +309,10 @@ In principle it should be possible to get close to the theoretical maximum perfo
 
 Likewise, I'll happily trade a little less throughput for simpler code.
 
+## Carmine Supports the ClojureWerkz Project Goals
+
+[ClojureWerkz](http://clojurewerkz.org/) is a growing collection of open-source, batteries-included libraries for Clojure that emphasise modern targets, good documentation, and thorough testing.
+
 ## Contact & Contribution
 
 Reach me (Peter Taoussanis) at *ptaoussanis at gmail.com* for questions/comments/suggestions/whatever. I'm very open to ideas if you have any!
