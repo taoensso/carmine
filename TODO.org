@@ -71,4 +71,3 @@ https://github.com/decster/jnicompressions
 Also note the comments on that page about different interfaces!
 * MISC
 ** Finalize pull-request to be added to official client list.      :underway:
-** Officially announce.                                                :next:
