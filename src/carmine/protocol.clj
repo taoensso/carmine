@@ -67,7 +67,7 @@
         ^bytes ba (case type
                     :str (bytestring arg)
                     :bin arg
-                    :clj (ser/freeze-to-bytes arg true))
+                    :clj (ser/freeze-to-bytes arg))
 
         payload-size (alength ba)
         data-size    (if (= type :str) payload-size (+ payload-size 2))]
@@ -166,7 +166,7 @@
 
                        (case type
                          :str (String. payload 0 payload-size charset)
-                         :clj (ser/thaw-from-bytes payload true)
+                         :clj (ser/thaw-from-bytes payload)
                          :bin [payload payload-size]))))
 
               \* (let [count (Integer/parseInt (.readLine in))]
