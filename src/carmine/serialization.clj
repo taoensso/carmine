@@ -139,11 +139,11 @@
 
 (defn freeze-to-bytes
   "Serializes x to a byte array and returns the array."
-  (^bytes [x]
-          (let [ba     (ByteArrayOutputStream.)
-                stream (DataOutputStream. ba)]
-            (freeze-to-stream! stream x)
-            (.toByteArray ba))))
+  ^bytes [x]
+  (let [ba     (ByteArrayOutputStream.)
+        stream (DataOutputStream. ba)]
+    (freeze-to-stream! stream x)
+    (.toByteArray ba)))
 
 ;;;; Thawing
 
@@ -205,10 +205,10 @@
 
 (defn thaw-from-bytes
   "Deserializes an entity from given byte array."
-  ([ba]
-     (->> (ByteArrayInputStream. ba)
-          (DataInputStream.)
-          (thaw-from-stream!))))
+  [ba]
+  (->> (ByteArrayInputStream. ba)
+       (DataInputStream.)
+       (thaw-from-stream!)))
 
 (def stress-data
   {;;:bytes      (byte-array [(byte 1) (byte 2) (byte 3)])
