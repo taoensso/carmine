@@ -3,8 +3,7 @@
   Deep-Freeze."
   {:author "Peter Taoussanis"}
   (:import [java.io DataInputStream DataOutputStream ByteArrayOutputStream
-            ByteArrayInputStream]
-           [org.xerial.snappy Snappy]))
+            ByteArrayInputStream]))
 
 ;;;; Define type IDs
 
@@ -140,13 +139,11 @@
 
 (defn freeze-to-bytes
   "Serializes x to a byte array and returns the array."
-  (^bytes [x] (freeze-to-bytes x true))
-  (^bytes [x compress?]
-          (let [ba     (ByteArrayOutputStream.)
-                stream (DataOutputStream. ba)]
-            (freeze-to-stream! stream x)
-            (let [ba (.toByteArray ba)]
-              (if compress? (Snappy/compress ba) ba)))))
+  ^bytes [x]
+  (let [ba     (ByteArrayOutputStream.)
+        stream (DataOutputStream. ba)]
+    (freeze-to-stream! stream x)
+    (.toByteArray ba)))
 
 ;;;; Thawing
 
@@ -208,12 +205,10 @@
 
 (defn thaw-from-bytes
   "Deserializes an entity from given byte array."
-  ([ba] (thaw-from-bytes ba false))
-  ([ba compressed?]
-     (->> (if compressed? (Snappy/uncompress ba) ba)
-          (ByteArrayInputStream.)
-          (DataInputStream.)
-          (thaw-from-stream!))))
+  [ba]
+  (->> (ByteArrayInputStream. ba)
+       (DataInputStream.)
+       (thaw-from-stream!)))
 
 (def stress-data
   {;;:bytes      (byte-array [(byte 1) (byte 2) (byte 3)])

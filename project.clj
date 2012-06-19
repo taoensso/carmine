@@ -5,7 +5,6 @@
   :dependencies [[org.clojure/clojure           "1.3.0"]
                  [commons-pool/commons-pool     "1.6"]
                  [commons-codec/commons-codec   "1.6"]
-                 [org.xerial.snappy/snappy-java "1.0.4.1"]
                  [org.clojure/data.json         "0.1.2"
                   :exclusions [org.clojure/clojure]]]
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
