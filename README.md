@@ -29,6 +29,10 @@ Carmine is still currently *experimental*. It **has not yet been thoroughly test
 lein2 all test
 ```
 
+### Known issue with Java 7 on OSX
+
+Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has a minor path issue with Java 7 on OSX. Please see [here](https://github.com/ptaoussanis/carmine/issues/5) for a workaround until a proper fix is available.
+
 ## Getting Started
 
 ### Leiningen
