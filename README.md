@@ -305,7 +305,7 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 
 Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently performs well:
 
-![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart20120519.png)
+![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart.png)
 
 Accession could not complete the requests. [Detailed benchmark information] (https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
 
