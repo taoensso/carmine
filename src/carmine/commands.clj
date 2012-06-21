@@ -73,8 +73,7 @@
                        :arguments
                        [{:name "sha1"    :type "string"}
                         {:name "numkeys" :type "integer"}
-                        {:name "key"     :type "key"    :multiple true}
-                        {:name "arg"     :type "string" :multiple true}]})))
+                        {:name "keysandargs"     :type "key"    :multiple true}]})))
 
 (defmacro defcommands
   "Defines an appropriate function for every command in reference. If debug?
