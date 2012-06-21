@@ -1,10 +1,29 @@
 (ns carmine.test.core
   (:use [clojure.test])
-  (:require [carmine (core :as r) (serialization :as ser)]))
+  (:require [clojure.string :as str]
+            [carmine (core :as r) (serialization :as ser)]))
 
+;;; Connections
 (def p (r/make-conn-pool))
 (def s (r/make-conn-spec))
 (defmacro wc [& commands] `(r/with-conn p s ~@commands))
+
+;;; Version handling
+(defn get-redis-version
+  [] (second (re-find #"redis_version:(.+)\r\n" (wc (r/info)))))
+
+(defn version-compare
+  [x y]
+  (let [vals (fn [s] (vec (map #(Integer/parseInt %) (str/split s #"\."))))]
+    (compare (vals x) (vals y))))
+
+(defn sufficient-version?
+  [minimum-version]
+  (>= (version-compare (get-redis-version) minimum-version) 0))
+
+(comment (get-redis-version)
+         (version-compare "1.3.0" "1.2.3")
+         (sufficient-version? "2.5.10"))
 
 ;;; Prefix all keys used in testing for easy removal
 (defn test-key [key] (str "carmine:test:" key))
@@ -273,5 +292,14 @@
         n 250000]
     (wc (dorun (repeatedly n (fn [] (r/rpush k "value")))))
     (is (= (repeat n "value") (wc (r/lrange k "0" "-1"))))))
+
+(deftest test-lua
+  (when (sufficient-version? "2.6.0")
+    (let [k (test-key "script")
+          script "return redis.call('set',KEYS[1],'script-value')"
+          script-hash (r/hash-script script)]
+      (wc (r/script-load script))
+      (wc (r/evalsha script-hash "1" k))
+      (is (= "script-value" (wc (r/get k)))))))
 
 (clean-up!) ; Leave with a fresh db

@@ -98,7 +98,7 @@
   [key & sort-args]
   (apply sort key (parse-sort-args sort-args)))
 
-(def ^:private hash-script
+(def hash-script
   (memoize
    (fn [script]
      (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
