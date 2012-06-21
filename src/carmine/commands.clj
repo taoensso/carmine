@@ -10,22 +10,24 @@
             [carmine.protocol  :as protocol]))
 
 (defn- args->params-vec
-  "Parses refspec argument map into defn-style parameter vector:
+  "Parses refspec argument map into simple defn-style parameter vector:
   '[key value & more], etc."
   [args]
-  (let [mandatory (->> args (filter (complement :optional))
-                       (map :name) flatten (map symbol)
-                       vec)
-        more? (seq (filter #(or (:optional %) (:multiple %)) args))]
-    (if more? (conj mandatory '& 'more-args) mandatory)))
+  (let [num-non-optional (count (take-while #(not (:optional %)) args))
+        num-non-multiple (count (take-while #(not (:multiple %)) args))
+        fixed-args       (->> args (take (min num-non-optional
+                                              (inc num-non-multiple)))
+                              (map :name) flatten (map symbol) vec)
+        has-more? (seq (filter #(or (:optional %) (:multiple %)) args))]
+    (if has-more? (conj fixed-args '& 'args) fixed-args)))
 
 (defn- args->params-doc-string
   "Parses refspec argument map into Redis reference-doc-style explanatory
   string: \"BRPOP key [key ...] timeout\", etc."
   [args]
   (let [parse
-        #(let [;; Get all possible argument keys
-               {:keys [command type name enum multiple optional]} %
+        #(let [{:keys [command type name enum multiple optional]} %
+               name (if (and (coll? name) (not (next name))) (first name) name)
                s (cond command (str command " "
                                     (cond enum         (str/join "|" enum)
                                           (coll? name) (str/join " " name)
@@ -64,17 +66,7 @@
   "Returns parsed JSON official command reference.
   From https://github.com/antirez/redis-doc/blob/master/commands.json"
   []
-  (-> "commands.json" io/resource io/reader clojure.data.json/read-json
-
-      ;; This doesn't seem to be in current reference?
-      (assoc :EVALSHA {:summary "Execute a cached Lua script server-side"
-                       :complexity "O(1) look-up, otherwise up to the script."
-                       :since "2.6.0"
-                       :arguments
-                       [{:name "sha1"    :type "string"}
-                        {:name "numkeys" :type "integer"}
-                        {:name "key"     :type "key"    :multiple true}
-                        {:name "arg"     :type "string" :multiple true}]})))
+  (-> "commands.json" io/resource io/reader clojure.data.json/read-json))
 
 (defmacro defcommands
   "Defines an appropriate function for every command in reference. If debug?
