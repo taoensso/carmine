@@ -140,13 +140,8 @@
     (is (= 0 (wc (r/sismember k1 "reflexes"))))
     (wc (r/sadd k2 "pecking"))
     (wc (r/sadd k2 "flight"))
-
-    ;; TODO When/why did this change!?
-    ;; (is (= '("pecking" "x-ray vision" "flight")
-    ;;        (wc (r/sunion k1 k2))))
-
-    (is (= '("flight" "pecking" "x-ray vision")
-           (wc (r/sunion k1 k2))))))
+    (is (= (set '("flight" "pecking" "x-ray vision"))
+           (set (wc (r/sunion k1 k2)))))))
 
 (deftest test-sorted-sets
   (let [k1 (test-key "hackers")
