@@ -15,8 +15,12 @@
   [args]
   (let [num-non-optional (count (take-while #(not (:optional %)) args))
         num-non-multiple (count (take-while #(not (:multiple %)) args))
-        fixed-args       (->> args (take (min num-non-optional
-                                              (inc num-non-multiple)))
+
+        ;; Stop explicit naming on the 1st optional arg (exclusive) or 1st
+        ;; multiple arg (inclusive)
+        num-fixed        (min num-non-optional (inc num-non-multiple))
+
+        fixed-args       (->> args (take num-fixed)
                               (map :name) flatten (map symbol) vec)
         has-more? (seq (filter #(or (:optional %) (:multiple %)) args))]
     (if has-more? (conj fixed-args '& 'args) fixed-args)))
