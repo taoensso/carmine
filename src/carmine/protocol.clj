@@ -93,17 +93,16 @@
 
   Ref: http://redis.io/topics/protocol. If explicit context isn't provided,
   uses thread-bound *context*."
-  [{:keys [out-stream] :as ?context} command-name & command-args]
+  [{:keys [out-stream] :as ?context} & args]
   (let [context               (merge *context* ?context)
         ^BufferedOutputStream out (or (:out-stream context)
-                                      (throw no-context-error))
-        request-args (cons command-name command-args)]
+                                      (throw no-context-error))]
 
     (send-* out)
-    (.write out (bytestring (str (count request-args))))
+    (.write out (bytestring (str (count args))))
     (send-crlf out)
 
-    (dorun (map (partial send-arg out) request-args))
+    (dorun (map (partial send-arg out) args))
     (.flush out)
 
     ;; Keep track of how many responses are queued with server

@@ -55,15 +55,17 @@
                            "\n\n" (:summary refspec) ".\n\n"
                            "Available since: " (:since refspec) ".\n\n"
                            "Time complexity: " (:complexity refspec))
-        fn-params    (args->params-vec args)
-        apply-params (let [[p varp] (split-with #(not= '& %) fn-params)]
-                       (conj (vec p) (last varp)))]
+
+        fn-params      (args->params-vec args)
+        request-params (into (str/split command-name #" ")
+                             fn-params)
+        apply-params   (let [[p varp] (split-with #(not= '& %) request-params)]
+                         (conj (vec p) (last varp)))]
     (if debug-mode?
       `(println ~fn-name ":" \" ~(args->params-doc-string args) \"
                 "->" ~(str fn-params))
       `(defn ~(symbol fn-name) ~fn-doc-string ~fn-params
          (apply protocol/send-request! nil
-                ~command-name
                 ~@apply-params)))))
 
 (defn- get-command-reference
