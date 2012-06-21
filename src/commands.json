@@ -225,13 +225,8 @@
         "type": "integer"
       },
       {
-        "name": "key",
+        "name": "keysandargs",
         "type": "key",
-        "multiple": true
-      },
-      {
-        "name": "arg",
-        "type": "string",
         "multiple": true
       }
     ],
