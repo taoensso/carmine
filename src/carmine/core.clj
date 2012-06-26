@@ -2,16 +2,15 @@
   "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set keys type sync sort eval])
-  (:require [carmine
+  (:require [clojure.string :as str]
+            [carmine
              (protocol    :as protocol)
              (connections :as conns)
              (commands    :as commands)])
-  (:import  [org.apache.commons.pool.impl GenericKeyedObjectPool]
-            [carmine.connections          ConnectionPool]))
+  (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
+           carmine.connections.ConnectionPool))
 
 ;;;; Connections
-;; Better to have this stuff here so that library consumers don't need to
-;; require another namespace.
 
 (defn make-conn-pool
   "For option documentation see http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html"
@@ -32,11 +31,9 @@
   {:host host :port port :password password :timeout timeout :db db})
 
 (defmacro with-conn
-  "Evaluates body in the context of a pooled connection to a Redis server. Body
-  may contain Redis commands and functions of Redis commands (e.g. 'map').
-
-  Sends full request to server as pipeline and returns the server's response.
-  Releases connection back to pool when done.
+  "Evaluates body in the context of a thread-bound pooled connection to a Redis
+  server. Sends Redis commands to server as pipeline and returns the server's
+  response. Releases connection back to pool when done.
 
   Use 'make-conn-pool' and 'make-conn-spec' to generate the required arguments."
   [connection-pool connection-spec & body]
@@ -45,16 +42,70 @@
            spec# (or ~connection-spec (make-conn-spec))
            conn# (conns/get-conn pool# spec#)]
        (try
-         (let [response# (protocol/with-context-and-response conn# ~@body)]
+         (let [response# (protocol/with-context conn# ~@body)]
            (conns/release-conn pool# conn#) response#)
          (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#))))
      (catch Exception e# (throw e#))))
+
+(defmacro with-parser
+  "Wraps body so that replies to any wrapped Redis commands will be parsed with
+  (parser-fn reply)."
+  [parser-fn & body]
+  `(binding [protocol/*parser* ~parser-fn] ~@body))
+
+(defmacro skip-replies
+  [& body] `(with-parser (constantly :carmine.protocol/skip-reply) ~@body))
 
 ;;;; Standard commands
 
 (commands/defcommands) ; This kicks ass - big thanks to Andreas Bielk!
 
-;;;; Command helpers
+;;;; Helper commands
+
+(defn remember
+  "Special command that takes any value and returns it unchanged as part of
+  an enclosing 'with-conn' pipeline response."
+  [value]
+  (let [temp-key (str "carmine:temp:remember")]
+    (skip-replies (setex temp-key "60" value))
+    (get temp-key)))
+
+(def hash-script
+  (memoize
+   (fn [script]
+     (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
+
+(defn evalsha*
+  "Like 'evalsha' but automatically computes SHA1 hash for script."
+  [script numkeys key & args]
+  (apply evalsha (hash-script script) numkeys key args))
+
+(defn eval*
+  "Optimistically tries to send 'evalsha' command for given script. In the event
+  of a \"NOSCRIPT\" reply, reattempts with 'eval'. Returns the final command's
+  reply."
+  [script numkeys key & args]
+  (remember
+   (try (apply evalsha* script numkeys key args)
+        (protocol/get-one-reply!)
+        (catch Exception e
+          (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
+            (do (apply eval script numkeys key args)
+                (protocol/get-one-reply!))
+            (throw e))))))
+
+(defn hgetall*
+  "Like 'hgetall' but automatically coerces reply into a hash-map."
+  [key] (with-parser #(apply hash-map %) (hgetall key)))
+
+(defn info*
+  "Like 'info' but automatically coerces reply into a hash-map."
+  []
+  (with-parser (fn [reply] (->> reply str/split-lines
+                               (map #(str/split % #":"))
+                               (filter #(= (count %) 2))
+                               (into {})))
+    (info)))
 
 (defn zinterstore*
   "Like 'zinterstore' but automatically counts keys."
@@ -95,52 +146,42 @@
   "Like 'sort' but supports idiomatic Clojure arguments: :by pattern,
   :limit offset count, :get pattern, :mget patterns, :store destination,
   :alpha, :asc, :desc."
-  [key & sort-args]
-  (apply sort key (parse-sort-args sort-args)))
+  [key & sort-args] (apply sort key (parse-sort-args sort-args)))
 
-(def hash-script
-  (memoize
-   (fn [script]
-     (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
+(defmacro atomically
+  "Executes all Redis commands in body as a single transaction and returns
+  server response vector or the empty vector if transaction failed.
 
-(defn evalsha*
-  "Like 'evalsha' but automatically computes SHA1 hash for script."
-  [script numkeys & more]
-  (apply evalsha (hash-script script) numkeys more))
-
-(defn eval*-with-conn
-  "Optimistically tries to send 'evalsha' command for given script. In the event
-  of a \"NOSCRIPT\" reply, reattempts with 'eval'. Returns the final command's
-  result."
-  [pool spec script numkeys & more]
-  (try
-    (with-conn pool spec (apply evalsha* script numkeys more))
-    (catch Exception e
-      (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
-        (with-conn pool spec (apply eval script numkeys more))
-        (throw e)))))
+  Body may contain a (discard) call to abort transaction."
+  [watch-keys & body]
+  `(try
+     (skip-replies ; skip "OK" and "QUEUED" replies
+      (when (seq ~watch-keys) (apply watch ~watch-keys))
+      (multi)
+      ~@body)
+     (with-parser #(if (instance? Exception %) [] %) (exec))))
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
 
 ;; Once a connection to Redis issues a command like 'p/subscribe' or 'monitor'
 ;; it enters an idiosyncratic state:
 ;;
-;;     * It blocks while waiting to receive a stream of special responses issued
+;;     * It blocks while waiting to receive a stream of special messages issued
 ;;       to it (connection-local!) by the server.
 ;;     * It can now only issue a subset of the normal commands like
-;;      'p/un/subscribe', 'quit', etc.
+;;      'p/un/subscribe', 'quit', etc. These do NOT issue a normal server reply.
 ;;
 ;; To facilitate the unusual requirements we define a Listener to be a
-;; combination of persistent, NON-pooled connection and threaded response
+;; combination of persistent, NON-pooled connection and threaded message
 ;; handler:
 
 (defrecord Listener [connection handler state])
 
 (defmacro with-new-listener
   "Creates a persistent connection to Redis server and a thread to listen for
-  server responses on that connection.
+  server messages on that connection.
 
-  Incoming responses will be dispatched (along with current listener state) to
+  Incoming messages will be dispatched (along with current listener state) to
   binary handler function.
 
   Evaluates body within the context of the connection and returns a
@@ -149,7 +190,7 @@
       1. The underlying persistent connection to facilitate 'close-listener' and
          'with-open-listener'.
       2. An atom containing the function given to handle incoming server
-         responses.
+         messages.
       3. An atom containing any other optional listener state.
 
   Useful for pub/sub, monitoring, etc."
@@ -157,21 +198,20 @@
   `(let [handler-atom# (atom ~handler)
          state-atom#   (atom ~initial-state)
          conn# (conns/make-new-connection (assoc ~connection-spec
-                                            :persistent? true))]
-     (protocol/with-context conn#
+                                            :listener? true))
+         in#   (conns/in-stream conn#)]
 
-       ;; Create a thread to actually listen for and process responses from
-       ;; server. Thread will close when connection closes.
-       (-> (fn [] (@handler-atom# (protocol/get-response! :reply-count 1)
-                                 @state-atom#))
-           repeatedly doall future)
+     ;; Create a thread to actually listen for and process messages from
+     ;; server. Thread will close when connection closes.
+     (-> (fn [] (@handler-atom# (protocol/get-basic-reply! in#) @state-atom#))
+         repeatedly doall future)
 
-       ~@body
-       (Listener. conn# handler-atom# state-atom#))))
+     (protocol/with-context conn# ~@body)
+     (Listener. conn# handler-atom# state-atom#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent
-  connection. Does NOT get response from server. Returns body's result."
+  connection."
   [listener & body]
   `(protocol/with-context (:connection ~listener) ~@body))
 
@@ -194,9 +234,9 @@
   Returns the Listener to allow manual closing and adjustments to
   message-handlers."
   [connection-spec message-handlers & subscription-commands]
-  `(with-new-listener (assoc ~connection-spec :pubsub? true)
+  `(with-new-listener (assoc ~connection-spec :pubsub-listener? true)
 
-     ;; Response handler (fn [response state])
+     ;; Message handler (fn [message state])
      (fn [[_# source-channel# :as incoming-message#] msg-handlers#]
        (when-let [f# (clojure.core/get msg-handlers# source-channel#)]
          (f# incoming-message#)))
@@ -207,11 +247,8 @@
 ;;;; Dev/tests
 
 (comment
-  (def pool (make-conn-pool))
-  (def spec (make-conn-spec))
-  (def spec (make-conn-spec :host "panga.redistogo.com"
-                            :port 9475
-                            :password "foobar")) ; Remote
+  (do (def pool (make-conn-pool))
+      (def spec (make-conn-spec)))
 
   ;;; Basic connections
   (def conn (conns/get-conn pool spec))
@@ -223,55 +260,4 @@
   (with-conn nil nil (ping)) ; Degenerate pool, default spec
   (with-conn (make-conn-pool) (make-conn-spec) (ping))
   (with-conn pool spec (ping))
-  (with-conn pool spec
-    (ping)
-    (set "key" "value")
-    (incrby "key2" 12)
-    (get "key")
-    (get "key2")
-    (set "unicode" "año")
-    (get "unicode"))
-
-  (with-conn pool spec "This is invalid") ; Malformed
-
-  ;;; Advanced requests
-  (with-conn pool spec (doall (repeatedly 5 ping)))
-  (with-conn pool spec
-    (doall (map set ["bob" "sam" "steve"] ["carell" "black" "irwin"])))
-
-  ;;; Pub/Sub
-  (def listener
-    (with-new-pubsub-listener
-      spec {"foo1"  (fn [x] (println "Channel match: " x))
-            "foo*"  (fn [x] (println "Pattern match: " x))
-            "extra" (fn [x] (println "EXTRA: " x))}
-      (subscribe  "foo1" "foo2")
-      (psubscribe "foo*")))
-
-  (do (println "---")
-      (with-conn pool spec
-        (publish "foo1" "Message to foo1")))
-
-  (with-open-listener listener
-    (unsubscribe))
-
-  (close-listener listener)
-
-  ;;; Lua
-  (eval*-with-conn pool spec
-    "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
-    2 "key1" "key2" "arg1" "arg2")
-
-  ;;; Binary-safety
-  (with-conn nil nil
-    (set "key1" (byte-array [(byte 3) (byte 1) (byte 4)]))
-    (get "key1"))
-  (seq (first (with-conn nil nil (get "key1"))))
-
-  ;;; Serialization
-  (with-conn nil nil
-    (set "str-key"   "string")
-    (set "float-key" 22)
-    (set "bool-key"  true)
-    (set "coll-key"  [:a :A :b :B :c :C])
-    (doall (map get ["str-key" "float-key" "bool-key" "coll-key"]))))
+  (with-conn pool spec "invalid" (ping) (ping)))

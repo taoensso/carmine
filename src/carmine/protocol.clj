@@ -1,29 +1,23 @@
 (ns carmine.protocol
   "Facilities for actually communicating with Redis server using its
-  request/response protocol. Originally adapted from Accession."
+  request/response protocol. Originally adapted from Accession.
+
+  Ref: http://redis.io/topics/protocol"
   {:author "Peter Taoussanis"}
   (:require [clojure.string :as str]
             [carmine (utils :as utils) (serialization :as ser)])
-  (:import  [java.io DataInputStream BufferedOutputStream]))
+  (:import  [java.io DataInputStream BufferedOutputStream]
+            clojure.lang.PersistentQueue))
 
-;; Hack to allow cleaner separation of ns concerns
-(utils/declare-remote carmine.connections/in-stream
+;; Hack to allow cleaner separation of namespaces
+(utils/declare-remote carmine.connections/get-spec
+                      carmine.connections/in-stream
                       carmine.connections/out-stream)
 
-(def ^:dynamic *context*
-  "For flexibility, our server protocol fns can be called either with explicit
-  context provided through arguments OR with a thread-bound context.
-
-  A valid context should consist of AT LEAST an in and out stream but may
-  contain other useful adornments. For example:
-
-      * Flags to control encoding/decoding (serialization, etc.).
-      * A counter atom to allow us to keep track of how many commands we've sent
-        to server since last asking for replies while pipelining. This allows
-        'with-conn' to take arbitrary body forms for power & flexibility."
-  nil)
-
-(def ^:private no-context-error
+(defrecord Context [in-stream out-stream parser-stack])
+(def ^:dynamic *context* nil)
+(def ^:dynamic *parser*  nil)
+(def no-context-error
   (Exception. (str "Redis commands must be called within the context of a"
                    " connection to Redis server. See 'with-conn'.")))
 
@@ -72,9 +66,8 @@
         payload-size (alength ba)
         data-size    (if (= type :str) payload-size (+ payload-size 2))]
 
-    ;; To support appropriate automatic reply parsing for specially marked
-    ;; types, we need to prohibits strings that could be confused for special
-    ;; markers
+    ;; To support various special goodies like serialization, we reserve
+    ;; strings that begin with a null terminator
     (when (and (= type :str) (.startsWith ^String arg "\u0000"))
       (throw (Exception.
               (str "String arguments cannot begin with the null terminator: "
@@ -89,13 +82,9 @@
 
       *<no. of args>     crlf
       [ $<size of arg N> crlf
-        <arg data>       crlf ...]
-
-  Ref: http://redis.io/topics/protocol. If explicit context isn't provided,
-  uses thread-bound *context*."
-  [{:keys [out-stream] :as ?context} & args]
-  (let [context               (merge *context* ?context)
-        ^BufferedOutputStream out (or (:out-stream context)
+        <arg data>       crlf ...]"
+  [& args]
+  (let [^BufferedOutputStream out (or (:out-stream *context*)
                                       (throw no-context-error))]
 
     (send-* out)
@@ -105,13 +94,13 @@
     (dorun (map (partial send-arg out) args))
     (.flush out)
 
-    ;; Keep track of how many responses are queued with server
-    (when-let [c (:atomic-reply-count context)] (swap! c inc))))
+    (when-let [ps (:parser-stack *context*)] (swap! ps conj *parser*))))
 
 (defn =ba? [^bytes x ^bytes y] (java.util.Arrays/equals x y))
 
-(defn get-response!
-  "BLOCKs to receive queued replies from Redis server. Parses and returns them.
+(defn get-basic-reply!
+  "BLOCKS to receive a single reply from Redis server. Applies basic parsing
+  and returns the result.
 
   Redis will reply to commands with different kinds of replies. It is possible
   to check the kind of reply from the first byte sent by the server:
@@ -120,78 +109,86 @@
       * With an error message the first byte of the reply will be `-`
       * With an integer number the first byte of the reply will be `:`
       * With bulk reply the first byte of the reply will be `$`
-      * With multi-bulk reply the first byte of the reply will be `*`
+      * With multi-bulk reply the first byte of the reply will be `*`"
+  [^DataInputStream in]
+  (let [reply-type (char (.readByte in))]
+    (case reply-type
+      \+ (.readLine in)
+      \- (Exception. (.readLine in))
+      \: (Long/parseLong (.readLine in))
 
-  Error replies will be parsed as exceptions. If only a single reply is received
-  and it is an error, the exception will be thrown.
+      ;; Bulk data replies need checking for special in-data markers
+      \$ (let [data-size (Integer/parseInt (.readLine in))]
+           (when-not (neg? data-size)
+             (let [possibly-special-type? (>= data-size 2)
+                   type (or (when possibly-special-type?
+                              (.mark in 2)
+                              (let [h (byte-array 2)]
+                                (.readFully in h 0 2)
+                                (condp =ba? h
+                                  bs-clj :clj
+                                  bs-bin :bin
+                                  nil))) :str)
 
-  If explicit context isn't provided, uses thread-bound *context*."
-  [& {:keys [in-stream reply-count] :as ?context}]
-  (let [context             (merge *context* ?context)
-        ^DataInputStream in (or (:in-stream context)
+                   str?         (= type :str)
+                   payload-size (int (if str? data-size (- data-size 2)))
+                   payload      (byte-array payload-size)]
+
+               (when (and possibly-special-type? str? (.reset in)))
+               (.readFully in payload 0 payload-size)
+               (.readFully in (byte-array 2) 0 2) ; Discard final crlf
+
+               (case type
+                 :str (String. payload 0 payload-size charset)
+                 :clj (ser/thaw-from-bytes payload true)
+                 :bin [payload payload-size]))))
+
+      \* (let [bulk-count (Integer/parseInt (.readLine in))]
+           (vec (repeatedly bulk-count (partial get-basic-reply! in))))
+      (throw (Exception. (str "Server returned unknown reply type: "
+                              reply-type))))))
+
+(defn- apply-parser [parser reply] (if parser (parser reply) reply))
+(defn- skip-reply?     [reply] (= reply :carmine.protocol/skip-reply))
+(defn- exception-check [reply] (if (instance? Exception reply) (throw reply) reply))
+(defn- skip-check      [reply] (if (skip-reply? reply) nil reply))
+
+(defn get-replies!
+  "BLOCKS to receive one or more (pipelined) replies from Redis server. Applies
+  all parsing and returns the result."
+  [reply-count]
+  (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
-        count (or (:reply-count context)
-                  (when-let [c (:atomic-reply-count context)] @c)
-                  0)
+        parsers     @(:parser-stack *context*)
+        reply-count (if (= reply-count :all) (count parsers) reply-count)]
 
-        get-reply!
-        (fn get-reply! []
-          (let [reply-type (char (.readByte in))]
-            (case reply-type
-              \+ (.readLine in)
-              \- (Exception. (.readLine in))
-              \: (Long/parseLong (.readLine in))
+    (when (pos? reply-count)
+      (swap! (:parser-stack *context*) (partial drop reply-count))
 
-              ;; Bulk data replies need checking for special in-data markers
-              \$ (let [data-size (Integer/parseInt (.readLine in))]
-                   (when-not (neg? data-size)
-                     (let [possibly-special-type? (>= data-size 2)
-                           type (or (when possibly-special-type?
-                                      (.mark in 2)
-                                      (let [h (byte-array 2)]
-                                        (.readFully in h 0 2)
-                                        (condp =ba? h
-                                          bs-clj :clj
-                                          bs-bin :bin
-                                          nil))) :str)
+      (if (= reply-count 1)
+        (->> (get-basic-reply! in)
+             (apply-parser (first parsers))
+             skip-check
+             exception-check)
 
-                           str?         (= type :str)
-                           payload-size (int (if str? data-size (- data-size 2)))
-                           payload      (byte-array payload-size)]
+        (let [replies
+              (->> (repeatedly reply-count (partial get-basic-reply! in))
+                   (map #(apply-parser %1 %2) parsers)
+                   (remove skip-reply?))]
+          (if-not (next replies)
+            (let [[r] replies] (exception-check r))
+            (vec replies)))))))
 
-                       (when (and possibly-special-type? str? (.reset in)))
-                       (.readFully in payload 0 payload-size)
-                       (.readFully in (byte-array 2) 0 2) ; Discard final crlf
-
-                       (case type
-                         :str (String. payload 0 payload-size charset)
-                         :clj (ser/thaw-from-bytes payload true)
-                         :bin [payload payload-size]))))
-
-              \* (let [count (Integer/parseInt (.readLine in))]
-                   (doall (repeatedly count get-reply!)))
-              (throw (Exception. (str "Server returned unknown reply type: "
-                                      reply-type))))))]
-
-    (case (int count)
-      0 nil
-      1 (let [r (get-reply!)] (if (instance? Exception r) (throw r) r))
-      (doall (repeatedly count get-reply!)))))
+(defn get-one-reply! [] (get-replies! 1))
 
 (defmacro with-context
-  "Evaluates body with thread-bound IO streams."
+  "Evaluates body in the context of a thread-bound connection to a Redis server."
   [connection & body]
-  `(binding [*context*
-             {:in-stream  (carmine.connections/in-stream  ~connection)
-              :out-stream (carmine.connections/out-stream ~connection)}]
-     ~@body))
-
-(defmacro with-context-and-response
-  "Evaluates body with thread-bound IO streams and returns the server's response."
-  [connection & body]
-  `(binding [*context*
-             {:in-stream  (carmine.connections/in-stream  ~connection)
-              :out-stream (carmine.connections/out-stream ~connection)
-              :atomic-reply-count (atom 0)}]
-     ~@body
-     (get-response!)))
+  `(let [listener?# (:listener? (carmine.connections/get-spec ~connection))]
+     (binding [*context*
+               (Context. (carmine.connections/in-stream  ~connection)
+                         (carmine.connections/out-stream ~connection)
+                         (when-not listener?# (atom (PersistentQueue/EMPTY))))
+               *parser* nil]
+       ~@body
+       (if listener?# nil (get-replies! :all)))))

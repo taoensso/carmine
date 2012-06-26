@@ -3,14 +3,13 @@
   (:require [clojure.string :as str]
             [carmine (core :as r) (serialization :as ser)]))
 
-;;; Connections
+;;;; Connections
+
 (def p (r/make-conn-pool))
 (def s (r/make-conn-spec))
-(defmacro wc [& commands] `(r/with-conn p s ~@commands))
+(defmacro wc [& body] `(r/with-conn p s ~@body))
 
-;;; Version handling
-(defn get-redis-version
-  [] (second (re-find #"redis_version:(.+)\r\n" (wc (r/info)))))
+;;;; Versions
 
 (defn version-compare
   [x y]
@@ -19,19 +18,22 @@
 
 (defn sufficient-version?
   [minimum-version]
-  (>= (version-compare (get-redis-version) minimum-version) 0))
+  (>= (version-compare (get (wc (r/info*)) "redis_version")
+                       minimum-version) 0))
 
-(comment (get-redis-version)
-         (version-compare "1.3.0" "1.2.3")
+(comment (version-compare "1.3.0" "1.2.3")
          (sufficient-version? "2.5.10"))
 
-;;; Prefix all keys used in testing for easy removal
-(defn test-key [key] (str "carmine:test:" key))
+;;;; Keys
+
+(defn test-key [key] (str "carmine:temp:test:" key))
 (defn clean-up!
   []
   (let [test-keys (wc (r/keys (test-key "*")))]
     (when (seq test-keys)
       (wc (apply r/del test-keys)))))
+
+;;;; Tests
 
 (clean-up!) ; Start with a fresh db
 
@@ -84,17 +86,17 @@
     (wc (r/rpush k "Tom"))
     (wc (r/rpush k "Bob"))
     (wc (r/lpush k "Sam"))
-    (is (= '("Sam" "Tom" "Bob")
+    (is (= ["Sam" "Tom" "Bob"]
            (wc (r/lrange k "0" "-1"))))
-    (is (= '("Sam" "Tom")
+    (is (= ["Sam" "Tom"]
            (wc (r/lrange k "0" "1"))))
-    (is (= '("Sam" "Tom" "Bob")
+    (is (= ["Sam" "Tom" "Bob"]
            (wc (r/lrange k "0" "2"))))
     (is (= 3 (wc (r/llen k))))
     (is (= "Sam" (wc (r/lpop k))))
     (is (= "Bob" (wc (r/rpop k))))
     (is (= 1 (wc (r/llen k))))
-    (is (= '("Tom") (wc (r/lrange k "0" "-1"))))
+    (is (= ["Tom"] (wc (r/lrange k "0" "-1"))))
     (wc (r/del k))))
 
 (deftest test-non-ascii-params
@@ -112,8 +114,8 @@
 (deftest test-commands-as-real-functions
   (is (= nil (wc "This is a malformed request")))
   (is (= "PONG" (wc (r/ping) "This is a malformed request")))
-  (is (= '("PONG" "PONG" "PONG") (wc (doall (repeatedly 3 r/ping)))))
-  (is (= '("A" "B" "C") (wc (doall (map r/echo ["A" "B" "C"]))))))
+  (is (= ["PONG" "PONG" "PONG"] (wc (doall (repeatedly 3 r/ping)))))
+  (is (= ["A" "B" "C"] (wc (doall (map r/echo ["A" "B" "C"]))))))
 
 (deftest test-composition
   (let [out-k (test-key "outside-key")
@@ -139,11 +141,11 @@
     (wc (r/hsetnx k "field1" "newvalue"))
     (is (= "value1" (wc (r/hget k "field1"))))
     (is (= 1 (wc (r/hexists k "field1"))))
-    (is (= '("field1" "value1") (wc (r/hgetall k))))
+    (is (= ["field1" "value1"] (wc (r/hgetall k))))
     (wc (r/hset k "field2" "1"))
     (is (= 3 (wc (r/hincrby k "field2" "2"))))
-    (is (= '("field1" "field2") (wc (r/hkeys k))))
-    (is (= '("value1" "3") (wc (r/hvals k))))
+    (is (= ["field1" "field2"] (wc (r/hkeys k))))
+    (is (= ["value1" "3"] (wc (r/hvals k))))
     (is (= 2 (wc (r/hlen k))))
     (wc (r/hdel k "field1"))
     (is (= 0 (wc (r/hexists k "field1"))))))
@@ -159,7 +161,7 @@
     (is (= 0 (wc (r/sismember k1 "reflexes"))))
     (wc (r/sadd k2 "pecking"))
     (wc (r/sadd k2 "flight"))
-    (is (= (set '("flight" "pecking" "x-ray vision"))
+    (is (= (set ["flight" "pecking" "x-ray vision"])
            (set (wc (r/sunion k1 k2)))))))
 
 (deftest test-sorted-sets
@@ -183,11 +185,11 @@
     (wc (r/zadd k2 "1871" "Theodore Dreiser"))
     (wc (r/zunionstore* k1-U-k2 [k1 k2]))
     (wc (r/zinterstore* k1-I-k2 [k1 k2]))
-    (is (= '("Alan Kay" "Richard Stallman" "Yukihiro Matsumoto")
+    (is (= ["Alan Kay" "Richard Stallman" "Yukihiro Matsumoto"]
            (wc (r/zrange k1 "2" "4"))))
-    (is (= '("Claude Shannon" "Alan Kay" "Richard Stallman" "Ferris Beuler")
+    (is (= ["Claude Shannon" "Alan Kay" "Richard Stallman" "Ferris Beuler"]
            (wc (r/zrange k1-U-k2 "2" "5"))))
-    (is (= '("Emmanuel Goldstein" "Dade Murphy")
+    (is (= ["Emmanuel Goldstein" "Dade Murphy"]
            (wc (r/zrange k1-I-k2 "0" "1"))))))
 
 (deftest test-pipeline
@@ -209,15 +211,16 @@
         listener (r/with-new-pubsub-listener
                    s {"ps-foo" #(swap! received conj %)}
                    (r/subscribe "ps-foo"))]
+
     (wc (r/publish "ps-foo" "one")
         (r/publish "ps-foo" "two")
         (r/publish "ps-foo" "three"))
     (Thread/sleep 500)
     (r/close-listener listener)
-    (is (= @received ['("subscribe" "ps-foo" 1)
-                      '("message"   "ps-foo" "one")
-                      '("message"   "ps-foo" "two")
-                      '("message"   "ps-foo" "three")])))
+    (is (= @received [["subscribe" "ps-foo" 1]
+                      ["message"   "ps-foo" "one"]
+                      ["message"   "ps-foo" "two"]
+                      ["message"   "ps-foo" "three"]])))
 
   (let [received (atom [])
         listener (r/with-new-pubsub-listener
@@ -229,18 +232,18 @@
         (r/publish "ps-baz" "three"))
     (Thread/sleep 500)
     (r/close-listener listener)
-    (is (= @received ['("subscribe" "ps-foo" 1)
-                      '("subscribe" "ps-baz" 2)
-                      '("message"   "ps-foo" "one")
-                      '("message"   "ps-baz" "three")])))
+    (is (= @received [["subscribe" "ps-foo" 1]
+                      ["subscribe" "ps-baz" 2]
+                      ["message"   "ps-foo" "one"]
+                      ["message"   "ps-baz" "three"]])))
 
   (let [received (atom [])
         listener (r/with-new-pubsub-listener
                    s {"ps-*"   #(swap! received conj %)
-                      "ps-foo" #(swap! received conj %)})
-        _ (r/with-open-listener listener
-            (r/psubscribe "ps-*")
-            (r/subscribe  "ps-foo"))]
+                      "ps-foo" #(swap! received conj %)})]
+    (r/with-open-listener listener
+      (r/psubscribe "ps-*")
+      (r/subscribe  "ps-foo"))
     (wc (r/publish "ps-foo" "one")
         (r/publish "ps-bar" "two")
         (r/publish "ps-baz" "three"))
@@ -252,15 +255,15 @@
         (r/publish "ps-baz" "five"))
     (Thread/sleep 500)
     (r/close-listener listener)
-    (is (= @received ['("psubscribe"  "ps-*"   1)
-                      '("subscribe"   "ps-foo" 2)
-                      '("message"     "ps-foo" "one")
-                      '("pmessage"    "ps-*"   "ps-foo" "one")
-                      '("pmessage"    "ps-*"   "ps-bar" "two")
-                      '("pmessage"    "ps-*"   "ps-baz" "three")
-                      '("unsubscribe" "ps-foo" 1)
-                      '("pmessage"    "ps-*"   "ps-foo" "four")
-                      '("pmessage"    "ps-*"   "ps-baz" "five")]))))
+    (is (= @received [["psubscribe"  "ps-*"   1]
+                      ["subscribe"   "ps-foo" 2]
+                      ["message"     "ps-foo" "one"]
+                      ["pmessage"    "ps-*"   "ps-foo" "one"]
+                      ["pmessage"    "ps-*"   "ps-bar" "two"]
+                      ["pmessage"    "ps-*"   "ps-baz" "three"]
+                      ["unsubscribe" "ps-foo" 1]
+                      ["pmessage"    "ps-*"   "ps-foo" "four"]
+                      ["pmessage"    "ps-*"   "ps-baz" "five"]]))))
 
 (deftest test-serialization
   (let [k1 (test-key "stress-data")
@@ -270,6 +273,12 @@
     (wc (r/hmset k2 "field1" ser/stress-data "field2" "just a string"))
     (is (= ser/stress-data (wc (r/hget k2 "field1"))))
     (is (= "just a string" (wc (r/hget k2 "field2"))))))
+
+(deftest test-binary-safety
+  (let [k (test-key "binary-safety")
+        ba (byte-array [(byte 3) (byte 1) (byte 4)])]
+    (wc (r/set k ba))
+    (is (= [ba 3]) (wc (r/get k)))))
 
 (deftest test-nulls
   (let [k (test-key "nulls")]
@@ -300,6 +309,45 @@
           script-hash (r/hash-script script)]
       (wc (r/script-load script))
       (wc (r/evalsha script-hash "1" k))
-      (is (= "script-value" (wc (r/get k)))))))
+      (is (= "script-value" (wc (r/get k))))
+      (is (= ["key1" "key2" "arg1" "arg2"]
+             (wc (r/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
+                         "2" "key1" "key2" "arg1" "arg2")))))))
+
+(deftest test-reply-parsing
+  (let [k (test-key "reply-parsing")]
+    (wc (r/set k [:a :A :b :B :c :C :d :D]))
+    (is (= ["PONG" {:a :A :b :B :c :C :d :D} "PONG" "PONG"]
+           (wc (r/ping)
+               (r/with-parser #(apply hash-map %) (r/get k))
+               (r/ping)
+               (r/ping))))))
+
+(deftest test-transactions
+  (let [k      (test-key "atomic")
+        wk     (test-key "watch")
+        k-val  "initial-k-value"
+        wk-val "initial-wk-value"]
+
+    ;;; This transaction will succeed
+    (wc (r/set k  k-val)
+        (r/set wk wk-val))
+    (is (= ["PONG" "OK"]
+           (wc (r/atomically
+                []
+                (let [wk-val (wc (r/get wk))]
+                  (r/ping)
+                  (r/set k wk-val))))))
+    (is (= wk-val (wc (r/get k))))
+
+    ;;; This transaction will fail
+    (wc (r/set k  k-val)
+        (r/set wk wk-val))
+    (is (= []
+           (wc (r/atomically
+                [wk]
+                (wc (r/set wk "CHANGE!")) ; Will break watch
+                (r/ping)))))
+    (is (= k-val (wc (r/get k))))))
 
 (clean-up!) ; Leave with a fresh db

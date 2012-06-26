@@ -4,25 +4,31 @@
   {:author "Peter Taoussanis"}
   (:import [java.io DataInputStream DataOutputStream ByteArrayOutputStream
             ByteArrayInputStream]
-           [org.xerial.snappy Snappy]))
+           org.xerial.snappy.Snappy
+           clojure.lang.PersistentQueue))
 
 ;;;; Define type IDs
+
+(def ^:const schema-header "\u0000~0.8.3")
 
 (def ^:const id-reader  (int 1)) ; Fallback: *print-dup* pr-str output
 (def ^:const id-bytes   (int 2))
 (def ^:const id-nil     (int 3))
 (def ^:const id-boolean (int 4))
+;; (def ^:const id-meta (int 5))
 
 (def ^:const id-char    (int 10))
 (def ^:const id-string  (int 11))
 (def ^:const id-keyword (int 12))
 
+;; (def ^:const id-coll (int 20))
 (def ^:const id-list    (int 20))
 (def ^:const id-vector  (int 21))
 (def ^:const id-map     (int 22))
 (def ^:const id-set     (int 23))
-(def ^:const id-coll    (int 24)) ; Non-specific collection
+(def ^:const id-coll    (int 24)) ; Non-specific collection (fallback)
 (def ^:const id-meta    (int 25))
+(def ^:const id-queue   (int 26))
 
 (def ^:const id-byte    (int 40))
 (def ^:const id-short   (int 41))
@@ -102,6 +108,9 @@
 (freezer clojure.lang.IPersistentSet id-set
          (.writeInt s (count x))
          (doseq [i x] (freeze-to-stream!* s i)))
+(freezer clojure.lang.PersistentQueue id-queue
+         (.writeInt s (count x))
+         (doseq [i x] (freeze-to-stream!* s i)))
 (freezer clojure.lang.IPersistentCollection id-coll
          (.writeInt s (count x))
          (doseq [i x] (freeze-to-stream!* s i)))
@@ -136,6 +145,7 @@
   "Serializes x to given output stream."
   [data-output-stream x]
   (binding [*print-dup* true] ; For 'pr-str'
+    (freeze-to-stream!* data-output-stream schema-header)
     (freeze-to-stream!* data-output-stream x)))
 
 (defn freeze-to-bytes
@@ -182,6 +192,8 @@
                                            (partial thaw-from-stream!* s)))
      id-set    (set (repeatedly (.readInt s) (partial thaw-from-stream!* s)))
      id-coll   (doall (repeatedly (.readInt s) (partial thaw-from-stream!* s)))
+     id-queue  (into (PersistentQueue/EMPTY)
+                     (repeatedly (.readInt s) (partial thaw-from-stream!* s)))
 
      id-meta (let [m (thaw-from-stream!* s)] (with-meta (thaw-from-stream!* s) m))
 
@@ -200,11 +212,26 @@
 
      (throw (Exception. (str "Failed to thaw unknown type ID: " type-id))))))
 
+;; TODO Scheduled for Carmine version 1.0.0
+;; (defn thaw-from-stream!
+;;   "Deserializes an entity from given input stream."
+;;   [data-input-stream]
+;;   (binding [*read-eval* false] ; For 'read-string' injection safety - NB!!!
+;;     (let [schema-header (thaw-from-stream!* data-input-stream)]
+;;       (thaw-from-stream!* data-input-stream))))
+
 (defn thaw-from-stream!
-  "Deserializes an entity from given input stream. "
+  "DEPRECATED. Deserializes an entity from given input stream. Includes
+  temporary support for older versions of serialization schema that didn't
+  include a schema-header."
+  {:deprecated "0.8.3"}
   [data-input-stream]
   (binding [*read-eval* false] ; For 'read-string' injection safety - NB!!!
-    (thaw-from-stream!* data-input-stream)))
+    (let [maybe-schema-header (thaw-from-stream!* data-input-stream)]
+      (if (and (string? maybe-schema-header)
+               (.startsWith ^String maybe-schema-header "\u0000~"))
+        (thaw-from-stream!* data-input-stream)
+        maybe-schema-header))))
 
 (defn thaw-from-bytes
   "Deserializes an entity from given byte array."
@@ -235,6 +262,9 @@
    :set          #{1 2 3 4 5 #{6 7 8 #{9 10}}}
    :set-empty    #{}
    :meta         (with-meta {:a :A} {:metakey :metaval})
+   :queue        (-> (PersistentQueue/EMPTY) (conj :a :b :c :d :e :f :g))
+   :queue-empty  (PersistentQueue/EMPTY)
+
    :coll         (repeatedly 1000 rand)
 
    :byte         (byte 16)
@@ -267,8 +297,8 @@
   (good-roundtrip? reader-roundtrip stress-data) ; false (without *print-dup*)
 
   (time (dotimes [_ 1000] (roundtrip stress-data false)))
-  ;; 1050s after w/u, no compression
-  ;; 1150ms after w/u, compression
+  ;; 1050s after w/u, no compression (790ms on JDK7)
+  ;; 1150ms after w/u, compression (840ms on JDK7)
 
   (pr-str stress-data)
   (time (dotimes [_ 1000] (reader-roundtrip stress-data)))

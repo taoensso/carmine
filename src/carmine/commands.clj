@@ -65,8 +65,7 @@
       `(println ~fn-name ":" \" ~(args->params-doc-string args) \"
                 "->" ~(str fn-params))
       `(defn ~(symbol fn-name) ~fn-doc-string ~fn-params
-         (apply protocol/send-request! nil
-                ~@apply-params)))))
+         (apply protocol/send-request! ~@apply-params)))))
 
 (defn- get-command-reference
   "Returns parsed JSON official command reference.

@@ -3,13 +3,11 @@
   {:author "Peter Taoussanis"}
   (:require [ring.middleware.session.store :as session-store]
             [carmine.core :as carmine])
-  (:import  [java.util UUID]))
+  (:import  java.util.UUID))
 
 (defn new-session-key [prefix] (str prefix ":" (UUID/randomUUID)))
 
-(defmacro wc [& body]
-  `(carmine.core/with-conn @~'pool-atom @~'spec-atom
-     ~@body))
+(defmacro wc [& body] `(carmine/with-conn @~'pool-atom @~'spec-atom ~@body))
 
 (defprotocol ICarmineSessionStore
   (set-pool [this pool])
@@ -35,7 +33,7 @@
   to specify how long session data will survive after last write. When nil,
   sessions will never expire."
   [& {:keys [connection-pool connection-spec key-prefix expiration-secs]
-      :or   {key-prefix       "carmine-session"
+      :or   {key-prefix       "carmine:session"
              expiration-secs  (str (* 60 60 24 30))}}]
   (CarmineSessionStore. (atom connection-pool) (atom connection-spec)
                         key-prefix (str expiration-secs)))

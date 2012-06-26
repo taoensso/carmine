@@ -11,7 +11,7 @@
   (let [merged-opts (merge {:requests  10000
                             :clients   5
                             :data-size 32
-                            :data-key  "carmine:benchmark:data-key"} opts)]
+                            :data-key  "carmine:temp:benchmark:data-key"} opts)]
     (assoc merged-opts
       :data (apply str (repeat (:data-size merged-opts) "x")))))
 
@@ -138,7 +138,9 @@
   ;; {:ping 829.496, :set 933.46,  :get 882.737}
   ;; {:ping 865.845, :set 979.341, :get 986.603} ; With full bin, clj support
   ;; {:ping 717.882, :set 811.658, :get 860.322} ; 2012 Jun 11
-  ;; {:ping 666.65,  :set 795.015, :get 739.952} ; 2012 Jun 21, JDK7
+  ;; {:ping 666.65,  :set 795.015, :get 739.952} ; 2012 Jun 21 JDK7
+  ;; {:ping 689.878, :set 768.9,   :get 752.269} ; 2012 Jun 25 JDK7 parser-stack
+  ;; {:ping 687.798, :set 756.237, :get 745.118} ; 2012 Jun 26 new parser
   (bench-accession     (opts :requests 10000 :clients 1 :data-size 100))
   ;; {:ping 2418.782, :set "DNF", :get "DNF"}
   (bench-clj-redis     (opts :requests 10000 :clients 1 :data-size 100))
@@ -169,5 +171,6 @@
   ;; {:ping 86.923, :set 86.607,  :get 98.474}  ; After good warm-up
   ;; {:ping 92.654, :set 106.562, :get 112.864} ; After w/u, with bin, clj!
   ;; {:ping 90.494, :set 101.51,  :get 104.775} ; After w/u, 0.8.2
-
+  ;; {:ping 70.287, :set 78.4,    :get 82.508}  ; JDK 7 parser-stack
+  ;; {:ping 83.186, :set 79.789,  :get 81.752}  ; New parser
   )

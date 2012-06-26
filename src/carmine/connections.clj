@@ -4,10 +4,10 @@
   {:author "Peter Taoussanis"}
   (:require [carmine.utils    :as utils]
             [carmine.protocol :as protocol])
-  (:import  [java.net Socket]
-            [java.io  BufferedInputStream DataInputStream BufferedOutputStream]
-            [org.apache.commons.pool      KeyedPoolableObjectFactory]
-            [org.apache.commons.pool.impl GenericKeyedObjectPool]))
+  (:import  java.net.Socket
+            [java.io BufferedInputStream DataInputStream BufferedOutputStream]
+            org.apache.commons.pool.KeyedPoolableObjectFactory
+            org.apache.commons.pool.impl.GenericKeyedObjectPool))
 
 ;; Hack to allow cleaner separation of ns concerns
 (utils/declare-remote carmine.core/ping
@@ -31,10 +31,11 @@
   (out-stream  [this] (-> (.getOutputStream socket)
                           (BufferedOutputStream.)))
   (conn-alive? [this]
-    (if (:pubsub? spec) true ; TODO See .org file
-        (= "PONG" (try (carmine.protocol/with-context-and-response this
-                         (carmine.core/ping))
-                       (catch Exception _)))))
+    (if (:listener? spec)
+      true ; TODO See .org file
+      (= "PONG" (try (carmine.protocol/with-context this
+                       (carmine.core/ping))
+                     (catch Exception _)))))
   (close-conn  [this] (.close socket)))
 
 ;; Interface for a pool of socket connections
@@ -57,9 +58,9 @@
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer timeout))
         conn (Connection. socket spec)]
-    (when password (carmine.protocol/with-context-and-response conn
+    (when password (carmine.protocol/with-context conn
                      (carmine.core/auth password)))
-    (when (not (zero? db)) (carmine.protocol/with-context-and-response conn
+    (when (not (zero? db)) (carmine.protocol/with-context conn
                              (carmine.core/select db)))
     conn))
 
