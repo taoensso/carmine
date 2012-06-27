@@ -167,7 +167,7 @@
 
       (if (= reply-count 1)
         (->> (get-basic-reply! in)
-             (apply-parser (first parsers))
+             (apply-parser (peek parsers))
              skip-check
              exception-check)
 
