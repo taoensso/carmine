@@ -10,8 +10,7 @@
 (defmacro wc [& body] `(carmine/with-conn @~'pool-atom @~'spec-atom ~@body))
 
 (defprotocol ICarmineSessionStore
-  (set-pool [this pool])
-  (set-spec [this spec]))
+  (set-conn [this pool spec]))
 
 (defrecord CarmineSessionStore [pool-atom spec-atom prefix expiration]
   session-store/SessionStore
@@ -25,8 +24,9 @@
       key))
 
   ICarmineSessionStore
-  (set-pool [_ pool] (reset! pool-atom pool))
-  (set-spec [_ spec] (reset! spec-atom spec)))
+  (set-conn [_ pool spec]
+    (reset! pool-atom pool)
+    (reset! spec-atom spec)))
 
 (defn make-carmine-store
   "Creates and returns a Carmine-backed Ring SessionStore. Use 'expiration-secs'
