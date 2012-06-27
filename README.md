@@ -38,7 +38,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 
 ### Leiningen
 
-Depend on `[carmine "0.8.3-SNAPSHOT"]` in your `project.clj` and `require` the library:
+Depend on `[com.taoensso/carmine "0.8.3-SNAPSHOT"]` in your `project.clj` and `require` the library:
 
 ```clojure
 (ns my-app (:require [carmine (core :as r)]))
