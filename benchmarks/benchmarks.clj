@@ -145,8 +145,10 @@
   ;; {:ping 2418.782, :set "DNF", :get "DNF"}
   (bench-clj-redis     (opts :requests 10000 :clients 1 :data-size 100))
   ;; {:ping 613.685, :set 631.608, :get 620.953}
+  ;; {:ping 509.347, :set 551.578, :get 536.883} ; JDK7
   (bench-redis-clojure (opts :requests 10000 :clients 1 :data-size 100))
   ;; {:ping 1585.879, :set 1833.997, :get 1882.774}
+  ;; {:ping 1558.685, :set 1731.112, :get 1710.766} ; JDK7
 
   ;; ./redis-benchmark -n 10000 -d 100 -c 1
   ;; PING-INLINE 1000 requests completed in 0.43 seconds
