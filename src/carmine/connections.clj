@@ -61,7 +61,7 @@
     (when password (carmine.protocol/with-context conn
                      (carmine.core/auth password)))
     (when (not (zero? db)) (carmine.protocol/with-context conn
-                             (carmine.core/select db)))
+                             (carmine.core/select (str db))))
     conn))
 
 (defrecord NonPooledConnectionPool []
