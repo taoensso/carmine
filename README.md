@@ -1,3 +1,11 @@
+# NOTICE
+
+The Carmine Clojars group was recently changed. Please update your `project.clj` to use:
+
+```clojure
+[com.taoensso/carmine "{VERSION}"]
+```
+
 # Carmine, a Redis client for Clojure
 
 [Redis](http://www.redis.io/) is *awesome* and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
@@ -38,7 +46,13 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 
 ### Leiningen
 
-Depend on `[com.taoensso/carmine "0.8.3-SNAPSHOT"]` in your `project.clj` and `require` the library:
+Depend on Carmine in your `project.clj`:
+
+```clojure
+[com.taoensso/carmine "0.8.3"]
+```
+
+and `require` the library:
 
 ```clojure
 (ns my-app (:require [carmine (core :as r)]))
