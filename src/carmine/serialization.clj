@@ -4,8 +4,8 @@
   {:author "Peter Taoussanis"}
   (:import [java.io DataInputStream DataOutputStream ByteArrayOutputStream
             ByteArrayInputStream]
-           org.xerial.snappy.Snappy
-           clojure.lang.PersistentQueue))
+           [org.xerial.snappy Snappy]
+           [clojure.lang PersistentQueue]))
 
 ;;;; Define type IDs
 
@@ -144,7 +144,7 @@
 (defn freeze-to-stream!
   "Serializes x to given output stream."
   [data-output-stream x]
-  (binding [*print-dup* true] ; For 'pr-str'
+  (binding [*print-dup* true] ; For `pr-str`
     (freeze-to-stream!* data-output-stream schema-header)
     (freeze-to-stream!* data-output-stream x)))
 
@@ -161,7 +161,7 @@
 ;;;; Thawing
 
 (defmacro case-eval
-  "Like 'case' but evaluates test constants for their compile-time value."
+  "Like `case` but evaluates test constants for their compile-time value."
   [e & clauses]
   (let [;; Don't evaluate default expression!
         default (when (odd? (count clauses)) (last clauses))
@@ -216,7 +216,7 @@
 ;; (defn thaw-from-stream!
 ;;   "Deserializes an entity from given input stream."
 ;;   [data-input-stream]
-;;   (binding [*read-eval* false] ; For 'read-string' injection safety - NB!!!
+;;   (binding [*read-eval* false] ; For `read-string` injection safety - NB!!!
 ;;     (let [schema-header (thaw-from-stream!* data-input-stream)]
 ;;       (thaw-from-stream!* data-input-stream))))
 
@@ -226,7 +226,7 @@
   include a schema-header."
   {:deprecated "0.8.3"}
   [data-input-stream]
-  (binding [*read-eval* false] ; For 'read-string' injection safety - NB!!!
+  (binding [*read-eval* false] ; For `read-string` injection safety - NB!!!
     (let [maybe-schema-header (thaw-from-stream!* data-input-stream)]
       (if (and (string? maybe-schema-header)
                (.startsWith ^String maybe-schema-header "\u0000~"))

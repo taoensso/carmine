@@ -1,9 +1,7 @@
-# NOTICE
-
-The Carmine Clojars group was recently changed. Please update your `project.clj` to use:
+Current version:
 
 ```clojure
-[com.taoensso/carmine "{VERSION}"]
+[com.taoensso/carmine "0.8.3"]
 ```
 
 # Carmine, a Redis client for Clojure

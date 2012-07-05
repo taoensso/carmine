@@ -7,7 +7,7 @@
   (:require [clojure.string :as str]
             [carmine (utils :as utils) (serialization :as ser)])
   (:import  [java.io DataInputStream BufferedOutputStream]
-            clojure.lang.PersistentQueue))
+            [clojure.lang PersistentQueue]))
 
 ;; Hack to allow cleaner separation of namespaces
 (utils/declare-remote carmine.connections/get-spec
@@ -19,7 +19,7 @@
 (def ^:dynamic *parser*  nil)
 (def no-context-error
   (Exception. (str "Redis commands must be called within the context of a"
-                   " connection to Redis server. See 'with-conn'.")))
+                   " connection to Redis server. See `with-conn`.")))
 
 (def ^:private ^:const charset     "UTF-8")
 (def ^:private ^:const bytes-class (Class/forName "[B"))

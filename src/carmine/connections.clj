@@ -6,8 +6,8 @@
             [carmine.protocol :as protocol])
   (:import  java.net.Socket
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
-            org.apache.commons.pool.KeyedPoolableObjectFactory
-            org.apache.commons.pool.impl.GenericKeyedObjectPool))
+            [org.apache.commons.pool KeyedPoolableObjectFactory]
+            [org.apache.commons.pool.impl GenericKeyedObjectPool]))
 
 ;; Hack to allow cleaner separation of ns concerns
 (utils/declare-remote carmine.core/ping
