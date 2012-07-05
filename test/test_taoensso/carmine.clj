@@ -1,7 +1,8 @@
-(ns carmine.test.core
+(ns test-taoensso.carmine
   (:use [clojure.test])
   (:require [clojure.string :as str]
-            [carmine (core :as r) (serialization :as ser)]))
+            [taoensso.carmine :as r]
+            [taoensso.carmine.serialization :as ser]))
 
 ;;;; Connections
 

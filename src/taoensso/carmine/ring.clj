@@ -1,8 +1,8 @@
-(ns carmine.ring
+(ns taoensso.carmine.ring
   "Carmine-backed Ring session store. Adapted from clj-redis-session."
   {:author "Peter Taoussanis"}
   (:require [ring.middleware.session.store :as session-store]
-            [carmine.core :as carmine])
+            [taoensso.carmine :as carmine])
   (:import  [java.util UUID]))
 
 (defn new-session-key [prefix] (str prefix ":" (UUID/randomUUID)))

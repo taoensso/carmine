@@ -1,18 +1,18 @@
-(ns carmine.protocol
+(ns taoensso.carmine.protocol
   "Facilities for actually communicating with Redis server using its
   request/response protocol. Originally adapted from Accession.
 
   Ref: http://redis.io/topics/protocol"
   {:author "Peter Taoussanis"}
   (:require [clojure.string :as str]
-            [carmine (utils :as utils) (serialization :as ser)])
+            [taoensso.carmine (utils :as utils) (serialization :as ser)])
   (:import  [java.io DataInputStream BufferedOutputStream]
             [clojure.lang PersistentQueue]))
 
 ;; Hack to allow cleaner separation of namespaces
-(utils/declare-remote carmine.connections/get-spec
-                      carmine.connections/in-stream
-                      carmine.connections/out-stream)
+(utils/declare-remote taoensso.carmine.connections/get-spec
+                      taoensso.carmine.connections/in-stream
+                      taoensso.carmine.connections/out-stream)
 
 (defrecord Context [in-stream out-stream parser-stack])
 (def ^:dynamic *context* nil)
@@ -149,7 +149,7 @@
                               reply-type))))))
 
 (defn- apply-parser [parser reply] (if parser (parser reply) reply))
-(defn- skip-reply?     [reply] (= reply :carmine.protocol/skip-reply))
+(defn- skip-reply?     [reply] (= reply :taoensso.carmine.protocol/skip-reply))
 (defn- exception-check [reply] (if (instance? Exception reply) (throw reply) reply))
 (defn- skip-check      [reply] (if (skip-reply? reply) nil reply))
 
@@ -184,10 +184,11 @@
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server."
   [connection & body]
-  `(let [listener?# (:listener? (carmine.connections/get-spec ~connection))]
+  `(let [listener?#
+         (:listener? (taoensso.carmine.connections/get-spec ~connection))]
      (binding [*context*
-               (Context. (carmine.connections/in-stream  ~connection)
-                         (carmine.connections/out-stream ~connection)
+               (Context. (taoensso.carmine.connections/in-stream  ~connection)
+                         (taoensso.carmine.connections/out-stream ~connection)
                          (when-not listener?# (atom (PersistentQueue/EMPTY))))
                *parser* nil]
        ~@body

@@ -1,14 +1,14 @@
-(ns carmine.core
+(ns taoensso.carmine
   "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set keys type sync sort eval])
   (:require [clojure.string :as str]
-            [carmine
+            [taoensso.carmine
              (protocol    :as protocol)
              (connections :as conns)
              (commands    :as commands)])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
-           [carmine.connections ConnectionPool]))
+           [taoensso.carmine.connections ConnectionPool]))
 
 ;;;; Connections
 
@@ -54,7 +54,8 @@
   `(binding [protocol/*parser* ~parser-fn] ~@body))
 
 (defmacro skip-replies
-  [& body] `(with-parser (constantly :carmine.protocol/skip-reply) ~@body))
+  [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
+              ~@body))
 
 ;;;; Standard commands
 

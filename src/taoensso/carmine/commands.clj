@@ -1,4 +1,4 @@
-(ns carmine.commands
+(ns taoensso.carmine.commands
   "Define an appropriate function for EVERY Redis command. This is done by
   parsing the official Redis command reference (JSON) which includes up-to-date
   doc-strings, argument specs, etc. This awesome approach was adapted from
@@ -7,7 +7,7 @@
   (:require [clojure.java.io   :as io]
             [clojure.string    :as str]
             [clojure.data.json :as json]
-            [carmine.protocol  :as protocol]))
+            [taoensso.carmine.protocol :as protocol]))
 
 (defn- args->params-vec
   "Parses refspec argument map into simple defn-style parameter vector:

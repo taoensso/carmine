@@ -1,7 +1,7 @@
 Current version:
 
 ```clojure
-[com.taoensso/carmine "0.8.3"]
+[com.taoensso/carmine "0.8.3"] ; Please note that the repo and ns have changed recently
 ```
 
 # Carmine, a Redis client for Clojure
@@ -53,7 +53,7 @@ Depend on Carmine in your `project.clj`:
 and `require` the library:
 
 ```clojure
-(ns my-app (:require [carmine (core :as r)]))
+(ns my-app (:require [taoensso.carmine :as r]))
 ```
 
 ### Make A Connection

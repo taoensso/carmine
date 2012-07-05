@@ -1,4 +1,4 @@
-(ns carmine.serialization
+(ns taoensso.carmine.serialization
   "Deliberately simple, high-performance de/serializer for Clojure. Adapted from
   Deep-Freeze."
   {:author "Peter Taoussanis"}

@@ -1,4 +1,4 @@
-(ns carmine.utils "Misc shared stuff"
+(ns taoensso.carmine.utils "Misc shared stuff"
     {:author "Peter Taoussanis"})
 
 (defmacro declare-remote
