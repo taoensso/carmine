@@ -1,18 +1,17 @@
-(ns carmine.connections
+(ns taoensso.carmine.connections
   "Handles life cycle of socket connections to Redis server. Connection pool is
   implemented using Apache Commons pool. Adapted from redis-clojure."
   {:author "Peter Taoussanis"}
-  (:require [carmine.utils    :as utils]
-            [carmine.protocol :as protocol])
+  (:require [taoensso.carmine (utils :as utils) (protocol :as protocol)])
   (:import  java.net.Socket
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
-            org.apache.commons.pool.KeyedPoolableObjectFactory
-            org.apache.commons.pool.impl.GenericKeyedObjectPool))
+            [org.apache.commons.pool KeyedPoolableObjectFactory]
+            [org.apache.commons.pool.impl GenericKeyedObjectPool]))
 
 ;; Hack to allow cleaner separation of ns concerns
-(utils/declare-remote carmine.core/ping
-                      carmine.core/auth
-                      carmine.core/select)
+(utils/declare-remote taoensso.carmine/ping
+                      taoensso.carmine/auth
+                      taoensso.carmine/select)
 
 ;; Interface for socket connections to Redis server
 (defprotocol IConnection
@@ -33,8 +32,7 @@
   (conn-alive? [this]
     (if (:listener? spec)
       true ; TODO See .org file
-      (= "PONG" (try (carmine.protocol/with-context this
-                       (carmine.core/ping))
+      (= "PONG" (try (protocol/with-context this (taoensso.carmine/ping))
                      (catch Exception _)))))
   (close-conn  [this] (.close socket)))
 
@@ -58,10 +56,9 @@
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer timeout))
         conn (Connection. socket spec)]
-    (when password (carmine.protocol/with-context conn
-                     (carmine.core/auth password)))
-    (when (not (zero? db)) (carmine.protocol/with-context conn
-                             (carmine.core/select (str db))))
+    (when password (protocol/with-context conn (taoensso.carmine/auth password)))
+    (when (not (zero? db)) (protocol/with-context conn
+                             (taoensso.carmine/select (str db))))
     conn))
 
 (defrecord NonPooledConnectionPool []

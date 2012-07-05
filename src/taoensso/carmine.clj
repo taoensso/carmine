@@ -1,14 +1,14 @@
-(ns carmine.core
+(ns taoensso.carmine
   "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set keys type sync sort eval])
   (:require [clojure.string :as str]
-            [carmine
+            [taoensso.carmine
              (protocol    :as protocol)
              (connections :as conns)
              (commands    :as commands)])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
-           carmine.connections.ConnectionPool))
+           [taoensso.carmine.connections ConnectionPool]))
 
 ;;;; Connections
 
@@ -35,7 +35,7 @@
   server. Sends Redis commands to server as pipeline and returns the server's
   response. Releases connection back to pool when done.
 
-  Use 'make-conn-pool' and 'make-conn-spec' to generate the required arguments."
+  Use `make-conn-pool` and `make-conn-spec` to generate the required arguments."
   [connection-pool connection-spec & body]
   `(try
      (let [pool# (or ~connection-pool conns/non-pooled-connection-pool)
@@ -54,7 +54,8 @@
   `(binding [protocol/*parser* ~parser-fn] ~@body))
 
 (defmacro skip-replies
-  [& body] `(with-parser (constantly :carmine.protocol/skip-reply) ~@body))
+  [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
+              ~@body))
 
 ;;;; Standard commands
 
@@ -64,7 +65,7 @@
 
 (defn remember
   "Special command that takes any value and returns it unchanged as part of
-  an enclosing 'with-conn' pipeline response."
+  an enclosing `with-conn` pipeline response."
   [value]
   (let [temp-key (str "carmine:temp:remember")]
     (skip-replies (setex temp-key "60" value))
@@ -76,13 +77,13 @@
      (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
 
 (defn evalsha*
-  "Like 'evalsha' but automatically computes SHA1 hash for script."
+  "Like `evalsha` but automatically computes SHA1 hash for script."
   [script numkeys key & args]
   (apply evalsha (hash-script script) numkeys key args))
 
 (defn eval*
-  "Optimistically tries to send 'evalsha' command for given script. In the event
-  of a \"NOSCRIPT\" reply, reattempts with 'eval'. Returns the final command's
+  "Optimistically tries to send `evalsha` command for given script. In the event
+  of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply."
   [script numkeys key & args]
   (remember
@@ -95,11 +96,11 @@
             (throw e))))))
 
 (defn hgetall*
-  "Like 'hgetall' but automatically coerces reply into a hash-map."
+  "Like `hgetall` but automatically coerces reply into a hash-map."
   [key] (with-parser #(apply hash-map %) (hgetall key)))
 
 (defn info*
-  "Like 'info' but automatically coerces reply into a hash-map."
+  "Like `info` but automatically coerces reply into a hash-map."
   []
   (with-parser (fn [reply] (->> reply str/split-lines
                                (map #(str/split % #":"))
@@ -108,13 +109,13 @@
     (info)))
 
 (defn zinterstore*
-  "Like 'zinterstore' but automatically counts keys."
+  "Like `zinterstore` but automatically counts keys."
   [dest-key source-keys & options]
   (apply zinterstore dest-key
          (str (count source-keys)) (concat source-keys options)))
 
 (defn zunionstore*
-  "Like 'zunionstore' but automatically counts keys."
+  "Like `zunionstore` but automatically counts keys."
   [dest-key source-keys & options]
   (apply zunionstore dest-key
          (str (count source-keys)) (concat source-keys options)))
@@ -143,7 +144,7 @@
           (throw (Exception. (str "Unknown sort argument: " type))))))))
 
 (defn sort*
-  "Like 'sort' but supports idiomatic Clojure arguments: :by pattern,
+  "Like `sort` but supports idiomatic Clojure arguments: :by pattern,
   :limit offset count, :get pattern, :mget patterns, :store destination,
   :alpha, :asc, :desc."
   [key & sort-args] (apply sort key (parse-sort-args sort-args)))
@@ -163,13 +164,13 @@
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
 
-;; Once a connection to Redis issues a command like 'p/subscribe' or 'monitor'
+;; Once a connection to Redis issues a command like `p/subscribe` or `monitor`
 ;; it enters an idiosyncratic state:
 ;;
 ;;     * It blocks while waiting to receive a stream of special messages issued
 ;;       to it (connection-local!) by the server.
 ;;     * It can now only issue a subset of the normal commands like
-;;      'p/un/subscribe', 'quit', etc. These do NOT issue a normal server reply.
+;;       `p/un/subscribe`, `quit`, etc. These do NOT issue a normal server reply.
 ;;
 ;; To facilitate the unusual requirements we define a Listener to be a
 ;; combination of persistent, NON-pooled connection and threaded message
@@ -187,8 +188,8 @@
   Evaluates body within the context of the connection and returns a
   general-purpose Listener containing:
 
-      1. The underlying persistent connection to facilitate 'close-listener' and
-         'with-open-listener'.
+      1. The underlying persistent connection to facilitate `close-listener` and
+         `with-open-listener`.
       2. An atom containing the function given to handle incoming server
          messages.
       3. An atom containing any other optional listener state.
@@ -218,9 +219,9 @@
 (defn close-listener [listener] (conns/close-conn (:connection listener)))
 
 (defmacro with-new-pubsub-listener
-  "A wrapper for 'with-new-listener'. Creates a persistent connection to Redis
+  "A wrapper for `with-new-listener`. Creates a persistent connection to Redis
   server and a thread to listen for published messages from channels that we'll
-  subscribe to using 'p/subscribe' commands in body.
+  subscribe to using `p/subscribe` commands in body.
 
   While listening, incoming messages will be dispatched by source (channel or
   pattern) to the given message-handler functions:

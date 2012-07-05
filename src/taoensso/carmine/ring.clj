@@ -1,9 +1,9 @@
-(ns carmine.ring
+(ns taoensso.carmine.ring
   "Carmine-backed Ring session store. Adapted from clj-redis-session."
   {:author "Peter Taoussanis"}
   (:require [ring.middleware.session.store :as session-store]
-            [carmine.core :as carmine])
-  (:import  java.util.UUID))
+            [taoensso.carmine :as carmine])
+  (:import  [java.util UUID]))
 
 (defn new-session-key [prefix] (str prefix ":" (UUID/randomUUID)))
 
@@ -29,7 +29,7 @@
     (reset! spec-atom spec)))
 
 (defn make-carmine-store
-  "Creates and returns a Carmine-backed Ring SessionStore. Use 'expiration-secs'
+  "Creates and returns a Carmine-backed Ring SessionStore. Use `expiration-secs`
   to specify how long session data will survive after last write. When nil,
   sessions will never expire."
   [& {:keys [connection-pool connection-spec key-prefix expiration-secs]

@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "0.8.3"
+(defproject com.taoensso/carmine "0.9.0"
   :description "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
   :url "https://github.com/ptaoussanis/carmine"
   :license {:name "Eclipse Public License"}

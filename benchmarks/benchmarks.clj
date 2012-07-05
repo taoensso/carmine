@@ -1,9 +1,9 @@
-(ns carmine.benchmarks
+(ns taoensso.carmine.benchmarks
   "Tools for comparing Carmine performance to other clients."
   (:require [redis.core       :as redis-clojure]
             [clj-redis.client :as clj-redis]
             [accession.core   :as accession]
-            [carmine.core     :as carmine]))
+            [taoensso.carmine :as carmine]))
 
 (defn make-benching-options
   [{:keys [requests clients data-size carmine-pool carmine-spec

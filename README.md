@@ -1,9 +1,7 @@
-# NOTICE
-
-The Carmine Clojars group was recently changed. Please update your `project.clj` to use:
+Current version:
 
 ```clojure
-[com.taoensso/carmine "{VERSION}"]
+[com.taoensso/carmine "0.9.0"] ; Please note that the repo and ns have changed recently
 ```
 
 # Carmine, a Redis client for Clojure
@@ -30,7 +28,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * **Command helpers** (`atomically`, `hgetall*`, `info*`, `sort*`, etc.).
  * Pluggable Ring session-store.
 
-## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png)](http://travis-ci.org/ptaoussanis/carmine)
+## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png?branch=master)](http://travis-ci.org/ptaoussanis/carmine)
 
 Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
 
@@ -49,13 +47,13 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.8.3"]
+[com.taoensso/carmine "0.9.0"]
 ```
 
 and `require` the library:
 
 ```clojure
-(ns my-app (:require [carmine (core :as r)]))
+(ns my-app (:require [taoensso.carmine :as r]))
 ```
 
 ### Make A Connection
