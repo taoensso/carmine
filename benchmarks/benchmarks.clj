@@ -1,5 +1,5 @@
 (ns taoensso.carmine.benchmarks
-  "Tools for comparing Carmine performance to other clients."
+  {:author "Peter Taoussanis"}
   (:require [redis.core       :as redis-clojure]
             [clj-redis.client :as clj-redis]
             [accession.core   :as accession]
@@ -29,7 +29,7 @@
             (map deref)
             (dorun) ; Wait for all the threads to complete
             )
-       (/ (double (- (System/nanoTime) start-time#)) 1000000.0)
+       (Math/round (/ (- (System/nanoTime) start-time#) 1000000.0))
        (catch Exception e# (println "Exception: " e#) "DNF")
        (finally (Thread/sleep 500)) ; Let server rest
        )))

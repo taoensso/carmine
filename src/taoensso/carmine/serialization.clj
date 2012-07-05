@@ -2,10 +2,11 @@
   "Deliberately simple, high-performance de/serializer for Clojure. Adapted from
   Deep-Freeze."
   {:author "Peter Taoussanis"}
-  (:import [java.io DataInputStream DataOutputStream ByteArrayOutputStream
-            ByteArrayInputStream]
-           [org.xerial.snappy Snappy]
-           [clojure.lang PersistentQueue]))
+  (:require [taoensso.carmine.utils :as utils])
+  (:import  [java.io DataInputStream DataOutputStream ByteArrayOutputStream
+             ByteArrayInputStream]
+            [org.xerial.snappy Snappy]
+            [clojure.lang PersistentQueue]))
 
 ;;;; Define type IDs
 
@@ -160,21 +161,10 @@
 
 ;;;; Thawing
 
-(defmacro case-eval
-  "Like `case` but evaluates test constants for their compile-time value."
-  [e & clauses]
-  (let [;; Don't evaluate default expression!
-        default (when (odd? (count clauses)) (last clauses))
-        clauses (if default (butlast clauses) clauses)]
-    `(case ~e
-       ~@(map-indexed (fn [i# form#] (if (even? i#) (eval form#) form#))
-                      clauses)
-       ~(when default default))))
-
 (defn- thaw-from-stream!*
   [^DataInputStream s]
   (let [type-id (.readByte s)]
-    (case-eval
+    (utils/case-eval
      type-id
 
      id-reader  (read-string (.readUTF s))
