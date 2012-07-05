@@ -30,7 +30,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * **Command helpers** (`atomically`, `hgetall*`, `info*`, `sort*`, etc.).
  * Pluggable Ring session-store.
 
-## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png)](http://travis-ci.org/ptaoussanis/carmine)
+## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png?branch=master)](http://travis-ci.org/ptaoussanis/carmine)
 
 Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
 
