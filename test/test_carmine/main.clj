@@ -1,4 +1,4 @@
-(ns test-taoensso.carmine
+(ns test-carmine.main
   (:use [clojure.test])
   (:require [clojure.string :as str]
             [taoensso.carmine :as r]
