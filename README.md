@@ -1,7 +1,7 @@
-Current version:
+Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.9.0"] ; Please note that the repo and ns have changed recently
+[com.taoensso/carmine "0.9.1"] ; Please note that the repo and ns have changed recently
 ```
 
 # Carmine, a Redis client for Clojure
@@ -47,7 +47,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.9.0"]
+[com.taoensso/carmine "0.9.1"]
 ```
 
 and `require` the library:
@@ -332,13 +332,13 @@ Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmar
 
 ![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart.png)
 
-Accession could not complete the requests. [Detailed benchmark information] (https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
+Accession could not complete the requests. [Detailed benchmark information](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
 
 In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort but please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again for composable commands. 
 
 Likewise, I'll happily trade a little less throughput for simpler code.
 
-## Carmine Supports the ClojureWerkz Project Goals
+## Carmine supports the ClojureWerkz Project Goals
 
 ClojureWerkz is a growing collection of open-source, batteries-included [Clojure libraries](http://clojurewerkz.org/) that emphasise modern targets, great documentation, and thorough testing.
 

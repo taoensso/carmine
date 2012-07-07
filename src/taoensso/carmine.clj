@@ -1,5 +1,5 @@
 (ns taoensso.carmine
-  "Deliberately simple, high-performance Redis (2.0+) client for Clojure."
+  "Simple, high-performance Redis (2.0+) client for Clojure."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set keys type sync sort eval])
   (:require [clojure.string :as str]

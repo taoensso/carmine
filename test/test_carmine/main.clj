@@ -1,8 +1,8 @@
-(ns test-taoensso.carmine
+(ns test-carmine.main
   (:use [clojure.test])
   (:require [clojure.string :as str]
             [taoensso.carmine :as r]
-            [taoensso.carmine.serialization :as ser]))
+            [taoensso.nippy :as nippy]))
 
 ;;;; Connections
 
@@ -267,12 +267,13 @@
                       ["pmessage"    "ps-*"   "ps-baz" "five"]]))))
 
 (deftest test-serialization
-  (let [k1 (test-key "stress-data")
-        k2 (test-key "stress-data-hash")]
-    (wc (r/set k1 ser/stress-data))
-    (is (= ser/stress-data (wc (r/get k1))))
-    (wc (r/hmset k2 "field1" ser/stress-data "field2" "just a string"))
-    (is (= ser/stress-data (wc (r/hget k2 "field1"))))
+  (let [k1   (test-key "stress-data")
+        k2   (test-key "stress-data-hash")
+        data (dissoc nippy/stress-data :bytes)]
+    (wc (r/set k1 data))
+    (is (= data (wc (r/get k1))))
+    (wc (r/hmset k2 "field1" data "field2" "just a string"))
+    (is (= data (wc (r/hget k2 "field1"))))
     (is (= "just a string" (wc (r/hget k2 "field2"))))))
 
 (deftest test-binary-safety

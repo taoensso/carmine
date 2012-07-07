@@ -1,5 +1,5 @@
-(ns taoensso.carmine.utils "Misc shared stuff"
-    {:author "Peter Taoussanis"})
+(ns taoensso.carmine.utils
+  {:author "Peter Taoussanis"})
 
 (defmacro declare-remote
   "Declares the given ns-qualified names. Useful for circular dependencies."
