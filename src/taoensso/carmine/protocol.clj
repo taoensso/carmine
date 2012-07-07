@@ -5,7 +5,8 @@
   Ref: http://redis.io/topics/protocol"
   {:author "Peter Taoussanis"}
   (:require [clojure.string :as str]
-            [taoensso.carmine (utils :as utils) (serialization :as ser)])
+            [taoensso.carmine (utils :as utils)]
+            [taoensso.nippy :as nippy])
   (:import  [java.io DataInputStream BufferedOutputStream]
             [clojure.lang PersistentQueue]))
 
@@ -61,7 +62,7 @@
         ^bytes ba (case type
                     :str (bytestring arg)
                     :bin arg
-                    :clj (ser/freeze-to-bytes arg true))
+                    :clj (nippy/freeze-to-bytes arg))
 
         payload-size (alength ba)
         data-size    (if (= type :str) payload-size (+ payload-size 2))]
@@ -140,7 +141,7 @@
 
                (case type
                  :str (String. payload 0 payload-size charset)
-                 :clj (ser/thaw-from-bytes payload true)
+                 :clj (nippy/thaw-from-bytes payload)
                  :bin [payload payload-size]))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
