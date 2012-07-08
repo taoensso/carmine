@@ -90,7 +90,7 @@ Sending commands is easy:
 => ["PONG" "OK" "bar"]
 ```
 
-Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a seq.
+Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a vector.
 
 If the server responds with an error, an exception is thrown:
 
@@ -111,7 +111,7 @@ But what if we're pipelining?
 
 ### Automatic Serialization
 
-Carmine understands all of Clojure's [rich data types](http://clojure.org/datatypes) and lets you use them with Redis painlessly:
+Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) underneath and understands all of Clojure's [rich data types](http://clojure.org/datatypes) and lets you use them with Redis painlessly:
 
 ```clojure
 (carmine
@@ -191,7 +191,7 @@ In Carmine, Redis commands are *real functions*. Which means you can *use* them 
 => ["OK" "OK" "OK" "OK" "0" "6" "6" "2"]
 ```
 
-And since real functions can compose, so can Carmine's. By nesting `with-conn`/`redis` calls, you can fully control how composition and pipelining interact:
+And since real functions can compose, so can Carmine's. By nesting `with-conn`/`carmine` calls, you can fully control how composition and pipelining interact:
 
 ```clojure
 (let [hash-key "awesome-people"]
