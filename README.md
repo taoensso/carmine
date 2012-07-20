@@ -338,6 +338,10 @@ In principle it should be possible to get close to the theoretical maximum perfo
 
 Likewise, I'll happily trade a little less throughput for simpler code.
 
+### YourKit
+
+Carmine was developed with the help of the [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp). YourKit, LLC kindly supports open source projects by offering an open source license. They also make the [YourKit .NET Profiler](http://www.yourkit.com/.net/profiler/index.jsp).
+
 ## Carmine supports the ClojureWerkz Project Goals
 
 ClojureWerkz is a growing collection of open-source, batteries-included [Clojure libraries](http://clojurewerkz.org/) that emphasise modern targets, great documentation, and thorough testing.
