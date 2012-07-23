@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.9.2"] ; Please note that the repo and ns have changed recently
+[com.taoensso/carmine "0.9.2"]
 ```
 
 # Carmine, a Redis client for Clojure

@@ -5,6 +5,10 @@
             [taoensso.carmine.utils :as utils]
             [taoensso.nippy         :as nippy]))
 
+;;;; TODO
+;; * Change weird (= const thing) form to (= thing const).
+;; * Bring over tests from redis-clojure, etc.
+
 ;;;; Setup
 
 (def p (r/make-conn-pool))
