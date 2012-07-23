@@ -74,7 +74,7 @@ Unless you need the added flexibility of specifying the pool and spec for each r
 
 ```clojure
 (defmacro carmine
-  "Basically like (partial with-conn pool spec-server1)."
+  "Acts like (partial with-conn pool spec-server1)."
   [& body] `(r/with-conn pool spec-server1 ~@body))
 ```
 
@@ -130,7 +130,7 @@ Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) underneath and unders
 
 Any argument to a Redis command that's *not* a string will be automatically serialized using a **high-speed, binary-safe protocol** that falls back to Clojure's own Reader for tougher jobs.
 
-**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret and store in its own native format. For example:
+**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret/store in its own native format. For example:
 
 ```clojure
 (carmine
