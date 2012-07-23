@@ -1,31 +1,20 @@
 (ns test-carmine.main
   (:use [clojure.test])
-  (:require [clojure.string :as str]
-            [taoensso.carmine :as r]
-            [taoensso.nippy :as nippy]))
+  (:require [clojure.string         :as str]
+            [taoensso.carmine       :as r]
+            [taoensso.carmine.utils :as utils]
+            [taoensso.nippy         :as nippy]))
 
-;;;; Connections
+;;;; Setup
 
 (def p (r/make-conn-pool))
 (def s (r/make-conn-spec))
 (defmacro wc [& body] `(r/with-conn p s ~@body))
 
-;;;; Versions
-
-(defn version-compare
-  [x y]
-  (let [vals (fn [s] (vec (map #(Integer/parseInt %) (str/split s #"\."))))]
-    (compare (vals x) (vals y))))
-
-(defn sufficient-version?
+(defn redis-version-sufficient?
   [minimum-version]
-  (>= (version-compare (get (wc (r/info*)) "redis_version")
-                       minimum-version) 0))
-
-(comment (version-compare "1.3.0" "1.2.3")
-         (sufficient-version? "2.5.10"))
-
-;;;; Keys
+  (utils/version-sufficient? (get (wc (r/info*)) "redis_version")
+                             minimum-version))
 
 (defn test-key [key] (str "carmine:temp:test:" key))
 (defn clean-up!
@@ -305,7 +294,7 @@
     (is (= (repeat n "value") (wc (r/lrange k "0" "-1"))))))
 
 (deftest test-lua
-  (when (sufficient-version? "2.6.0")
+  (when (redis-version-sufficient? "2.6.0")
     (let [k (test-key "script")
           script "return redis.call('set',KEYS[1],'script-value')"
           script-hash (r/hash-script script)]

@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.9.1"] ; Please note that the repo and ns have changed recently
+[com.taoensso/carmine "0.9.2"] ; Please note that the repo and ns have changed recently
 ```
 
 # Carmine, a Redis client for Clojure
@@ -47,7 +47,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.9.1"]
+[com.taoensso/carmine "0.9.2"]
 ```
 
 and `require` the library:
@@ -74,7 +74,7 @@ Unless you need the added flexibility of specifying the pool and spec for each r
 
 ```clojure
 (defmacro carmine
-  "Basically like (partial with-conn pool spec-server1)."
+  "Acts like (partial with-conn pool spec-server1)."
   [& body] `(r/with-conn pool spec-server1 ~@body))
 ```
 
@@ -90,7 +90,7 @@ Sending commands is easy:
 => ["PONG" "OK" "bar"]
 ```
 
-Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a seq.
+Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a vector.
 
 If the server responds with an error, an exception is thrown:
 
@@ -111,7 +111,7 @@ But what if we're pipelining?
 
 ### Automatic Serialization
 
-Carmine understands all of Clojure's [rich data types](http://clojure.org/datatypes) and lets you use them with Redis painlessly:
+Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) underneath and understands all of Clojure's [rich data types](http://clojure.org/datatypes) and lets you use them with Redis painlessly:
 
 ```clojure
 (carmine
@@ -130,7 +130,7 @@ Carmine understands all of Clojure's [rich data types](http://clojure.org/dataty
 
 Any argument to a Redis command that's *not* a string will be automatically serialized using a **high-speed, binary-safe protocol** that falls back to Clojure's own Reader for tougher jobs.
 
-**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret and store in its own native format. For example:
+**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret/store in its own native format. For example:
 
 ```clojure
 (carmine
@@ -191,7 +191,7 @@ In Carmine, Redis commands are *real functions*. Which means you can *use* them 
 => ["OK" "OK" "OK" "OK" "0" "6" "6" "2"]
 ```
 
-And since real functions can compose, so can Carmine's. By nesting `with-conn`/`redis` calls, you can fully control how composition and pipelining interact:
+And since real functions can compose, so can Carmine's. By nesting `with-conn`/`carmine` calls, you can fully control how composition and pipelining interact:
 
 ```clojure
 (let [hash-key "awesome-people"]
