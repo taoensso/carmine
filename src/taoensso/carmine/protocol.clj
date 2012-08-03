@@ -7,8 +7,7 @@
   (:require [clojure.string :as str]
             [taoensso.carmine (utils :as utils)]
             [taoensso.nippy :as nippy])
-  (:import  [java.io DataInputStream BufferedOutputStream]
-            [clojure.lang PersistentQueue]))
+  (:import  [java.io DataInputStream BufferedOutputStream]))
 
 ;; Hack to allow cleaner separation of namespaces
 (utils/declare-remote taoensso.carmine.connections/get-spec
@@ -164,7 +163,7 @@
         reply-count (if (= reply-count :all) (count parsers) reply-count)]
 
     (when (pos? reply-count)
-      (swap! (:parser-stack *context*) (partial drop reply-count))
+      (swap! (:parser-stack *context*) #(subvec % reply-count))
 
       (if (= reply-count 1)
         (->> (get-basic-reply! in)
@@ -190,7 +189,7 @@
      (binding [*context*
                (Context. (taoensso.carmine.connections/in-stream  ~connection)
                          (taoensso.carmine.connections/out-stream ~connection)
-                         (when-not listener?# (atom (PersistentQueue/EMPTY))))
+                         (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
        (if listener?# nil (get-replies! :all)))))
