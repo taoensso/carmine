@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.9.2"]
+[com.taoensso/carmine "0.9.3"]
 ```
 
 # Carmine, a Redis client for Clojure
@@ -47,7 +47,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.9.2"]
+[com.taoensso/carmine "0.9.3"]
 ```
 
 and `require` the library:
