@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "0.9.2"
+(defproject com.taoensso/carmine "0.9.3"
   :description "Simple, high-performance Redis (2.0+) client for Clojure."
   :url "https://github.com/ptaoussanis/carmine"
   :license {:name "Eclipse Public License"}
@@ -7,7 +7,7 @@
                  [commons-codec/commons-codec   "1.6"]
                  [org.xerial.snappy/snappy-java "1.0.4.1"]
                  [org.clojure/data.json         "0.1.2"]
-                 [com.taoensso/nippy            "0.9.2"]]
+                 [com.taoensso/nippy            "0.10.0"]]
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
              :1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.0-master-SNAPSHOT"]]}

@@ -10,7 +10,7 @@
 (defmacro wc [& body] `(carmine/with-conn @~'pool-atom @~'spec-atom ~@body))
 
 (defprotocol ICarmineSessionStore
-  (set-conn [this pool spec]))
+  (reset-conn [this pool spec]))
 
 (defrecord CarmineSessionStore [pool-atom spec-atom prefix expiration]
   session-store/SessionStore
@@ -24,7 +24,7 @@
       key))
 
   ICarmineSessionStore
-  (set-conn [_ pool spec]
+  (reset-conn [_ pool spec]
     (reset! pool-atom pool)
     (reset! spec-atom spec)))
 
