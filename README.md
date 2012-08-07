@@ -1,8 +1,12 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.9.3"]
+[com.taoensso/carmine "0.10.0"]
 ```
+
+**Breaking changes** since _0.9.x_:
+ * Affecting users of the **Ring session-store**:
+   * `connection-pool` and `connection-spec` are now mandatory args.
 
 # Carmine, a Redis client for Clojure
 
@@ -47,7 +51,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.9.3"]
+[com.taoensso/carmine "0.10.0"]
 ```
 
 and `require` the library:
