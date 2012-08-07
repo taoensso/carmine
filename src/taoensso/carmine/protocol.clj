@@ -14,7 +14,7 @@
                       taoensso.carmine.connections/in-stream
                       taoensso.carmine.connections/out-stream)
 
-(defrecord Context [in-stream out-stream parser-stack])
+(defrecord Context [in-stream out-stream parser-queue])
 (def ^:dynamic *context* nil)
 (def ^:dynamic *parser*  nil)
 (def no-context-error
@@ -94,7 +94,7 @@
     (dorun (map (partial send-arg out) args))
     (.flush out)
 
-    (when-let [ps (:parser-stack *context*)] (swap! ps conj *parser*))))
+    (when-let [pq (:parser-queue *context*)] (swap! pq conj *parser*))))
 
 (defn =ba? [^bytes x ^bytes y] (java.util.Arrays/equals x y))
 
@@ -159,11 +159,11 @@
   [reply-count]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
-        parsers     @(:parser-stack *context*)
+        parsers     @(:parser-queue *context*)
         reply-count (if (= reply-count :all) (count parsers) reply-count)]
 
     (when (pos? reply-count)
-      (swap! (:parser-stack *context*) #(subvec % reply-count))
+      (swap! (:parser-queue *context*) #(subvec % reply-count))
 
       (if (= reply-count 1)
         (->> (get-basic-reply! in)

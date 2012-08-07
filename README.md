@@ -1,8 +1,11 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.9.3"]
+[com.taoensso/carmine "0.10.0"]
 ```
+
+**Breaking changes** since _0.9.x_:
+ * *Ring session-store*: `connection-pool` and `connection-spec` are now mandatory args.
 
 # Carmine, a Redis client for Clojure
 
@@ -25,7 +28,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Flexible, high-performance **binary-safe serialization**.
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
  * Full support for custom **reply parsing**.
- * **Command helpers** (`atomically`, `hgetall*`, `info*`, `sort*`, etc.).
+ * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
  * Pluggable Ring session-store.
 
 ## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png?branch=master)](http://travis-ci.org/ptaoussanis/carmine)
@@ -47,7 +50,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.9.3"]
+[com.taoensso/carmine "0.10.0"]
 ```
 
 and `require` the library:
@@ -111,7 +114,7 @@ But what if we're pipelining?
 
 ### Automatic Serialization
 
-Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) underneath and understands all of Clojure's [rich data types](http://clojure.org/datatypes) and lets you use them with Redis painlessly:
+Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
 
 ```clojure
 (carmine
@@ -130,7 +133,7 @@ Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) underneath and unders
 
 Any argument to a Redis command that's *not* a string will be automatically serialized using a **high-speed, binary-safe protocol** that falls back to Clojure's own Reader for tougher jobs.
 
-**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret/store in its own native format. For example:
+**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret/store in its own native (string) format:
 
 ```clojure
 (carmine
@@ -168,6 +171,40 @@ Time complexity: O(N+M*log(M)) where N is the number of elements in the list or 
 *Yeah*. Andreas Bielk, you rock.
 
 ## Getting Fancy
+
+### Lua
+
+Redis 2.6 introduced a remarkably powerful feature: server-side Lua scripting! As an example, let's write our own version of the `set` command:
+
+```clojure
+(defn my-set
+  [key value]
+  (r/lua-script "return redis.call('set', _:my-key, 'lua '.. _:my-value)"
+                {:my-key key}     ; Named key variables and their values
+                {:my-value value} ; Named non-key variables and their values
+                ))
+
+(carmine (my-set "foo" "bar")
+         (get "foo"))
+=> ["OK" "lua bar"]
+```
+
+Script primitives are also provided: `eval`, `eval-sha`, `eval*`, `eval-sha*`. See the [Lua scripting docs](http://redis.io/commands/eval) for more info.
+
+### Helpers
+
+The `lua-script` command above is a good example of a Carmine *helper*.
+
+Carmine will never surprise you by interfering with the standard Redis command API. But there are times when it might want to offer you a helping hand (if you want it). Compare:
+
+```clojure
+(carmine (r/zunionstore "dest-key" "3" "zset1" "zset2" "zset3" "WEIGHTS" "2" "3" "5"))
+(carmine (r/zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" "2" "3" "5"))
+```
+
+Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
+
+Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `lua-script`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
 
 ### Commands Are (Just) Functions
 
@@ -250,58 +287,6 @@ You can adjust subscriptions and/or handlers:
 ```
 
 Note that subscriptions are *connection-local*: you can have three different listeners each listening for different messages, using different handlers. This is great stuff.
-
-### Lua
-
-Redis 2.6 introduced a remarkably powerful feature: [Lua scripting](http://redis.io/commands/eval)!
-
-You can send a script to be run in the context of the Redis server:
-
-```clojure
-(carmine
- (r/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}" ; The script
-         "2" "key1" "key2" "arg1" "arg2"))
-=> ["key1" "key2" "arg1" "arg2"]
-```
-
-Big script? Save on bandwidth by sending the SHA1 of a script you've previously sent:
-
-```clojure
-(carmine
- (r/evalsha "a42059b356c875f0717db19a51f6aaca9ae659ea" ; The script's hash
-            "2" "key1" "key2" "arg1" "arg2"))
-=> ["key1" "key2" "arg1" "arg2"]
-```
-
-Don't know if the script has already been sent or not? Try this:
-
-```clojure
-(r/eval* "return redis.call('set',KEYS[1],'bar')" ; The script
-         "1" "foo")
-=> "OK"
-```
-
-The `eval*` instructs Carmine to optimistically try an `evalsha` command, but fall back to `eval` if the script isn't already cached with the server.
-
-And this is a good example of...
-
-### Helpers
-
-Carmine will never surprise you by interfering with the standard Redis command API. But there *are* times when it might want to offer you a helping hand (if you want it).
-
-Compare:
-
-```clojure
-(carmine (r/zunionstore "dest-key" "3" "zset1" "zset2" "zset3"
-                      "WEIGHTS" "2" "3" "5"))
-;; with
-(carmine (r/zunionstore* "dest-key" ["zset1" "zset2" "zset3"]
-                       "WEIGHTS" "2" "3" "5"))
-```
-
-Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is a helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
-
-Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
 
 ### Custom Reply Parsing
 
