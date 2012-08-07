@@ -95,6 +95,56 @@
                 (protocol/get-one-reply!))
             (throw e))))))
 
+(def ^:private interpolate-script
+  "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
+
+  (interpolate-script \"return redis.call('set', _:my-key, _:my-val)\"
+                      {:my-key \"foo\"} {:my-val \"bar\"})
+  => {:script \"return redis.call('set', KEYS[1], ARGV[1])\"
+      :eval-args [\"1\" \"foo\" \"bar\"]}"
+  (memoize
+   (fn [script key-vars-map arg-vars-map]
+     (let [key-vars-map (into (sorted-map) key-vars-map)
+           arg-vars-map (into (sorted-map) arg-vars-map)
+
+           ;; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
+           subst-map (fn [vars array-name]
+                       (zipmap (map #(str "_" %) vars)
+                               (map #(str array-name "[" % "]")
+                                    (map inc (range)))))]
+
+       {:script
+        (reduce (fn [s [match replacement]] (str/replace s match replacement))
+                (str script)
+                (merge (subst-map (clojure.core/keys key-vars-map) "KEYS")
+                       (subst-map (clojure.core/keys arg-vars-map) "ARGV")))
+
+        :eval-args (-> [(str (count key-vars-map))]
+                       (into (vals key-vars-map))
+                       (into (vals arg-vars-map)))}))))
+
+(comment
+  (interpolate-script "return redis.call('set', _:my-key, _:my-val)"
+                      {:my-key "foo"} {:my-val "bar"})
+
+  (interpolate-script "Hello _:k1 _:k1 _:k2 _:k3 _:a1 _:a2 _:a3"
+                      {:k3 "k3" :k1 "k1" :k2 "k2"}
+                      {:a3 "a3" :a1 "a1" :a2 "a2"}))
+
+(defn lua-script
+  "All singing, all dancing Lua script helper. Like `eval*` but allows script
+  to use \"_:my-var\"-style named keys and args."
+  [script key-vars-map arg-vars-map]
+  (let [{:keys [script eval-args]}
+        (interpolate-script script key-vars-map arg-vars-map)]
+    (apply eval* script eval-args)))
+
+(comment
+  (wc (lua-script "redis.call('set', _:my-key, _:my-val)
+                   return redis.call('get', 'foo')"
+                  {:my-key "foo"}
+                  {:my-val "bar"})))
+
 (defn hgetall*
   "Like `hgetall` but automatically coerces reply into a hash-map."
   [key] (with-parser #(apply hash-map %) (hgetall key)))
@@ -248,11 +298,12 @@
 ;;;; Dev/tests
 
 (comment
-  (do (def pool (make-conn-pool))
-      (def spec (make-conn-spec)))
+  (do (def conn (conns/get-conn pool spec))
+      (def pool (make-conn-pool))
+      (def spec (make-conn-spec))
+      (defmacro wc [& body] `(with-conn pool spec ~@body)))
 
   ;;; Basic connections
-  (def conn (conns/get-conn pool spec))
   (conns/conn-alive? conn)
   (conns/release-conn pool conn) ; Return connection to pool (don't close)
   (conns/close-conn conn)        ; Actually close connection
