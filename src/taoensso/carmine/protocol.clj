@@ -105,11 +105,11 @@
   Redis will reply to commands with different kinds of replies. It is possible
   to check the kind of reply from the first byte sent by the server:
 
-      * With a single line reply the first byte of the reply will be `+`
-      * With an error message the first byte of the reply will be `-`
-      * With an integer number the first byte of the reply will be `:`
-      * With bulk reply the first byte of the reply will be `$`
-      * With multi-bulk reply the first byte of the reply will be `*`"
+      * `+` for single line reply.
+      * `-` for error message.
+      * `:` for integer reply.
+      * `$` for bulk reply.
+      * `*` for multi-bulk reply."
   [^DataInputStream in]
   (let [reply-type (char (.readByte in))]
     (case reply-type

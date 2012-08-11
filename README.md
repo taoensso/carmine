@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.10.0"]
+[com.taoensso/carmine "0.10.1"]
 ```
 
 **Breaking changes** since _0.9.x_:
@@ -29,7 +29,8 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
  * Full support for custom **reply parsing**.
  * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
- * Pluggable Ring session-store.
+ * **Ring session-store**.
+ * Simple, high-performance **message queue** (Redis 2.6+).
 
 ## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png?branch=master)](http://travis-ci.org/ptaoussanis/carmine)
 
@@ -50,7 +51,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.10.0"]
+[com.taoensso/carmine "0.10.1"]
 ```
 
 and `require` the library:
@@ -311,9 +312,31 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 => ["OK" [#<byte[] [B@7c3ab3b4> 50]]
 ```
 
+### Message Queue (Redis 2.6+)
+
+**Currently ALPHA QUALITY**
+
+Redis makes a great [message queue server](http://antirez.com/post/250):
+
+```clojure
+(:require [taoensso.carmine.message-queue :as carmine-mq]) ; Add to `ns` macro
+
+(def my-worker
+  (carmine-mq/make-dequeue-worker
+   pool spec-server1 "my-queue"
+   :handler-fn (fn [msg] (println "Received" msg))))
+
+(carmine-mq/enqueue "my-queue" "my message!")
+%> Received my message!
+
+(carmine-mq/stop my-worker)
+```
+
+Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.message-queue` namespace for details.
+
 ## Performance
 
-Redis is probably most famous for being [*fast*](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently performs well:
+Redis is probably most famous for being [fast](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently performs well:
 
 ![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart.png)
 
