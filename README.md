@@ -29,8 +29,8 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
  * Full support for custom **reply parsing**.
  * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
- * **Ring session-store**.
  * Simple, high-performance **message queue** (Redis 2.6+).
+ * **Ring session-store**.
 
 ## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png?branch=master)](http://travis-ci.org/ptaoussanis/carmine)
 
@@ -312,9 +312,9 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 => ["OK" [#<byte[] [B@7c3ab3b4> 50]]
 ```
 
-### Message Queue (Redis 2.6+)
+### Message Queue
 
-**Currently ALPHA QUALITY**
+**Redis 2.6+ only, currently ALPHA QUALITY**
 
 Redis makes a great [message queue server](http://antirez.com/post/250):
 
