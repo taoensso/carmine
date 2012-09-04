@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.10.1"]
+[com.taoensso/carmine "0.10.2"]
 ```
 
 **Breaking changes** since _0.9.x_:
@@ -51,7 +51,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.10.1"]
+[com.taoensso/carmine "0.10.2"]
 ```
 
 and `require` the library:
