@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.10.1"]
+[com.taoensso/carmine "0.10.2"]
 ```
 
 **Breaking changes** since _0.9.x_:
@@ -29,8 +29,8 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
  * Full support for custom **reply parsing**.
  * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
- * **Ring session-store**.
  * Simple, high-performance **message queue** (Redis 2.6+).
+ * **Ring session-store**.
 
 ## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png?branch=master)](http://travis-ci.org/ptaoussanis/carmine)
 
@@ -51,7 +51,7 @@ Carmine uses [Snappy](http://code.google.com/p/snappy-java/) which currently has
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.10.1"]
+[com.taoensso/carmine "0.10.2"]
 ```
 
 and `require` the library:
@@ -249,7 +249,7 @@ Carmine has a flexible **Listener** API to support persistent-connection feature
 ```clojure
 (def listener
   (r/with-new-pubsub-listener
-   server1-spec {"foobar" (fn f1 [msg] (println "Channel match: " msg))
+   spec-server1 {"foobar" (fn f1 [msg] (println "Channel match: " msg))
                  "foo*"   (fn f2 [msg] (println "Pattern match: " msg))}
    (r/subscribe  "foobar" "foobaz")
    (r/psubscribe "foo*")))
@@ -312,9 +312,9 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 => ["OK" [#<byte[] [B@7c3ab3b4> 50]]
 ```
 
-### Message Queue (Redis 2.6+)
+### Message Queue
 
-**Currently ALPHA QUALITY**
+**Redis 2.6+ only, currently ALPHA QUALITY**
 
 Redis makes a great [message queue server](http://antirez.com/post/250):
 

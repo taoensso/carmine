@@ -126,8 +126,8 @@
                 (Thread/sleep backoff-msecs)
                 (let [[message-id message-content type] poll-reply]
                   (when (= type "retry")
-                    (timbre/warn (str "Retrying message from " qname
-                                      " queue:\n") poll-reply))
+                    (timbre/warn (str "Retrying message from queue: "
+                                      qname "\n") poll-reply))
 
                   (try (handler-fn message-content)
                        (carmine/with-conn pool spec
@@ -135,8 +135,8 @@
                                        message-id))
                        (catch Exception e
                          (timbre/error
-                          e (str "Exception while handling message from " qname
-                                 " queue:\n") poll-reply))))))
+                          e (str "Exception while handling message from queue: "
+                                 qname "\n") poll-reply))))))
             (when throttle-msecs (Thread/sleep throttle-msecs))))))
     nil))
 
@@ -154,8 +154,8 @@
       reached. Backoff is synchronized between all dequeue workers."
   [connection-pool connection-spec qname
    & {:keys [handler-fn handler-ttl-msecs throttle-msecs backoff-msecs auto-start?]
-      :or   {handler-fn (fn [msg] (timbre/info (str "Message received from "
-                                                   qname " queue:\n") msg))
+      :or   {handler-fn (fn [msg] (timbre/info (str "Message received from queue: "
+                                                   qname "\n") msg))
              handler-ttl-msecs (* 60 60 1000)
              throttle-msecs    200
              backoff-msecs     2000
