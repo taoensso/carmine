@@ -20,7 +20,8 @@
   (read-session   [_ key] (or (when key (wc (carmine/get key))) {}))
   (delete-session [_ key] (wc (carmine/del key)) nil)
   (write-session  [_ key data]
-    (let [key (or key (new-session-key prefix))]
+    (let [key  (or key (new-session-key prefix))
+          data (assoc data :session-id key)]
       (if expiration
         (wc (carmine/setex key expiration data))
         (wc (carmine/set key data)))
