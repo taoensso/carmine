@@ -13,7 +13,7 @@
 ;;;; Connections
 
 (defn make-conn-pool
-  "For option documentation see http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html"
+  "For option documentation see http://goo.gl/EiTbn"
   [& options]
   (let [;; Defaults adapted from Jedis
         default {:test-while-idle?              true
