@@ -5,10 +5,9 @@
   :dependencies [[org.clojure/clojure           "1.3.0"]
                  [commons-pool/commons-pool     "1.6"]
                  [commons-codec/commons-codec   "1.6"]
-                 [org.xerial.snappy/snappy-java "1.0.4.1"]
                  [org.clojure/data.json         "0.1.2"]
                  [com.taoensso/timbre           "0.8.0"]
-                 [com.taoensso/nippy            "0.10.1"]]
+                 [com.taoensso/nippy            "0.10.2"]]
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
              :1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.0-alpha3"]]}
