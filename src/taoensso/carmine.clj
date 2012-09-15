@@ -16,14 +16,14 @@
   "For option documentation see http://goo.gl/EiTbn"
   [& options]
   (let [;; Defaults adapted from Jedis
-        default {:test-while-idle?              true
-                 :num-tests-per-eviction-run    -1
-                 :min-evictable-idle-time-ms    60000
-                 :time-between-eviction-runs-ms 30000}]
+        defaults {:test-while-idle?              true
+                  :num-tests-per-eviction-run    -1
+                  :min-evictable-idle-time-ms    60000
+                  :time-between-eviction-runs-ms 30000}]
     (ConnectionPool.
      (reduce conns/set-pool-option
              (GenericKeyedObjectPool. (conns/make-connection-factory))
-             (merge default (apply hash-map options))))))
+             (merge defaults (apply hash-map options))))))
 
 (defn make-conn-spec
   [& {:keys [host port password timeout db]
@@ -56,6 +56,22 @@
 (defmacro skip-replies
   [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
               ~@body))
+
+;;;; Misc
+
+(defn make-keyfn
+  "Returns a function that joins keywords and strings to form an idiomatic
+  compound Redis key name.
+
+  (let [k (make-keyfn :prefix)]
+    (k :foo :bar \"baz\")) => \"prefix:foo:bar:baz\""
+  [& prefix-parts]
+  (let [join-parts (fn [parts] (str/join ":" (map name parts)))
+        prefix     (when (seq prefix-parts) (str (join-parts prefix-parts) ":"))]
+    (fn [& parts] (str prefix (join-parts parts)))))
+
+(comment ((make-keyfn :foo :bar) :baz "qux")
+         ((make-keyfn) :foo :bar))
 
 ;;;; Standard commands
 
