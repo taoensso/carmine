@@ -47,21 +47,21 @@
     (is (= "fido" (wc (r/get k))))
     (is (= 15 (wc (r/append k " [shutdown]"))))
     (is (= "fido [shutdown]" (wc (r/getset k "fido [running]"))))
-    (is (= "running" (wc (r/getrange k "6" "12")))))
+    (is (= "running" (wc (r/getrange k 6 12)))))
   (let [k (test-key "mykey")]
-    (wc (r/setbit k "7" "1"))
-    (is (= 1 (wc (r/getbit k "7")))))
+    (wc (r/setbit k 7 1))
+    (is (= 1 (wc (r/getbit k 7)))))
   (let [k (test-key "multiline")]
     (is (= "OK" (wc (r/set k "Redis\r\nDemo"))))
     (is (= "Redis\r\nDemo" (wc (r/get k))))))
 
 (deftest test-incr-decr
   (let [k (test-key "connections")]
-    (wc (r/set k "10"))
+    (wc (r/set k 10))
     (is (= 11 (wc (r/incr k))))
-    (is (= 20 (wc (r/incrby k "9"))))
+    (is (= 20 (wc (r/incrby k 9))))
     (is (= 19 (wc (r/decr k))))
-    (is (= 10 (wc (r/decrby k "9"))))))
+    (is (= 10 (wc (r/decrby k 9))))))
 
 (deftest test-del
   (let [k (test-key "something")]
@@ -72,7 +72,7 @@
   (let [k (test-key "resource:lock")]
     (wc (r/set k "Redis Demo"))
     (is (= -1 (wc (r/ttl k))))
-    (is (= 1 (wc (r/expire k "120"))))
+    (is (= 1 (wc (r/expire k 120))))
     (is (< 0 (wc (r/ttl k))))))
 
 (deftest test-lists
@@ -81,16 +81,16 @@
     (wc (r/rpush k "Bob"))
     (wc (r/lpush k "Sam"))
     (is (= ["Sam" "Tom" "Bob"]
-           (wc (r/lrange k "0" "-1"))))
+           (wc (r/lrange k 0 -1))))
     (is (= ["Sam" "Tom"]
-           (wc (r/lrange k "0" "1"))))
+           (wc (r/lrange k 0 1))))
     (is (= ["Sam" "Tom" "Bob"]
-           (wc (r/lrange k "0" "2"))))
+           (wc (r/lrange k 0 2))))
     (is (= 3 (wc (r/llen k))))
     (is (= "Sam" (wc (r/lpop k))))
     (is (= "Bob" (wc (r/rpop k))))
     (is (= 1 (wc (r/llen k))))
-    (is (= ["Tom"] (wc (r/lrange k "0" "-1"))))
+    (is (= ["Tom"] (wc (r/lrange k 0 -1))))
     (wc (r/del k))))
 
 (deftest test-non-ascii-params
@@ -120,7 +120,7 @@
 
 (deftest test-parallelism
   (let [k (test-key "parallel-key")]
-    (wc (r/set k "0"))
+    (wc (r/set k 0))
     (->> (fn [] (future (dotimes [n 100] (wc (r/incr k)))))
          (repeatedly 100) ; No. of parallel clients
          (doall)
@@ -136,8 +136,8 @@
     (is (= "value1" (wc (r/hget k "field1"))))
     (is (= 1 (wc (r/hexists k "field1"))))
     (is (= ["field1" "value1"] (wc (r/hgetall k))))
-    (wc (r/hset k "field2" "1"))
-    (is (= 3 (wc (r/hincrby k "field2" "2"))))
+    (wc (r/hset k "field2" 1))
+    (is (= 3 (wc (r/hincrby k "field2" 2))))
     (is (= ["field1" "field2"] (wc (r/hkeys k))))
     (is (= ["value1" "3"] (wc (r/hvals k))))
     (is (= 2 (wc (r/hlen k))))
@@ -180,11 +180,11 @@
     (wc (r/zunionstore* k1-U-k2 [k1 k2]))
     (wc (r/zinterstore* k1-I-k2 [k1 k2]))
     (is (= ["Alan Kay" "Richard Stallman" "Yukihiro Matsumoto"]
-           (wc (r/zrange k1 "2" "4"))))
+           (wc (r/zrange k1 2 4))))
     (is (= ["Claude Shannon" "Alan Kay" "Richard Stallman" "Ferris Beuler"]
-           (wc (r/zrange k1-U-k2 "2" "5"))))
+           (wc (r/zrange k1-U-k2 2 5))))
     (is (= ["Emmanuel Goldstein" "Dade Murphy"]
-           (wc (r/zrange k1-I-k2 "0" "1"))))))
+           (wc (r/zrange k1-I-k2 0 1))))))
 
 (deftest test-pipeline
   (let [k1 (test-key "children")
@@ -197,7 +197,7 @@
                          (r/get k2))))
     (is (= ["B" ["A" "B" "C"] "B"]
            (wc (r/get k2)
-               (r/lrange k1 "0" "3")
+               (r/lrange k1 0 3)
                (r/get k2))))))
 
 (deftest test-pubsub
@@ -295,7 +295,7 @@
   (let [k (test-key "big-list")
         n 250000]
     (wc (dorun (repeatedly n (fn [] (r/rpush k "value")))))
-    (is (= (repeat n "value") (wc (r/lrange k "0" "-1"))))))
+    (is (= (repeat n "value") (wc (r/lrange k 0 -1))))))
 
 (deftest test-lua
   (when (redis-version-sufficient? "2.6.0")
@@ -303,11 +303,11 @@
           script "return redis.call('set',KEYS[1],'script-value')"
           script-hash (r/hash-script script)]
       (wc (r/script-load script))
-      (wc (r/evalsha script-hash "1" k))
+      (wc (r/evalsha script-hash 1 k))
       (is (= "script-value" (wc (r/get k))))
       (is (= ["key1" "key2" "arg1" "arg2"]
              (wc (r/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
-                         "2" "key1" "key2" "arg1" "arg2")))))))
+                         2 "key1" "key2" "arg1" "arg2")))))))
 
 (deftest test-reply-parsing
   (let [k (test-key "reply-parsing")]
