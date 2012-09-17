@@ -47,6 +47,8 @@
          (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#))))
      (catch Exception e# (throw e#))))
 
+;;;; Misc
+
 (defmacro with-parser
   "Wraps body so that replies to any wrapped Redis commands will be parsed with
   (parser-fn reply)."
@@ -57,7 +59,13 @@
   [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
               ~@body))
 
-;;;; Misc
+;;; Note (number? x) checks for backwards compatibility with pre-v0.11 Carmine
+;;; versions that auto-serialized simple number types
+(defn as-long   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
+(defn as-double [x] (when x (if (number? x) (double x) (Double/parseDouble x))))
+(defmacro parse-long    [& body] `(with-parser as-long   ~@body))
+(defmacro parse-double  [& body] `(with-parser as-double ~@body))
+(defmacro parse-keyword [& body] `(with-parser #(keyword %) ~@body))
 
 (defn make-keyfn
   "Returns a function that joins keywords and strings to form an idiomatic

@@ -104,7 +104,6 @@
 
   Redis will reply to commands with different kinds of replies. It is possible
   to check the kind of reply from the first byte sent by the server:
-
       * `+` for single line reply.
       * `-` for error message.
       * `:` for integer reply.
@@ -182,7 +181,9 @@
 (defn get-one-reply! [] (get-replies! 1))
 
 (defmacro with-context
-  "Evaluates body in the context of a thread-bound connection to a Redis server."
+  "Evaluates body in the context of a thread-bound connection to a Redis server.
+  For non-listener connections, sends Redis commands to server as pipeline and
+  returns the server's response."
   [connection & body]
   `(let [listener?#
          (:listener? (taoensso.carmine.connections/get-spec ~connection))]
