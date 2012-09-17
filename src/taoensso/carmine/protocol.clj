@@ -50,21 +50,29 @@
   $<size of arg> crlf
   <arg data>     crlf
 
-  Binary arguments will be passed through un-munged.
-  String arguments will be turned into byte strings.
-  All other arguments (including numbers!) will be serialized."
+  Argument type will determine how it'll be stored with Redis:
+    * String args become byte strings.
+    * Simple numbers (integers, longs, floats, doubles) become byte strings.
+    * Binary args go through un-munged.
+    * Everything else gets serialized."
   [^BufferedOutputStream out arg]
-  (let [type (cond (string? arg)               :str ; Check most common first!
-                   (instance? bytes-class arg) :bin
-                   :else                       :clj)
+  (let [type (cond (string? arg)                :str ; Check most common first!
+                   (or (instance? Long    arg)
+                       (instance? Double  arg)
+                       (instance? Integer arg)
+                       (instance? Float   arg)) :num ; Simple number
+                   (instance? bytes-class arg)  :bin
+                   :else                        :clj)
 
         ^bytes ba (case type
                     :str (bytestring arg)
+                    :num (bytestring (str arg))
                     :bin arg
                     :clj (nippy/freeze-to-bytes arg))
 
         payload-size (alength ba)
-        data-size    (if (= type :str) payload-size (+ payload-size 2))]
+        data-size    (if (or (= type :str)
+                             (= type :num)) payload-size (+ payload-size 2))]
 
     ;; To support various special goodies like serialization, we reserve
     ;; strings that begin with a null terminator

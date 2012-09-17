@@ -186,13 +186,13 @@
   "Like `zinterstore` but automatically counts keys."
   [dest-key source-keys & options]
   (apply zinterstore dest-key
-         (str (count source-keys)) (concat source-keys options)))
+         (count source-keys) (concat source-keys options)))
 
 (defn zunionstore*
   "Like `zunionstore` but automatically counts keys."
   [dest-key source-keys & options]
   (apply zunionstore dest-key
-         (str (count source-keys)) (concat source-keys options)))
+         (count source-keys) (concat source-keys options)))
 
 ;; Adapted from redis-clojure
 (defn- parse-sort-args [args]

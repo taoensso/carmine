@@ -186,7 +186,7 @@
   (wcar (doall (map #(enqueue "myq" (str %)) (range 10))))
 
   (wcar (dequeue-1 "myq"))
-  (wcar (car/lrange (qkey "myq" "list" "id-circle") "0" "-1"))
+  (wcar (car/lrange (qkey "myq" "list" "id-circle") 0 -1))
 
   (def my-buggy-worker
     (make-dequeue-worker
