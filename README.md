@@ -4,8 +4,8 @@ Current [semantic](http://semver.org/) version:
 [com.taoensso/carmine "0.11.0"]
 ```
 
-**Breaking changes** since _0.9.x_:
- * *Ring session-store*: `connection-pool` and `connection-spec` are now mandatory args.
+**Breaking changes** since _0.10.x_:
+ * **NB!**: Simple numbers are no longer automatically de/serialized! See [commit](http://goo.gl/36ao4) for more info.
 
 # Carmine, a Redis client for Clojure
 
@@ -61,20 +61,20 @@ and `require` the library:
 You'll usually want to define one connection pool and spec that you'll reuse:
 
 ```clojure
-(def pool (car/make-conn-pool :max-active 8))
+(def pool (car/make-conn-pool))
 (def spec-server1 (car/make-conn-spec :host     "127.0.0.1"
                                       :port     6379
                                       :password "foobar"
                                       :timeout  4000))
 ```
 
-The defaults are sensible but see [here](http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html) for pool options if you want to fiddle.
+The defaults are sensible but see the [poll options spec](http://goo.gl/EiTbn) if you want to fiddle.
 
 Unless you need the added flexibility of specifying the pool and spec for each request, you can save some typing with a little macro:
 
 ```clojure
 (defmacro wcar ; With Carmine...
-  "Acts like (partial with-conn pool spec-server1)."
+  "Acts like (partial car/with-conn pool spec-server1)."
   [& body] `(car/with-conn pool spec-server1 ~@body))
 ```
 
@@ -111,7 +111,7 @@ But what if we're pipelining?
 
 ### Automatic Serialization
 
-Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
+The only value type known to Redis internally is the [byte string](http://redis.io/topics/data-types). But Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
 
 ```clojure
 (wcar
@@ -128,26 +128,10 @@ Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and un
           :bytes  #<byte [] [B@4d66ea88>}]
 ```
 
-Any argument to a Redis command that's *not* a string will be automatically serialized using a **high-speed, binary-safe protocol** that falls back to Clojure's own Reader for tougher jobs.
-
-**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret/store in its own native (string) format:
-
-```clojure
-(wcar
-  ;; String argument
-  (car/set  "has-string" "13")
-  (car/incr "has-string")
-  (car/get  "has-string")        ; This will return a string
-
-  ;; Float argument
-  (car/set  "has-serialized" 13) ; Will be serialized! Not what we want here.
-  (car/incr "has-serialized")    ; This will throw an exception!
-  (car/get  "has-serialized")    ; This will return a (deserialized) float.
-  )
-=> ["OK" 14 "14" "OK" #<Exception ...> 13]
-```
-
-This scheme is consistent, unambiguous, and simple. But it requires a little carefulness while you're getting used to it as it's different from the way most other clients work.
+Types are handled as follows:
+ * Clojure strings become Redis strings.
+ * Simple Clojure numbers (integers, longs, floats, doubles) become Redis strings.
+ * Everything else gets automatically de/serialized.
 
 ### Documentation and Command Coverage
 
@@ -195,8 +179,8 @@ The `lua-script` command above is a good example of a Carmine *helper*.
 Carmine will never surprise you by interfering with the standard Redis command API. But there are times when it might want to offer you a helping hand (if you want it). Compare:
 
 ```clojure
-(wcar (car/zunionstore "dest-key" "3" "zset1" "zset2" "zset3" "WEIGHTS" "2" "3" "5"))
-(wcar (car/zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" "2" "3" "5"))
+(wcar (car/zunionstore "dest-key" 3 "zset1" "zset2" "zset3" "WEIGHTS" 2 3 5))
+(wcar (car/zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
 ```
 
 Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
