@@ -2,29 +2,29 @@
   "Carmine-backed Ring session store. Adapted from clj-redis-session."
   {:author "Peter Taoussanis"}
   (:require [ring.middleware.session.store :as session-store]
-            [taoensso.carmine :as carmine])
+            [taoensso.carmine :as car])
   (:import  [java.util UUID]))
 
 (defn new-session-key [prefix] (str prefix ":" (UUID/randomUUID)))
 
-(defmacro wc
+(defmacro wcar
   [& body]
   `(let [{pool# :pool spec# :spec} @~'conn-atom]
-     (carmine/with-conn pool# spec# ~@body)))
+     (car/with-conn pool# spec# ~@body)))
 
 (defprotocol ICarmineSessionStore
   (reset-conn [this pool spec]))
 
 (defrecord CarmineSessionStore [conn-atom prefix expiration]
   session-store/SessionStore
-  (read-session   [_ key] (or (when key (wc (carmine/get key))) {}))
-  (delete-session [_ key] (wc (carmine/del key)) nil)
+  (read-session   [_ key] (or (when key (wcar (car/get key))) {}))
+  (delete-session [_ key] (wcar (car/del key)) nil)
   (write-session  [_ key data]
     (let [key  (or key (new-session-key prefix))
           data (assoc data :session-id key)]
       (if expiration
-        (wc (carmine/setex key expiration data))
-        (wc (carmine/set key data)))
+        (wcar (car/setex key expiration data))
+        (wcar (car/set key data)))
       key))
 
   ICarmineSessionStore

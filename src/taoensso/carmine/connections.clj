@@ -31,7 +31,7 @@
                           (BufferedOutputStream.)))
   (conn-alive? [this]
     (if (:listener? spec)
-      true ; TODO See .org file
+      true ; TODO Waiting on Redis update, Ref. http://goo.gl/LPhIO
       (= "PONG" (try (protocol/with-context this (taoensso.carmine/ping))
                      (catch Exception _)))))
   (close-conn  [this] (.close socket)))

@@ -15,19 +15,19 @@
   See http://antirez.com/post/250 for implementation details."
   {:author "Peter Taoussanis"}
   (:require [clojure.string   :as str]
-            [taoensso.carmine :as carmine]
+            [taoensso.carmine :as car]
             [taoensso.carmine (protocol :as protocol)]
             [taoensso.timbre  :as timbre])
   (:import  [java.util UUID]))
 
 (def ^:private qkey "Prefixed queue key"
-  (memoize (carmine/make-keyfn :carmine :queue)))
+  (memoize (car/make-keyfn "carmine" "queue")))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue. Returns message
   id and the number of messages currently queued or recently dequeued."
   [qname message]
-  (carmine/lua-script
+  (car/lua-script
    "redis.call('hset', _:qk-messages, _:msg-id, _:msg-content)
 
     -- lpushnx EOC sentinel to ensure an initialized id-circle
@@ -54,7 +54,7 @@
   [qname & {:keys [handler-ttl-msecs backoff-msecs worker-context?]
             :or   {handler-ttl-msecs (* 60 60 1000)
                    backoff-msecs     2000}}]
-  (carmine/lua-script
+  (car/lua-script
    "if redis.call('exists', _:qk-backoff) == 1 then
       return 'backoff'
     else
@@ -119,7 +119,7 @@
             flat-opts (apply concat opts)]
         (future
           (while @active?
-            (when-let [poll-reply (carmine/with-conn pool spec
+            (when-let [poll-reply (car/with-conn pool spec
                                     (apply dequeue-1 qname :worker-context? true
                                            flat-opts))]
               (if (= poll-reply "backoff")
@@ -130,8 +130,8 @@
                                       qname "\n") poll-reply))
 
                   (try (handler-fn message-content)
-                       (carmine/with-conn pool spec
-                         (carmine/sadd (qkey qname "set" "recently-done")
+                       (car/with-conn pool spec
+                         (car/sadd (qkey qname "set" "recently-done")
                                        message-id))
                        (catch Exception e
                          (timbre/error
@@ -174,19 +174,19 @@
 
 (comment
 
-  (do (def p (carmine/make-conn-pool))
-      (def s (carmine/make-conn-spec))
-      (defmacro wc [& body] `(carmine/with-conn p s ~@body)))
+  (do (def p (car/make-conn-pool))
+      (def s (car/make-conn-spec))
+      (defmacro wcar [& body] `(car/with-conn p s ~@body)))
 
   ;; Delete all queue keys
-  (let [queues (wc (carmine/keys (qkey "*")))]
-    (when (seq queues) (wc (apply carmine/del queues))))
+  (let [queues (wcar (car/keys (qkey "*")))]
+    (when (seq queues) (wcar (apply car/del queues))))
 
   (def my-worker (make-dequeue-worker nil nil "myq"))
-  (wc (doall (map #(enqueue "myq" (str %)) (range 10))))
+  (wcar (doall (map #(enqueue "myq" (str %)) (range 10))))
 
-  (wc (dequeue-1 "myq"))
-  (wc (carmine/lrange (qkey "myq" "list" "id-circle") "0" "-1"))
+  (wcar (dequeue-1 "myq"))
+  (wcar (car/lrange (qkey "myq" "list" "id-circle") "0" "-1"))
 
   (def my-buggy-worker
     (make-dequeue-worker
