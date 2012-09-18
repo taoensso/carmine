@@ -24,6 +24,11 @@
 (def ^:private ^:const charset     "UTF-8")
 (def ^:private ^:const bytes-class (Class/forName "[B"))
 
+;; Define a special type that can be used to box values for which we'd like
+;; to force automatic de/serialization (e.g. simple number types that are
+;; normally converted to byte strings).
+(deftype Preserved [value])
+
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
@@ -53,8 +58,8 @@
   Argument type will determine how it'll be stored with Redis:
     * String args become byte strings.
     * Simple numbers (integers, longs, floats, doubles) become byte strings.
-    * Binary args go through un-munged.
-    * Everything else gets serialized."
+    * Binary (byte array) args go through un-munged.
+    * Everything else (incl. preserved args) gets serialized."
   [^BufferedOutputStream out arg]
   (let [type (cond (string? arg)                :str ; Check most common first!
                    (or (instance? Long    arg)
@@ -62,17 +67,19 @@
                        (instance? Integer arg)
                        (instance? Float   arg)) :num ; Simple number
                    (instance? bytes-class arg)  :bin
+                   (instance? Preserved   arg)  :preserved
                    :else                        :clj)
 
         ^bytes ba (case type
-                    :str (bytestring arg)
-                    :num (bytestring (str arg))
-                    :bin arg
-                    :clj (nippy/freeze-to-bytes arg))
+                    :str       (bytestring arg)
+                    :num       (bytestring (str arg))
+                    :bin       arg
+                    :preserved (nippy/freeze-to-bytes (.value ^Preserved arg))
+                    :clj       (nippy/freeze-to-bytes arg))
 
         payload-size (alength ba)
-        data-size    (if (or (= type :str)
-                             (= type :num)) payload-size (+ payload-size 2))]
+        marked-type? (not (or (= type :str) (= type :num)))
+        data-size    (if marked-type? (+ payload-size 2) payload-size)]
 
     ;; To support various special goodies like serialization, we reserve
     ;; strings that begin with a null terminator
@@ -82,7 +89,10 @@
                    arg))))
 
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
-    (case type :bin (send-bin out) :clj (send-clj out) nil) ; Add marker
+    (when marked-type?
+      (case type
+        :bin              (send-bin out)
+        (:clj :preserved) (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!

@@ -265,9 +265,18 @@
         data (dissoc nippy/stress-data :bytes)]
     (wc (r/set k1 data))
     (is (= data (wc (r/get k1))))
+
     (wc (r/hmset k2 "field1" data "field2" "just a string"))
     (is (= data (wc (r/hget k2 "field1"))))
     (is (= "just a string" (wc (r/hget k2 "field2"))))))
+
+(deftest test-preserved-values
+  (let [num-key      (test-key "num-key")
+        preserve-key (test-key "preserve-key")]
+    (wc (r/set num-key 10)
+        (r/set preserve-key (r/preserve 10)))
+    (is (= (wc (r/get num-key))      "10"))
+    (is (= (wc (r/get preserve-key)) 10))))
 
 (deftest test-binary-safety
   (let [k (test-key "binary-safety")

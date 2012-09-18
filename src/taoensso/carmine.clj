@@ -8,7 +8,8 @@
              (connections :as conns)
              (commands    :as commands)])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
-           [taoensso.carmine.connections ConnectionPool]))
+           [taoensso.carmine.connections ConnectionPool]
+           [taoensso.carmine.protocol    Preserved]))
 
 ;;;; Connections
 
@@ -80,6 +81,12 @@
 
 (comment ((make-keyfn :foo :bar) :baz "qux")
          ((make-keyfn) :foo :bar))
+
+(defn preserve
+  "Forces argument of any type (including simple number and binary types) to be
+  subject to automatic de/serialization."
+  [x]
+  (protocol/Preserved. x))
 
 ;;;; Standard commands
 
