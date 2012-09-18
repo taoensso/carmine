@@ -39,7 +39,7 @@
    {:qk-messages  (qkey qname "hash" "messages")
     :qk-id-circle (qkey qname "list" "id-circle")}
    {:msg-id       (str (UUID/randomUUID))
-    :msg-content  message}))
+    :msg-content  (car/preserve message)}))
 
 (defn dequeue-1
   "Rotates queue's id-circle and processes next id. Returns:
