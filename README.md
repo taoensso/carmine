@@ -73,9 +73,7 @@ The defaults are sensible but see the [poll options spec](http://goo.gl/EiTbn) i
 Unless you need the added flexibility of specifying the pool and spec for each request, you can save some typing with a little macro:
 
 ```clojure
-(defmacro wcar ; With Carmine...
-  "Acts like (partial car/with-conn pool spec-server1)."
-  [& body] `(car/with-conn pool spec-server1 ~@body))
+(defmacro wcar [& body] `(car/with-conn pool spec-server1 ~@body))
 ```
 
 ### Basic Commands
@@ -83,10 +81,9 @@ Unless you need the added flexibility of specifying the pool and spec for each r
 Sending commands is easy:
 
 ```clojure
-(wcar
- (car/ping)
- (car/set "foo" "bar")
- (car/get "foo"))
+(wcar (car/ping)
+      (car/set "foo" "bar")
+      (car/get "foo"))
 => ["PONG" "OK" "bar"]
 ```
 
@@ -102,10 +99,9 @@ If the server responds with an error, an exception is thrown:
 But what if we're pipelining?
 
 ```clojure
-(wcar
- (car/set  "foo" "bar")
- (car/spop "foo")
- (car/get  "foo"))
+(wcar (car/set  "foo" "bar")
+      (car/spop "foo")
+      (car/get  "foo"))
 => ["OK" #<Exception ERR Operation against ...> "bar"]
 ```
 
@@ -114,14 +110,13 @@ But what if we're pipelining?
 The only value type known to Redis internally is the [byte string](http://redis.io/topics/data-types). But Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
 
 ```clojure
-(wcar
-  (car/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
-                      :vec    (vec (range 5))
-                      :set    #{true false :a :b :c :d}
-                      :bytes  (byte-array 5)
-                      ;; ...
-                      })
-  (car/get "clj-key")
+(wcar (car/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
+                          :vec    (vec (range 5))
+                          :set    #{true false :a :b :c :d}
+                          :bytes  (byte-array 5)
+                          ;; ...
+                          })
+      (car/get "clj-key"))
 => ["OK" {:bigint 31415926535897932384626433832795N
           :vec    [0 1 2 3 4]
           :set    #{true false :a :c :b :d}
@@ -133,13 +128,15 @@ Types are handled as follows:
  * Simple Clojure numbers (integers, longs, floats, doubles) become Redis strings.
  * Everything else gets automatically de/serialized.
 
+You can force automatic de/serialization for an argument of any type by wrapping it with `car/preserve`.
+
 ### Documentation and Command Coverage
 
 Like [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure), Carmine uses the [official Redis command reference](https://github.com/antirez/redis-doc/blob/master/commands.json) to generate its own command API. Which means that not only is Carmine's command coverage *always complete*, but it's also **fully documented**:
 
 ```clojure
 (use 'clojure.repl)
-(doc r/sort)
+(doc car/sort)
 => "SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
 
 Sort the elements in a list, set or sorted set.
@@ -166,7 +163,7 @@ Redis 2.6 introduced a remarkably powerful feature: server-side Lua scripting! A
                   ))
 
 (wcar (my-set "foo" "bar")
-         (car/get "foo"))
+      (car/get "foo"))
 => ["OK" "lua bar"]
 ```
 
@@ -192,20 +189,17 @@ Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*
 In Carmine, Redis commands are *real functions*. Which means you can *use* them like real functions:
 
 ```clojure
-(wcar
-  (doall (repeatedly 5 car/ping)))
+(wcar (doall (repeatedly 5 car/ping)))
 => ["PONG" "PONG" "PONG" "PONG" "PONG"]
 
 (let [first-names ["Salvatore"  "Rich"]
       surnames    ["Sanfilippo" "Hickey"]]
-  (wcar
-   (doall (map #(car/set %1 %2) first-names surnames))
-   (doall (map car/get first-names))))
+  (wcar (doall (map #(car/set %1 %2) first-names surnames))
+        (doall (map car/get first-names))))
 => ["OK" "OK" "Sanfilippo" "Hickey"]
 
-(wcar
-  (doall (map #(car/set (str "key-" %) (rand-int 10)) (range 3)))
-  (doall (map #(car/get (str "key-" %)) (range 3))))
+(wcar (doall (map #(car/set (str "key-" %) (rand-int 10)) (range 3)))
+      (doall (map #(car/get (str "key-" %)) (range 3))))
 => ["OK" "OK" "OK" "OK" "0" "6" "6" "2"]
 ```
 
@@ -213,12 +207,11 @@ And since real functions can compose, so can Carmine's. By nesting `with-conn`/`
 
 ```clojure
 (let [hash-key "awesome-people"]
-  (wcar
-    (car/hmset hash-key "Rich" "Hickey" "Salvatore" "Sanfilippo")
-    (doall (map (partial car/hget hash-key)
-                ;; Execute with own connection & pipeline then return result
-                ;; for composition:
-                (wcar (car/hkeys hash-key))))))
+  (wcar (car/hmset hash-key "Rich" "Hickey" "Salvatore" "Sanfilippo")
+        (doall (map (partial car/hget hash-key)
+                    ;; Execute with own connection & pipeline then return result
+                    ;; for composition:
+                    (wcar (car/hkeys hash-key))))))
 => ["OK" "Sanfilippo" "Hickey"]
 ```
 
@@ -274,10 +267,9 @@ Note that subscriptions are *connection-local*: you can have three different lis
 Want a little more control over how server replies are parsed? You have all the control you need:
 
 ```clojure
-(wcar
-  (car/ping)
-  (car/with-parser clojure.string/lower-case (car/ping) (car/ping))
-  (car/ping))
+(wcar (car/ping)
+      (car/with-parser clojure.string/lower-case (car/ping) (car/ping))
+      (car/ping))
 => ["PONG" "pong" "pong" "PONG"]
 ```
 
@@ -286,9 +278,8 @@ Want a little more control over how server replies are parsed? You have all the 
 Carmine's serializer has no problem handling arbitrary byte[] data. But the serializer involves overhead that may not always be desireable. So for maximum flexibility Carmine gives you automatic, *zero-overhead* read and write facilities for raw binary data:
 
 ```clojure
-(wcar
-  (car/set "bin-key" (byte-array 50))
-  (car/get "bin-key"))
+(wcar (car/set "bin-key" (byte-array 50))
+      (car/get "bin-key"))
 => ["OK" [#<byte[] [B@7c3ab3b4> 50]]
 ```
 
