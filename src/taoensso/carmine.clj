@@ -75,12 +75,13 @@
   (let [k (make-keyfn :prefix)]
     (k :foo :bar \"baz\")) => \"prefix:foo:bar:baz\""
   [& prefix-parts]
-  (let [join-parts (fn [parts] (str/join ":" (map name parts)))
+  (let [join-parts (fn [parts] (str/join ":" (map name (filter identity parts))))
         prefix     (when (seq prefix-parts) (str (join-parts prefix-parts) ":"))]
     (fn [& parts] (str prefix (join-parts parts)))))
 
 (comment ((make-keyfn :foo :bar) :baz "qux")
-         ((make-keyfn) :foo :bar))
+         ((make-keyfn) :foo :bar)
+         ((make-keyfn) nil "foo"))
 
 (defn preserve
   "Forces argument of any type (including simple number and binary types) to be
