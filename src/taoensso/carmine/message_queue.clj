@@ -4,13 +4,14 @@
 
   Currently ALPHA QUALITY!!!
 
-  Prefixed keys:
-    * qname:hash:messages     ; Id -> content
-    * qname:hash:locks        ; Id -> lock-acquired time
-    * qname:list:id-circle    ; Rotating list of ids
-    * qname:set:recently-done ; Used for efficient id removal from circle
-    * qname:flag:backoff?     ; Used for queue-wide (every-worker) polling
-                              ; backoff
+  Redis keys:
+    * mqueue:<qname>:messages      -> hash, {id content}
+    * mqueue:<qname>:locks         -> hash, {id lock-acquired-time}
+    * mqueue:<qname>:id-circle     -> list, rotating list of ids
+    * mqueue:<qname>:recently-done -> set, used for efficient id removal from
+                                      circle
+    * mqueue:<qname>:backoff?      -> ttl flag, used for queue-wide (every-worker)
+                                      polling backoff
 
   See http://antirez.com/post/250 for implementation details."
   {:author "Peter Taoussanis"}
@@ -21,7 +22,7 @@
   (:import  [java.util UUID]))
 
 (def ^:private qkey "Prefixed queue key"
-  (memoize (car/make-keyfn "carmine" "queue")))
+  (memoize (car/make-keyfn "mqueue")))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue. Returns message
@@ -36,8 +37,8 @@
     end
 
     return {_:msg-id, redis.call ('lpush', _:qk-id-circle, _:msg-id)}"
-   {:qk-messages  (qkey qname "hash" "messages")
-    :qk-id-circle (qkey qname "list" "id-circle")}
+   {:qk-messages  (qkey qname "messages")
+    :qk-id-circle (qkey qname "id-circle")}
    {:msg-id       (str (UUID/randomUUID))
     :msg-content  (car/preserve message)}))
 
@@ -95,11 +96,11 @@
         end
       end
     end"
-   {:qk-messages       (qkey qname "hash" "messages")
-    :qk-locks          (qkey qname "hash" "locks")
-    :qk-id-circle      (qkey qname "list" "id-circle")
-    :qk-recently-done  (qkey qname "set"  "recently-done")
-    :qk-backoff        (qkey qname "flag" "backoff?")}
+   {:qk-messages       (qkey qname "messages")
+    :qk-locks          (qkey qname "locks")
+    :qk-id-circle      (qkey qname "id-circle")
+    :qk-recently-done  (qkey qname "recently-done")
+    :qk-backoff        (qkey qname "backoff?")}
    {:current-time      (str (System/currentTimeMillis))
     :handler-ttl-msecs (str handler-ttl-msecs)
     :backoff-msecs     (str backoff-msecs)
@@ -131,7 +132,7 @@
 
                   (try (handler-fn message-content)
                        (car/with-conn pool spec
-                         (car/sadd (qkey qname "set" "recently-done")
+                         (car/sadd (qkey qname "recently-done")
                                        message-id))
                        (catch Exception e
                          (timbre/error
@@ -186,7 +187,7 @@
   (wcar (doall (map #(enqueue "myq" (str %)) (range 10))))
 
   (wcar (dequeue-1 "myq"))
-  (wcar (car/lrange (qkey "myq" "list" "id-circle") 0 -1))
+  (wcar (car/lrange (qkey "myq" "id-circle") 0 -1))
 
   (def my-buggy-worker
     (make-dequeue-worker
