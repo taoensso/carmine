@@ -56,6 +56,14 @@
   [parser-fn & body]
   `(binding [protocol/*parser* ~parser-fn] ~@body))
 
+(defmacro with-mparser
+  "Wraps body so that multi-bulk (vector) replies to any wrapped Redis commands
+  will be parsed with (parser-fn reply)."
+  [parser-fn & body]
+  `(with-parser
+     (fn [multi-bulk-reply#] (vec (map ~parser-fn multi-bulk-reply#)))
+     ~@body))
+
 (defmacro skip-replies
   [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
               ~@body))
@@ -68,10 +76,16 @@
                           (or (= x "false") (= x "0")) false
                           (or (= x "true")  (= x "1")) true
                           :else nil))
-(defmacro parse-long    [& body] `(with-parser as-long   ~@body))
-(defmacro parse-double  [& body] `(with-parser as-double ~@body))
-(defmacro parse-bool    [& body] `(with-parser as-bool   ~@body))
-(defmacro parse-keyword [& body] `(with-parser #(keyword %) ~@body))
+
+(defmacro parse-long     [& body] `(with-parser as-long      ~@body))
+(defmacro parse-double   [& body] `(with-parser as-double    ~@body))
+(defmacro parse-bool     [& body] `(with-parser as-bool      ~@body))
+(defmacro parse-keyword  [& body] `(with-parser #(keyword %) ~@body))
+
+(defmacro parse-longs    [& body] `(with-mparser as-long      ~@body))
+(defmacro parse-doubles  [& body] `(with-mparser as-double    ~@body))
+(defmacro parse-bools    [& body] `(with-mparser as-bool      ~@body))
+(defmacro parse-keywords [& body] `(with-mparser #(keyword %) ~@body))
 
 (defn make-keyfn
   "Returns a function that joins keywords and strings to form an idiomatic
