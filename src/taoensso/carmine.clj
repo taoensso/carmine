@@ -72,9 +72,9 @@
 ;;; versions that auto-serialized simple number types
 (defn as-long   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
 (defn as-double [x] (when x (if (number? x) (double x) (Double/parseDouble x))))
-(defn as-bool   [x] (cond (or (true? x) (false? x))    x
-                          (or (= x "false") (= x "0")) false
-                          (or (= x "true")  (= x "1")) true
+(defn as-bool   [x] (cond (or (true? x) (false? x))            x
+                          (or (= x "false") (= x "0") (= x 0)) false
+                          (or (= x "true")  (= x "1") (= x 1)) true
                           :else nil))
 
 (defmacro parse-long     [& body] `(with-parser as-long      ~@body))
