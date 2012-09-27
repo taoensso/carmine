@@ -3,7 +3,7 @@
   (:require [redis.core             :as redis-clojure]
             [clj-redis.client       :as clj-redis]
             [accession.core         :as accession]
-            [taoensso.carmine       :as carmine]
+            [taoensso.carmine       :as car]
             [taoensso.carmine.utils :as utils]))
 
 ;;;; Bench params
@@ -55,18 +55,18 @@
 
 ;;; Carmine
 
-(def carmine-spec     (carmine/make-conn-spec))
-(defonce carmine-pool (carmine/make-conn-pool))
+(def carmine-spec     (car/make-conn-spec))
+(defonce carmine-pool (car/make-conn-pool))
 
-(defmacro wc [& body]
-  `(bench (carmine/with-conn carmine-pool carmine-spec ~@body)))
+(defmacro wcar [& body]
+  `(bench (car/with-conn carmine-pool carmine-spec ~@body)))
 
 (defn bench-carmine
   []
   (println "Benching Carmine...")
-  {:ping (wc (carmine/ping))
-   :set  (wc (carmine/set data-key data))
-   :get  (wc (carmine/get data-key))})
+  {:ping (wcar (car/ping))
+   :set  (wcar (car/set data-key data))
+   :get  (wcar (car/get data-key))})
 
 (comment
 

@@ -8,7 +8,8 @@
              (connections :as conns)
              (commands    :as commands)])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
-           [taoensso.carmine.connections ConnectionPool]))
+           [taoensso.carmine.connections ConnectionPool]
+           [taoensso.carmine.protocol    Preserved]))
 
 ;;;; Connections
 
@@ -47,17 +48,44 @@
          (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#))))
      (catch Exception e# (throw e#))))
 
+;;;; Misc
+
 (defmacro with-parser
   "Wraps body so that replies to any wrapped Redis commands will be parsed with
   (parser-fn reply)."
   [parser-fn & body]
   `(binding [protocol/*parser* ~parser-fn] ~@body))
 
+(defmacro with-mparser
+  "Wraps body so that multi-bulk (vector) replies to any wrapped Redis commands
+  will be parsed with (parser-fn reply)."
+  [parser-fn & body]
+  `(with-parser
+     (fn [multi-bulk-reply#] (vec (map ~parser-fn multi-bulk-reply#)))
+     ~@body))
+
 (defmacro skip-replies
   [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
               ~@body))
 
-;;;; Misc
+;;; Note (number? x) checks for backwards compatibility with pre-v0.11 Carmine
+;;; versions that auto-serialized simple number types
+(defn as-long   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
+(defn as-double [x] (when x (if (number? x) (double x) (Double/parseDouble x))))
+(defn as-bool   [x] (cond (or (true? x) (false? x))            x
+                          (or (= x "false") (= x "0") (= x 0)) false
+                          (or (= x "true")  (= x "1") (= x 1)) true
+                          :else nil))
+
+(defmacro parse-long     [& body] `(with-parser as-long      ~@body))
+(defmacro parse-double   [& body] `(with-parser as-double    ~@body))
+(defmacro parse-bool     [& body] `(with-parser as-bool      ~@body))
+(defmacro parse-keyword  [& body] `(with-parser #(keyword %) ~@body))
+
+(defmacro parse-longs    [& body] `(with-mparser as-long      ~@body))
+(defmacro parse-doubles  [& body] `(with-mparser as-double    ~@body))
+(defmacro parse-bools    [& body] `(with-mparser as-bool      ~@body))
+(defmacro parse-keywords [& body] `(with-mparser #(keyword %) ~@body))
 
 (defn make-keyfn
   "Returns a function that joins keywords and strings to form an idiomatic
@@ -66,12 +94,19 @@
   (let [k (make-keyfn :prefix)]
     (k :foo :bar \"baz\")) => \"prefix:foo:bar:baz\""
   [& prefix-parts]
-  (let [join-parts (fn [parts] (str/join ":" (map name parts)))
+  (let [join-parts (fn [parts] (str/join ":" (map name (filter identity parts))))
         prefix     (when (seq prefix-parts) (str (join-parts prefix-parts) ":"))]
     (fn [& parts] (str prefix (join-parts parts)))))
 
 (comment ((make-keyfn :foo :bar) :baz "qux")
-         ((make-keyfn) :foo :bar))
+         ((make-keyfn) :foo :bar)
+         ((make-keyfn) nil "foo"))
+
+(defn preserve
+  "Forces argument of any type (including simple number and binary types) to be
+  subject to automatic de/serialization."
+  [x]
+  (protocol/Preserved. x))
 
 ;;;; Standard commands
 
@@ -178,13 +213,13 @@
   "Like `zinterstore` but automatically counts keys."
   [dest-key source-keys & options]
   (apply zinterstore dest-key
-         (str (count source-keys)) (concat source-keys options)))
+         (count source-keys) (concat source-keys options)))
 
 (defn zunionstore*
   "Like `zunionstore` but automatically counts keys."
   [dest-key source-keys & options]
   (apply zunionstore dest-key
-         (str (count source-keys)) (concat source-keys options)))
+         (count source-keys) (concat source-keys options)))
 
 ;; Adapted from redis-clojure
 (defn- parse-sort-args [args]

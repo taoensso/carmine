@@ -24,6 +24,11 @@
 (def ^:private ^:const charset     "UTF-8")
 (def ^:private ^:const bytes-class (Class/forName "[B"))
 
+;; Define a special type that can be used to box values for which we'd like
+;; to force automatic de/serialization (e.g. simple number types that are
+;; normally converted to byte strings).
+(deftype Preserved [value])
+
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
@@ -50,21 +55,31 @@
   $<size of arg> crlf
   <arg data>     crlf
 
-  Binary arguments will be passed through un-munged.
-  String arguments will be turned into byte strings.
-  All other arguments (including numbers!) will be serialized."
+  Argument type will determine how it'll be stored with Redis:
+    * String args become byte strings.
+    * Simple numbers (integers, longs, floats, doubles) become byte strings.
+    * Binary (byte array) args go through un-munged.
+    * Everything else (incl. preserved args) gets serialized."
   [^BufferedOutputStream out arg]
-  (let [type (cond (string? arg)               :str ; Check most common first!
-                   (instance? bytes-class arg) :bin
-                   :else                       :clj)
+  (let [type (cond (string? arg)                :str ; Check most common first!
+                   (or (instance? Long    arg)
+                       (instance? Double  arg)
+                       (instance? Integer arg)
+                       (instance? Float   arg)) :num ; Simple number
+                   (instance? bytes-class arg)  :bin
+                   (instance? Preserved   arg)  :preserved
+                   :else                        :clj)
 
         ^bytes ba (case type
-                    :str (bytestring arg)
-                    :bin arg
-                    :clj (nippy/freeze-to-bytes arg))
+                    :str       (bytestring arg)
+                    :num       (bytestring (str arg))
+                    :bin       arg
+                    :preserved (nippy/freeze-to-bytes (.value ^Preserved arg))
+                    :clj       (nippy/freeze-to-bytes arg))
 
         payload-size (alength ba)
-        data-size    (if (= type :str) payload-size (+ payload-size 2))]
+        marked-type? (not (or (= type :str) (= type :num)))
+        data-size    (if marked-type? (+ payload-size 2) payload-size)]
 
     ;; To support various special goodies like serialization, we reserve
     ;; strings that begin with a null terminator
@@ -74,7 +89,10 @@
                    arg))))
 
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
-    (case type :bin (send-bin out) :clj (send-clj out) nil) ; Add marker
+    (when marked-type?
+      (case type
+        :bin              (send-bin out)
+        (:clj :preserved) (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!
@@ -104,7 +122,6 @@
 
   Redis will reply to commands with different kinds of replies. It is possible
   to check the kind of reply from the first byte sent by the server:
-
       * `+` for single line reply.
       * `-` for error message.
       * `:` for integer reply.
@@ -182,7 +199,9 @@
 (defn get-one-reply! [] (get-replies! 1))
 
 (defmacro with-context
-  "Evaluates body in the context of a thread-bound connection to a Redis server."
+  "Evaluates body in the context of a thread-bound connection to a Redis server.
+  For non-listener connections, sends Redis commands to server as pipeline and
+  returns the server's response."
   [connection & body]
   `(let [listener?#
          (:listener? (taoensso.carmine.connections/get-spec ~connection))]

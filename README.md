@@ -1,11 +1,11 @@
-Current [semantic](http://semver.org/) version: 
+Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.10.4"]
+[com.taoensso/carmine "0.11.0"]
 ```
 
-**Breaking changes** since _0.9.x_:
- * *Ring session-store*: `connection-pool` and `connection-spec` are now mandatory args.
+**Breaking changes** since _0.10.x_:
+ * **NB!**: Simple numbers are no longer automatically de/serialized! See [commit](http://goo.gl/36ao4) for more info.
 
 # Carmine, a Redis client for Clojure
 
@@ -47,13 +47,13 @@ lein2 all test
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.10.4"]
+[com.taoensso/carmine "0.11.0"]
 ```
 
 and `require` the library:
 
 ```clojure
-(ns my-app (:require [taoensso.carmine :as r]))
+(ns my-app (:require [taoensso.carmine :as car]))
 ```
 
 ### Make A Connection
@@ -61,21 +61,19 @@ and `require` the library:
 You'll usually want to define one connection pool and spec that you'll reuse:
 
 ```clojure
-(def pool (r/make-conn-pool :max-active 8))
-(def spec-server1 (r/make-conn-spec :host     "127.0.0.1"
-                                    :port     6379
-                                    :password "foobar"
-                                    :timeout  4000))
+(def pool (car/make-conn-pool))
+(def spec-server1 (car/make-conn-spec :host     "127.0.0.1"
+                                      :port     6379
+                                      :password "foobar"
+                                      :timeout  4000))
 ```
 
-The defaults are sensible but see [here](http://commons.apache.org/pool/apidocs/org/apache/commons/pool/impl/GenericKeyedObjectPool.html) for pool options if you want to fiddle.
+The defaults are sensible but see the [poll options spec](http://goo.gl/EiTbn) if you want to fiddle.
 
 Unless you need the added flexibility of specifying the pool and spec for each request, you can save some typing with a little macro:
 
 ```clojure
-(defmacro carmine
-  "Acts like (partial with-conn pool spec-server1)."
-  [& body] `(r/with-conn pool spec-server1 ~@body))
+(defmacro wcar [& body] `(car/with-conn pool spec-server1 ~@body))
 ```
 
 ### Basic Commands
@@ -83,10 +81,9 @@ Unless you need the added flexibility of specifying the pool and spec for each r
 Sending commands is easy:
 
 ```clojure
-(carmine
- (r/ping)
- (r/set "foo" "bar")
- (r/get "foo"))
+(wcar (car/ping)
+      (car/set "foo" "bar")
+      (car/get "foo"))
 => ["PONG" "OK" "bar"]
 ```
 
@@ -95,59 +92,43 @@ Note that sending multiple commands at once like this will employ [pipelining](h
 If the server responds with an error, an exception is thrown:
 
 ```clojure
-(carmine (r/spop "foo" "bar"))
+(wcar (car/spop "foo" "bar"))
 => Exception ERR Operation against a key holding the wrong kind of value
 ```
 
 But what if we're pipelining?
 
 ```clojure
-(carmine
- (r/set  "foo" "bar")
- (r/spop "foo")
- (r/get  "foo"))
+(wcar (car/set  "foo" "bar")
+      (car/spop "foo")
+      (car/get  "foo"))
 => ["OK" #<Exception ERR Operation against ...> "bar"]
 ```
 
 ### Automatic Serialization
 
-Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
+The only value type known to Redis internally is the [byte string](http://redis.io/topics/data-types). But Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
 
 ```clojure
-(carmine
-  (r/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
-                    :vec    (vec (range 5))
-                    :set    #{true false :a :b :c :d}
-                    :bytes  (byte-array 5)
-                    ;; ...
-                    })
-  (r/get "clj-key")
+(wcar (car/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
+                          :vec    (vec (range 5))
+                          :set    #{true false :a :b :c :d}
+                          :bytes  (byte-array 5)
+                          ;; ...
+                          })
+      (car/get "clj-key"))
 => ["OK" {:bigint 31415926535897932384626433832795N
           :vec    [0 1 2 3 4]
           :set    #{true false :a :c :b :d}
           :bytes  #<byte [] [B@4d66ea88>}]
 ```
 
-Any argument to a Redis command that's *not* a string will be automatically serialized using a **high-speed, binary-safe protocol** that falls back to Clojure's own Reader for tougher jobs.
+Types are handled as follows:
+ * Clojure strings become Redis strings.
+ * Simple Clojure numbers (integers, longs, floats, doubles) become Redis strings.
+ * Everything else gets automatically de/serialized.
 
-**WARNING**: With Carmine you **must** manually string-ify arguments that you want Redis to interpret/store in its own native (string) format:
-
-```clojure
-(carmine
-  ;; String argument
-  (r/set  "has-string" "13")
-  (r/incr "has-string")
-  (r/get  "has-string")        ; This will return a string
-
-  ;; Float argument
-  (r/set  "has-serialized" 13) ; Will be serialized! Not what we want here.
-  (r/incr "has-serialized")    ; This will throw an exception!
-  (r/get  "has-serialized")    ; This will return a (deserialized) float.
-  )
-=> ["OK" 14 "14" "OK" #<Exception ...> 13]
-```
-
-This scheme is consistent, unambiguous, and simple. But it requires a little carefulness while you're getting used to it as it's different from the way most other clients work.
+You can force automatic de/serialization for an argument of any type by wrapping it with `car/preserve`.
 
 ### Documentation and Command Coverage
 
@@ -155,7 +136,7 @@ Like [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure), Carmin
 
 ```clojure
 (use 'clojure.repl)
-(doc r/sort)
+(doc car/sort)
 => "SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
 
 Sort the elements in a list, set or sorted set.
@@ -176,13 +157,13 @@ Redis 2.6 introduced a remarkably powerful feature: server-side Lua scripting! A
 ```clojure
 (defn my-set
   [key value]
-  (r/lua-script "return redis.call('set', _:my-key, 'lua '.. _:my-value)"
-                {:my-key key}     ; Named key variables and their values
-                {:my-value value} ; Named non-key variables and their values
-                ))
+  (car/lua-script "return redis.call('set', _:my-key, 'lua '.. _:my-value)"
+                  {:my-key key}     ; Named key variables and their values
+                  {:my-value value} ; Named non-key variables and their values
+                  ))
 
-(carmine (my-set "foo" "bar")
-         (get "foo"))
+(wcar (my-set "foo" "bar")
+      (car/get "foo"))
 => ["OK" "lua bar"]
 ```
 
@@ -195,8 +176,8 @@ The `lua-script` command above is a good example of a Carmine *helper*.
 Carmine will never surprise you by interfering with the standard Redis command API. But there are times when it might want to offer you a helping hand (if you want it). Compare:
 
 ```clojure
-(carmine (r/zunionstore "dest-key" "3" "zset1" "zset2" "zset3" "WEIGHTS" "2" "3" "5"))
-(carmine (r/zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" "2" "3" "5"))
+(wcar (car/zunionstore "dest-key" 3 "zset1" "zset2" "zset3" "WEIGHTS" 2 3 5))
+(wcar (car/zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
 ```
 
 Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
@@ -208,33 +189,29 @@ Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*
 In Carmine, Redis commands are *real functions*. Which means you can *use* them like real functions:
 
 ```clojure
-(carmine
-  (doall (repeatedly 5 r/ping)))
+(wcar (doall (repeatedly 5 car/ping)))
 => ["PONG" "PONG" "PONG" "PONG" "PONG"]
 
 (let [first-names ["Salvatore"  "Rich"]
       surnames    ["Sanfilippo" "Hickey"]]
-  (carmine
-   (doall (map #(r/set %1 %2) first-names surnames))
-   (doall (map r/get first-names))))
+  (wcar (doall (map #(car/set %1 %2) first-names surnames))
+        (doall (map car/get first-names))))
 => ["OK" "OK" "Sanfilippo" "Hickey"]
 
-(carmine
-  (doall (map #(r/set (str "key-" %) (rand-int 10)) (range 3)))
-  (doall (map #(r/get (str "key-" %)) (range 3))))
+(wcar (doall (map #(car/set (str "key-" %) (rand-int 10)) (range 3)))
+      (doall (map #(car/get (str "key-" %)) (range 3))))
 => ["OK" "OK" "OK" "OK" "0" "6" "6" "2"]
 ```
 
-And since real functions can compose, so can Carmine's. By nesting `with-conn`/`carmine` calls, you can fully control how composition and pipelining interact:
+And since real functions can compose, so can Carmine's. By nesting `with-conn`/`wcar` calls, you can fully control how composition and pipelining interact:
 
 ```clojure
 (let [hash-key "awesome-people"]
-  (carmine
-    (r/hmset hash-key "Rich" "Hickey" "Salvatore" "Sanfilippo")
-    (doall (map (partial r/hget hash-key)
-                ;; Execute with own connection & pipeline then return result
-                ;; for composition:
-                (carmine (r/hkeys hash-key))))))
+  (wcar (car/hmset hash-key "Rich" "Hickey" "Salvatore" "Sanfilippo")
+        (doall (map (partial car/hget hash-key)
+                    ;; Execute with own connection & pipeline then return result
+                    ;; for composition:
+                    (wcar (car/hkeys hash-key))))))
 => ["OK" "Sanfilippo" "Hickey"]
 ```
 
@@ -244,11 +221,11 @@ Carmine has a flexible **Listener** API to support persistent-connection feature
 
 ```clojure
 (def listener
-  (r/with-new-pubsub-listener
+  (car/with-new-pubsub-listener
    spec-server1 {"foobar" (fn f1 [msg] (println "Channel match: " msg))
                  "foo*"   (fn f2 [msg] (println "Pattern match: " msg))}
-   (r/subscribe  "foobar" "foobaz")
-   (r/psubscribe "foo*")))
+   (car/subscribe  "foobar" "foobaz")
+   (car/psubscribe "foo*")))
 ```
 
 Note the map of message handlers. `f1` will trigger when a message is published to channel `foobar`. `f2` will trigger when a message is published to `foobar`, `foobaz`, `foo Abraham Lincoln`, etc.
@@ -256,7 +233,7 @@ Note the map of message handlers. `f1` will trigger when a message is published 
 Publish messages:
 
 ```clojure
-(carmine (r/publish "foobar" "Hello to foobar!"))
+(wcar (car/publish "foobar" "Hello to foobar!"))
 ```
 
 Which will trigger:
@@ -271,8 +248,8 @@ You can adjust subscriptions and/or handlers:
 
 ```clojure
 (with-open-listener listener
-  (r/unsubscribe) ; Unsubscribe from every channel (leave patterns alone)
-  (r/psubscribe "an-extra-channel"))
+  (car/unsubscribe) ; Unsubscribe from every channel (leave patterns alone)
+  (car/psubscribe "an-extra-channel"))
 
 (swap! (:state listener) assoc "*extra*" (fn [x] (println "EXTRA: " x)))
 ```
@@ -280,7 +257,7 @@ You can adjust subscriptions and/or handlers:
 **Remember to close the listener** when you're done with it:
 
 ```clojure
-(r/close-listener listener)
+(car/close-listener listener)
 ```
 
 Note that subscriptions are *connection-local*: you can have three different listeners each listening for different messages, using different handlers. This is great stuff.
@@ -290,10 +267,9 @@ Note that subscriptions are *connection-local*: you can have three different lis
 Want a little more control over how server replies are parsed? You have all the control you need:
 
 ```clojure
-(carmine
-  (r/ping)
-  (r/with-parser clojure.string/lower-case (r/ping) (r/ping))
-  (r/ping))
+(wcar (car/ping)
+      (car/with-parser clojure.string/lower-case (car/ping) (car/ping))
+      (car/ping))
 => ["PONG" "pong" "pong" "PONG"]
 ```
 
@@ -302,9 +278,8 @@ Want a little more control over how server replies are parsed? You have all the 
 Carmine's serializer has no problem handling arbitrary byte[] data. But the serializer involves overhead that may not always be desireable. So for maximum flexibility Carmine gives you automatic, *zero-overhead* read and write facilities for raw binary data:
 
 ```clojure
-(carmine
-  (r/set "bin-key" (byte-array 50))
-  (r/get "bin-key"))
+(wcar (car/set "bin-key" (byte-array 50))
+      (car/get "bin-key"))
 => ["OK" [#<byte[] [B@7c3ab3b4> 50]]
 ```
 
