@@ -77,15 +77,15 @@
                           (or (= x "true")  (= x "1") (= x 1)) true
                           :else nil))
 
-(defmacro parse-long     [& body] `(with-parser as-long      ~@body))
-(defmacro parse-double   [& body] `(with-parser as-double    ~@body))
-(defmacro parse-bool     [& body] `(with-parser as-bool      ~@body))
-(defmacro parse-keyword  [& body] `(with-parser #(keyword %) ~@body))
+(defmacro parse-long     [& body] `(with-parser as-long    ~@body))
+(defmacro parse-double   [& body] `(with-parser as-double  ~@body))
+(defmacro parse-bool     [& body] `(with-parser as-bool    ~@body))
+(defmacro parse-keyword  [& body] `(with-parser keyword    ~@body))
 
-(defmacro parse-longs    [& body] `(with-mparser as-long      ~@body))
-(defmacro parse-doubles  [& body] `(with-mparser as-double    ~@body))
-(defmacro parse-bools    [& body] `(with-mparser as-bool      ~@body))
-(defmacro parse-keywords [& body] `(with-mparser #(keyword %) ~@body))
+(defmacro parse-longs    [& body] `(with-mparser as-long   ~@body))
+(defmacro parse-doubles  [& body] `(with-mparser as-double ~@body))
+(defmacro parse-bools    [& body] `(with-mparser as-bool   ~@body))
+(defmacro parse-keywords [& body] `(with-mparser keyword   ~@body))
 
 (defn make-keyfn
   "Returns a function that joins keywords and strings to form an idiomatic
@@ -305,7 +305,7 @@
 
      ;; Create a thread to actually listen for and process messages from
      ;; server. Thread will close when connection closes.
-     (-> (fn [] (@handler-atom# (protocol/get-basic-reply! in#) @state-atom#))
+     (-> (bound-fn [] (@handler-atom# (protocol/get-basic-reply! in#) @state-atom#))
          repeatedly doall future)
 
      (protocol/with-context conn# ~@body)
@@ -349,9 +349,9 @@
 ;;;; Dev/tests
 
 (comment
-  (do (def conn (conns/get-conn pool spec))
-      (def pool (make-conn-pool))
+  (do (def pool (make-conn-pool))
       (def spec (make-conn-spec))
+      (def conn (conns/get-conn pool spec))
       (defmacro wc [& body] `(with-conn pool spec ~@body)))
 
   ;;; Basic connections
