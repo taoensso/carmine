@@ -91,8 +91,13 @@
   "Returns a function that joins keywords and strings to form an idiomatic
   compound Redis key name.
 
-  (let [k (make-keyfn :prefix)]
-    (k :foo :bar \"baz\")) => \"prefix:foo:bar:baz\""
+  (let [k (make-keyfn :account)]
+    (k \"1j4nhg7\" :email-address)) => \"account:1j4nhg7:email-address\"
+
+  Recommended key naming style:
+    * \"category:subcategory:id:field\" basic form.
+    * Singular category names (\"account\" rather than \"accounts\").
+    * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
   [& prefix-parts]
   (let [join-parts (fn [parts] (str/join ":" (map name (filter identity parts))))
         prefix     (when (seq prefix-parts) (str (join-parts prefix-parts) ":"))]
