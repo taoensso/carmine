@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.11.1"]
+[com.taoensso/carmine "0.11.2"]
 ```
 
 **Breaking changes** since _0.10.x_:
@@ -47,7 +47,7 @@ lein2 all test
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.11.1"]
+[com.taoensso/carmine "0.11.2"]
 ```
 
 and `require` the library:
@@ -61,14 +61,9 @@ and `require` the library:
 You'll usually want to define one connection pool and spec that you'll reuse:
 
 ```clojure
-(def pool (car/make-conn-pool))
-(def spec-server1 (car/make-conn-spec :host     "127.0.0.1"
-                                      :port     6379
-                                      :password "foobar"
-                                      :timeout  4000))
+(def pool         (car/make-conn-pool)) ; See docstring for addtional options
+(def spec-server1 (car/make-conn-spec)) ; ''
 ```
-
-The defaults are sensible but see the [poll options spec](http://goo.gl/EiTbn) if you want to fiddle.
 
 Unless you need the added flexibility of specifying the pool and spec for each request, you can save some typing with a little macro:
 
@@ -311,7 +306,7 @@ Redis is probably most famous for being [fast](http://redis.io/topics/benchmarks
 
 ![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart.png)
 
-Accession could not complete the requests. [Detailed benchmark information](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs.
+Accession could not complete the requests. [Detailed benchmark information](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs. Note that these numbers are for _unpipelined_ requests: you could do a _lot_ more with pipelining.
 
 In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort but please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again for composable commands. 
 

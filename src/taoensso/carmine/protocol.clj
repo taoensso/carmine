@@ -61,29 +61,31 @@
     * Binary (byte array) args go through un-munged.
     * Everything else (incl. preserved args) gets serialized."
   [^BufferedOutputStream out arg]
-  (let [type (cond (string? arg)                :str ; Check most common first!
+  (let [type (cond (string?  arg) :string ; Most common 1st!
+                   ;;(keyword? arg) :keyword
                    (or (instance? Long    arg)
                        (instance? Double  arg)
                        (instance? Integer arg)
-                       (instance? Float   arg)) :num ; Simple number
-                   (instance? bytes-class arg)  :bin
-                   (instance? Preserved   arg)  :preserved
-                   :else                        :clj)
+                       (instance? Float   arg)) :simple-number
+                   (instance? bytes-class arg)  :bytes
+                   (instance? Preserved arg)    :preserved
+                   :else                        :serialized)
 
         ^bytes ba (case type
-                    :str       (bytestring arg)
-                    :num       (bytestring (str arg))
-                    :bin       arg
-                    :preserved (nippy/freeze-to-bytes (.value ^Preserved arg))
-                    :clj       (nippy/freeze-to-bytes arg))
+                    :string  (bytestring arg)
+                    :keyword (bytestring (name arg))
+                    :simple-number (bytestring (str arg))
+                    :bytes arg
+                    :preserved  (nippy/freeze-to-bytes (.value ^Preserved arg))
+                    :serialized (nippy/freeze-to-bytes arg))
 
         payload-size (alength ba)
-        marked-type? (not (or (= type :str) (= type :num)))
+        marked-type? (not (or (= type :string) (= type :simple-number)))
         data-size    (if marked-type? (+ payload-size 2) payload-size)]
 
     ;; To support various special goodies like serialization, we reserve
     ;; strings that begin with a null terminator
-    (when (and (= type :str) (.startsWith ^String arg "\u0000"))
+    (when (and (= type :string) (.startsWith ^String arg "\u0000"))
       (throw (Exception.
               (str "String arguments cannot begin with the null terminator: "
                    arg))))
@@ -91,8 +93,8 @@
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (when marked-type?
       (case type
-        :bin              (send-bin out)
-        (:clj :preserved) (send-clj out)))
+        :bytes (send-bin out)
+        (:preserved :serialized) (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!
