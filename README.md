@@ -37,7 +37,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
 
 ```bash
-lein2 all test
+lein all test
 ```
 
 ## Getting Started
@@ -61,7 +61,7 @@ and `require` the library:
 You'll usually want to define one connection pool and spec that you'll reuse:
 
 ```clojure
-(def pool         (car/make-conn-pool)) ; See docstring for addtional options
+(def pool         (car/make-conn-pool)) ; See docstring for additional options
 (def spec-server1 (car/make-conn-spec)) ; ''
 ```
 
