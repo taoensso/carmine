@@ -46,7 +46,7 @@
          (let [response# (protocol/with-context conn# ~@body)]
            (conns/release-conn pool# conn#) response#)
          (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#))))
-     (catch Exception e# (throw e#))))
+     (catch Exception e# (throw (Exception. "Carmine connection error")))))
 
 ;;;; Misc
 

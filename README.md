@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.11.2"]
+[com.taoensso/carmine "0.11.3"]
 ```
 
 **Breaking changes** since _0.10.x_:
@@ -37,7 +37,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
 
 ```bash
-lein2 all test
+lein all test
 ```
 
 ## Getting Started
@@ -47,7 +47,7 @@ lein2 all test
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.11.2"]
+[com.taoensso/carmine "0.11.3"]
 ```
 
 and `require` the library:
@@ -61,7 +61,7 @@ and `require` the library:
 You'll usually want to define one connection pool and spec that you'll reuse:
 
 ```clojure
-(def pool         (car/make-conn-pool)) ; See docstring for addtional options
+(def pool         (car/make-conn-pool)) ; See docstring for additional options
 (def spec-server1 (car/make-conn-spec)) ; ''
 ```
 
