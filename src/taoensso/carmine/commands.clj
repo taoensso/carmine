@@ -71,7 +71,8 @@
   "Returns parsed JSON official command reference.
   From https://github.com/antirez/redis-doc/blob/master/commands.json"
   []
-  (-> "commands.json" io/resource io/reader clojure.data.json/read-json))
+  (-> "commands.json" io/resource io/reader slurp
+      (clojure.data.json/read-str :key-fn keyword)))
 
 (defmacro defcommands
   "Defines an appropriate function for every command in reference. If debug?
