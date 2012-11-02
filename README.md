@@ -32,7 +32,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Simple, high-performance **message queue** (Redis 2.6+).
  * **Ring session-store**.
 
-## Status [![Build Status](https://secure.travis-ci.org/ptaoussanis/carmine.png?branch=master)](http://travis-ci.org/ptaoussanis/carmine)
+## Status
 
 Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
 
