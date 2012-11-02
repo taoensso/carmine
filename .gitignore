@@ -8,7 +8,4 @@ pom.xml
 *.jar
 *.class
 *.sh
-.lein-deps-sum
-.lein-failures
-.lein-plugins
-dump.rdb
+.lein*
