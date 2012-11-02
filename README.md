@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.11.3"]
+[com.taoensso/carmine "0.11.4"]
 ```
 
 **Breaking changes** since _0.10.x_:
@@ -47,7 +47,7 @@ lein all test
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.11.3"]
+[com.taoensso/carmine "0.11.4"]
 ```
 
 and `require` the library:
