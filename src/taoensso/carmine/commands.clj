@@ -1,7 +1,7 @@
 (ns taoensso.carmine.commands
   "Define an appropriate function for EVERY Redis command. This is done by
   parsing the official Redis command reference (JSON) which includes up-to-date
-  doc-strings, argument specs, etc. This awesome approach was adapted from
+  docstrings, argument specs, etc. This awesome approach was adapted from
   labs-redis-clojure."
   {:author "Peter Taoussanis"}
   (:require [clojure.java.io   :as io]
@@ -25,7 +25,7 @@
         has-more? (seq (filter #(or (:optional %) (:multiple %)) args))]
     (if has-more? (conj fixed-args '& 'args) fixed-args)))
 
-(defn- args->params-doc-string
+(defn- args->params-docstring
   "Parses refspec argument map into Redis reference-doc-style explanatory
   string: \"BRPOP key [key ...] timeout\", etc."
   [args]
@@ -50,11 +50,11 @@
   Defined function will require a *context* binding to run."
   [command-name {args :arguments :as refspec} debug-mode?]
   (let [fn-name (-> command-name (str/replace #" " "-") str/lower-case)
-        fn-doc-string (str command-name " "
-                           (args->params-doc-string args)
-                           "\n\n" (:summary refspec) ".\n\n"
-                           "Available since: " (:since refspec) ".\n\n"
-                           "Time complexity: " (:complexity refspec))
+        fn-docstring (str command-name " "
+                          (args->params-docstring args)
+                          "\n\n" (:summary refspec) ".\n\n"
+                          "Available since: " (:since refspec) ".\n\n"
+                          "Time complexity: " (:complexity refspec))
 
         fn-params      (args->params-vec args)
         request-params (into (str/split command-name #" ")
@@ -62,9 +62,9 @@
         apply-params   (let [[p varp] (split-with #(not= '& %) request-params)]
                          (conj (vec p) (last varp)))]
     (if debug-mode?
-      `(println ~fn-name ":" \" ~(args->params-doc-string args) \"
+      `(println ~fn-name ":" \" ~(args->params-docstring args) \"
                 "->" ~(str fn-params))
-      `(defn ~(symbol fn-name) ~fn-doc-string ~fn-params
+      `(defn ~(symbol fn-name) ~fn-docstring ~fn-params
          (apply protocol/send-request! ~@apply-params)))))
 
 (defn- get-command-reference

@@ -1,13 +1,10 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "0.11.4"]
+[com.taoensso/carmine "1.0.0"]
 ```
 
-**Breaking changes** since _0.10.x_:
- * **NB!**: Simple numbers are no longer automatically de/serialized! See [commit](http://goo.gl/36ao4) for more info.
-
-# Carmine, a Redis client for Clojure
+# Carmine, a Clojure Redis client & message queue
 
 [Redis](http://www.redis.io/) is *awesome* and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
 
@@ -20,7 +17,8 @@ Each has its strengths but these strengths often fail to overlap, leaving one wi
 Carmine is an attempt to **cohesively bring together the best bits from each client**. And by bringing together the work of others I'm hoping to encourage more folks to **pool their efforts** and get behind one banner. (Rah-rah and all that).
 
 ## What's In The Box?
- * A **high-performance**, all-Clojure client.
+ * Small, uncomplicated **all-Clojure** library.
+ * **Good performance**.
  * **Modern targets**: Redis 2.0+ (with full [2.6](http://antirez.com/post/redis-2.6-is-near.html) support), Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading) support (not mandatory).
  * Industrial strength **connection pooling**.
  * Complete and accurate command definitions with **full documentation**.
@@ -32,14 +30,6 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Simple, high-performance **message queue** (Redis 2.6+).
  * **Ring session-store**.
 
-## Status
-
-Carmine is still currently *experimental*. It **has not yet been thoroughly tested in production** and its API is subject to change. Also, it may finish the last carton of milk without telling anyone. To run tests against all supported Clojure versions, use:
-
-```bash
-lein all test
-```
-
 ## Getting Started
 
 ### Leiningen
@@ -47,7 +37,7 @@ lein all test
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "0.11.4"]
+[com.taoensso/carmine "1.0.0"]
 ```
 
 and `require` the library:
@@ -56,7 +46,7 @@ and `require` the library:
 (ns my-app (:require [taoensso.carmine :as car]))
 ```
 
-### Make A Connection
+### Connections
 
 You'll usually want to define one connection pool and spec that you'll reuse:
 
@@ -100,7 +90,7 @@ But what if we're pipelining?
 => ["OK" #<Exception ERR Operation against ...> "bar"]
 ```
 
-### Automatic Serialization
+### Serialization
 
 The only value type known to Redis internally is the [byte string](http://redis.io/topics/data-types). But Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
 
@@ -142,8 +132,6 @@ Time complexity: O(N+M*log(M)) where N is the number of elements in the list or 
 ```
 
 *Yeah*. Andreas Bielk, you rock.
-
-## Getting Fancy
 
 ### Lua
 
@@ -210,7 +198,7 @@ And since real functions can compose, so can Carmine's. By nesting `with-conn`/`
 => ["OK" "Sanfilippo" "Hickey"]
 ```
 
-### Listen Closely
+### Listeners & Pub/Sub
 
 Carmine has a flexible **Listener** API to support persistent-connection features like [monitoring](http://redis.io/commands/monitor) and Redis's fantastic [Publish/Subscribe](http://redis.io/topics/pubsub) feature:
 
@@ -257,7 +245,7 @@ You can adjust subscriptions and/or handlers:
 
 Note that subscriptions are *connection-local*: you can have three different listeners each listening for different messages, using different handlers. This is great stuff.
 
-### Custom Reply Parsing
+### Reply Parsing
 
 Want a little more control over how server replies are parsed? You have all the control you need:
 
@@ -268,7 +256,7 @@ Want a little more control over how server replies are parsed? You have all the 
 => ["PONG" "pong" "pong" "PONG"]
 ```
 
-### Low-level Binary Data
+### Binary Data
 
 Carmine's serializer has no problem handling arbitrary byte[] data. But the serializer involves overhead that may not always be desireable. So for maximum flexibility Carmine gives you automatic, *zero-overhead* read and write facilities for raw binary data:
 
@@ -322,12 +310,8 @@ ClojureWerkz is a growing collection of open-source, batteries-included [Clojure
 
 ## Contact & Contribution
 
-Reach me (Peter Taoussanis) at *ptaoussanis at gmail.com* for questions/comments/suggestions/whatever. I'm very open to ideas if you have any!
-
-I'm also on Twitter: [@ptaoussanis](https://twitter.com/#!/ptaoussanis).
+Reach me (Peter Taoussanis) at *ptaoussanis at gmail.com* for questions/comments/suggestions/whatever. I'm very open to ideas if you have any! I'm also on Twitter: [@ptaoussanis](https://twitter.com/#!/ptaoussanis).
 
 ## License
 
-Copyright &copy; 2012 Peter Taoussanis
-
-Distributed under the [Eclipse Public License](http://www.eclipse.org/legal/epl-v10.html), the same as Clojure.
+Copyright &copy; 2012 Peter Taoussanis. Distributed under the [Eclipse Public License](http://www.eclipse.org/legal/epl-v10.html), the same as Clojure.
