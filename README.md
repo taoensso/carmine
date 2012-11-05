@@ -304,9 +304,11 @@ Likewise, I'll happily trade a little less throughput for simpler code.
 
 Carmine was developed with the help of the [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp). YourKit, LLC kindly supports open source projects by offering an open source license. They also make the [YourKit .NET Profiler](http://www.yourkit.com/.net/profiler/index.jsp).
 
-## Carmine supports the ClojureWerkz Project Goals
+## Carmine Supports the ClojureWerkz and CDS Project Goals
 
 ClojureWerkz is a growing collection of open-source, batteries-included [Clojure libraries](http://clojurewerkz.org/) that emphasise modern targets, great documentation, and thorough testing.
+
+CDS (Clojure Documentation Site) is a contributor-friendly community project aimed at producing top-notch [Clojure tutorials](http://clojure-doc.org/) and documentation.
 
 ## Contact & Contribution
 
