@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "1.0.0"
+(defproject com.taoensso/carmine "1.0.1"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
   :license {:name "Eclipse Public License"}
