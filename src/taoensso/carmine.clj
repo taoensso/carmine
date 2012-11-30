@@ -38,15 +38,15 @@
 
   Use `make-conn-pool` and `make-conn-spec` to generate the required arguments."
   [connection-pool connection-spec & body]
-  `(try
-     (let [pool# (or ~connection-pool conns/non-pooled-connection-pool)
-           spec# (or ~connection-spec (make-conn-spec))
-           conn# (conns/get-conn pool# spec#)]
-       (try
-         (let [response# (protocol/with-context conn# ~@body)]
-           (conns/release-conn pool# conn#) response#)
-         (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#))))
-     (catch Exception e# (throw (Exception. "Carmine connection error")))))
+  `(let [pool# (or ~connection-pool conns/non-pooled-connection-pool)
+         spec# (or ~connection-spec (make-conn-spec))
+         conn# (try (conns/get-conn pool# spec#)
+                    (catch Exception e#
+                      (throw (Exception. "Carmine connection error"))))]
+     (try
+       (let [response# (protocol/with-context conn# ~@body)]
+         (conns/release-conn pool# conn#) response#)
+       (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
 
 ;;;; Misc
 
