@@ -47,3 +47,16 @@
   [version-str min-version-str]
   (try (>= (version-compare version-str min-version-str) 0)
        (catch Exception _ false)))
+
+(defn scoped-name
+  "Like `name` but includes namespace in string when present."
+  [x]
+  (if (string? x) x
+      (let [name (.getName ^clojure.lang.Named x)]
+        (if-let [ns (.getNamespace ^clojure.lang.Named x)]
+          (str ns "/" name)
+          name))))
+
+(comment (map scoped-name [:foo :foo/bar :foo.bar/baz])
+         (time (dotimes [_ 10000] (name :foo)))
+         (time (dotimes [_ 10000] (scoped-name :foo))))
