@@ -4,6 +4,7 @@
   (:refer-clojure :exclude [time get set keys type sync sort eval])
   (:require [clojure.string :as str]
             [taoensso.carmine
+             (utils       :as utils)
              (protocol    :as protocol)
              (connections :as conns)
              (commands    :as commands)])
@@ -99,12 +100,15 @@
     * Singular category names (\"account\" rather than \"accounts\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
   [& prefix-parts]
-  (let [join-parts (fn [parts] (str/join ":" (map name (filter identity parts))))
+  (let [join-parts (fn [parts] (str/join ":" (map utils/scoped-name
+                                                 (filter identity parts))))
         prefix     (when (seq prefix-parts) (str (join-parts prefix-parts) ":"))]
     (fn [& parts] (str prefix (join-parts parts)))))
 
 (comment ((make-keyfn :foo :bar) :baz "qux")
+         ((make-keyfn :foo.bar/baz) :qux)
          ((make-keyfn) :foo :bar)
+         ((make-keyfn) :foo.bar/baz :qux)
          ((make-keyfn) nil "foo"))
 
 (defn preserve
