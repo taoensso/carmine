@@ -114,8 +114,7 @@
 (defn preserve
   "Forces argument of any type (including simple number and binary types) to be
   subject to automatic de/serialization."
-  [x]
-  (protocol/Preserved. x))
+  [x] (protocol/Preserved. x))
 
 ;;;; Standard commands
 
@@ -261,7 +260,7 @@
 
 (defmacro atomically
   "Executes all Redis commands in body as a single transaction and returns
-  server response vector or the empty vector if transaction failed.
+  server response vector or an empty vector if transaction failed.
 
   Body may contain a (discard) call to abort transaction."
   [watch-keys & body]

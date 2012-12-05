@@ -8,6 +8,9 @@
             [org.apache.commons.pool KeyedPoolableObjectFactory]
             [org.apache.commons.pool.impl GenericKeyedObjectPool]))
 
+;; TODO Implement Redis Sentinel client draft spec:
+;; http://redis.io/topics/sentinel-clients
+
 ;; Hack to allow cleaner separation of ns concerns
 (utils/declare-remote taoensso.carmine/ping
                       taoensso.carmine/auth
