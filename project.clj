@@ -1,7 +1,8 @@
 (defproject com.taoensso/carmine "1.1.0"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
-  :license {:name "Eclipse Public License"}
+  :license {:name "Eclipse Public License"
+            :url  "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure         "1.3.0"]
                  [commons-pool/commons-pool   "1.6"]
                  [commons-codec/commons-codec "1.6"]
