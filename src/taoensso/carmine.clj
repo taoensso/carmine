@@ -192,7 +192,10 @@
 
 (defn lua-script
   "All singing, all dancing Lua script helper. Like `eval*` but allows script
-  to use \"_:my-var\"-style named keys and args."
+  to use \"_:my-var\"-style named keys and args.
+
+  Keys are given separately from other args as an implementation detail for
+  clustering purposes."
   [script key-vars-map arg-vars-map]
   (let [{:keys [script eval-args]}
         (interpolate-script script key-vars-map arg-vars-map)]
