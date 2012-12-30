@@ -65,6 +65,15 @@
      (fn [multi-bulk-reply#] (vec (map ~parser-fn multi-bulk-reply#)))
      ~@body))
 
+(defmacro with-reply
+  "Executes body then BLOCKS to receive a single reply from Redis server."
+  [& body] `(do ~@body (protocol/get-one-reply!)))
+
+(defmacro with-replies
+  "Executes body then BLOCKS to receive one or more (pipelined) replies from
+  Redis server."
+  [& body] `(do ~@body (protocol/get-replies!)))
+
 (defmacro skip-replies
   [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
               ~@body))
