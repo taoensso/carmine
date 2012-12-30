@@ -175,11 +175,11 @@
 (defn get-replies!
   "BLOCKS to receive one or more (pipelined) replies from Redis server. Applies
   all parsing and returns the result."
-  [reply-count]
+  [& [reply-count]]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
-        reply-count (if (= reply-count :all) (count parsers) reply-count)]
+        reply-count (if reply-count reply-count (count parsers))]
 
     (when (pos? reply-count)
       (swap! (:parser-queue *context*) #(subvec % reply-count))
@@ -213,4 +213,4 @@
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (if listener?# nil (get-replies! :all)))))
+       (if listener?# nil (get-replies!)))))

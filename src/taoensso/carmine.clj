@@ -72,7 +72,7 @@
   [& body] `(do ~@body (protocol/get-one-reply!)))
 
 (defmacro with-replies
-  "Executes body then BLOCKS to receive one or more (pipelined) replies from
+  "Executes body then BLOCKS to receive all waiting (pipelined) replies from
   Redis server."
   [& body] `(do ~@body (protocol/get-replies!)))
 
