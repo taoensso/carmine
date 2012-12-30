@@ -53,9 +53,11 @@
 
 (defmacro with-parser
   "Wraps body so that replies to any wrapped Redis commands will be parsed with
-  (parser-fn reply)."
+  (parser-fn reply). Composable."
   [parser-fn & body]
-  `(binding [protocol/*parser* ~parser-fn] ~@body))
+  `(if-let [current-parser# protocol/*parser*]
+     (binding [protocol/*parser* (comp current-parser# ~parser-fn)] ~@body)
+     (binding [protocol/*parser* ~parser-fn] ~@body)))
 
 (defmacro with-mparser
   "Wraps body so that multi-bulk (vector) replies to any wrapped Redis commands
