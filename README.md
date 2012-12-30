@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.1.0"]
+[com.taoensso/carmine "1.2.0"]
 ```
 
 # Carmine, a Clojure Redis client & message queue
@@ -37,7 +37,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "1.1.0"]
+[com.taoensso/carmine "1.2.0"]
 ```
 
 and `require` the library:
@@ -312,7 +312,7 @@ CDS (Clojure Documentation Site) is a contributor-friendly community project aim
 
 ## Contact & Contribution
 
-Reach me (Peter Taoussanis) at *ptaoussanis at gmail.com* for questions/comments/suggestions/whatever. I'm very open to ideas if you have any! I'm also on Twitter: [@ptaoussanis](https://twitter.com/#!/ptaoussanis).
+Reach me (Peter Taoussanis) at [taoensso.com](https://www.taoensso.com) for questions/comments/suggestions/whatever. I'm very open to ideas if you have any! I'm also on Twitter: [@ptaoussanis](https://twitter.com/#!/ptaoussanis).
 
 ## License
 

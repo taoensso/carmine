@@ -53,9 +53,11 @@
 
 (defmacro with-parser
   "Wraps body so that replies to any wrapped Redis commands will be parsed with
-  (parser-fn reply)."
+  (parser-fn reply). Composable."
   [parser-fn & body]
-  `(binding [protocol/*parser* ~parser-fn] ~@body))
+  `(if-let [current-parser# protocol/*parser*]
+     (binding [protocol/*parser* (comp current-parser# ~parser-fn)] ~@body)
+     (binding [protocol/*parser* ~parser-fn] ~@body)))
 
 (defmacro with-mparser
   "Wraps body so that multi-bulk (vector) replies to any wrapped Redis commands
@@ -64,6 +66,15 @@
   `(with-parser
      (fn [multi-bulk-reply#] (vec (map ~parser-fn multi-bulk-reply#)))
      ~@body))
+
+(defmacro with-reply
+  "Executes body then BLOCKS to receive a single reply from Redis server."
+  [& body] `(do ~@body (protocol/get-one-reply!)))
+
+(defmacro with-replies
+  "Executes body then BLOCKS to receive one or more (pipelined) replies from
+  Redis server."
+  [& body] `(do ~@body (protocol/get-replies!)))
 
 (defmacro skip-replies
   [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
@@ -114,8 +125,7 @@
 (defn preserve
   "Forces argument of any type (including simple number and binary types) to be
   subject to automatic de/serialization."
-  [x]
-  (protocol/Preserved. x))
+  [x] (protocol/Preserved. x))
 
 ;;;; Standard commands
 
@@ -193,7 +203,10 @@
 
 (defn lua-script
   "All singing, all dancing Lua script helper. Like `eval*` but allows script
-  to use \"_:my-var\"-style named keys and args."
+  to use \"_:my-var\"-style named keys and args.
+
+  Keys are given separately from other args as an implementation detail for
+  clustering purposes."
   [script key-vars-map arg-vars-map]
   (let [{:keys [script eval-args]}
         (interpolate-script script key-vars-map arg-vars-map)]
@@ -261,7 +274,7 @@
 
 (defmacro atomically
   "Executes all Redis commands in body as a single transaction and returns
-  server response vector or the empty vector if transaction failed.
+  server response vector or an empty vector if transaction failed.
 
   Body may contain a (discard) call to abort transaction."
   [watch-keys & body]

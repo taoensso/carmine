@@ -60,6 +60,7 @@
       return 'backoff'
     else
 
+      -- TODO Waiting for Lua brpoplpush support to get us long polling
       local msg_id = redis.call('rpoplpush', _:qk-id-circle, _:qk-id-circle)
 
       if (not msg_id) or (msg_id == 'end-of-circle') then

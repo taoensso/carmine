@@ -6,7 +6,7 @@
             [taoensso.nippy         :as nippy]))
 
 ;;;; TODO
-;; * Change weird (= const thing) form to (= thing const).
+;; * Refactor this whole ns: fixtures, consistent (= x const) ordering, etc.
 ;; * Bring over tests from redis-clojure, etc.
 
 ;;;; Setup
