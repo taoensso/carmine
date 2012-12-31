@@ -3,14 +3,17 @@
   (:require [clojure.string :as str]))
 
 (defmacro declare-remote
-  "Declares the given ns-qualified names. Useful for circular dependencies."
+  "Declares the given ns-qualified names, preserving symbol metadata. Useful for
+  circular dependencies."
   [& names]
-  (let [orig-ns (str *ns*)]
-    `(do ~@(map (fn [n] (let [ns (namespace n)
-                             v  (name n)]
-                         `(do (in-ns '~(symbol ns))
-                              (declare ~(symbol v))))) names)
-         (in-ns '~(symbol orig-ns)))))
+  (let [original-ns (str *ns*)]
+    `(do ~@(map (fn [n]
+                  (let [ns (namespace n)
+                        v  (name n)
+                        m  (meta n)]
+                    `(do (in-ns  '~(symbol ns))
+                         (declare ~(with-meta (symbol v) m))))) names)
+         (in-ns '~(symbol original-ns)))))
 
 (defmacro time-ns
   "Returns number of nanoseconds it takes to execute body."
