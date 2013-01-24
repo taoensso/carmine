@@ -3,14 +3,17 @@
   (:require [clojure.string :as str]))
 
 (defmacro declare-remote
-  "Declares the given ns-qualified names. Useful for circular dependencies."
+  "Declares the given ns-qualified names, preserving symbol metadata. Useful for
+  circular dependencies."
   [& names]
-  (let [orig-ns (str *ns*)]
-    `(do ~@(map (fn [n] (let [ns (namespace n)
-                             v  (name n)]
-                         `(do (in-ns '~(symbol ns))
-                              (declare ~(symbol v))))) names)
-         (in-ns '~(symbol orig-ns)))))
+  (let [original-ns (str *ns*)]
+    `(do ~@(map (fn [n]
+                  (let [ns (namespace n)
+                        v  (name n)
+                        m  (meta n)]
+                    `(do (in-ns  '~(symbol ns))
+                         (declare ~(with-meta (symbol v) m))))) names)
+         (in-ns '~(symbol original-ns)))))
 
 (defmacro time-ns
   "Returns number of nanoseconds it takes to execute body."
@@ -48,15 +51,20 @@
   (try (>= (version-compare version-str min-version-str) 0)
        (catch Exception _ false)))
 
-(defn scoped-name
-  "Like `name` but includes namespace in string when present."
+(defn keyname
+  "Like `name` but supports integers and includes namespace in string when
+  present."
   [x]
-  (if (string? x) x
-      (let [name (.getName ^clojure.lang.Named x)]
-        (if-let [ns (.getNamespace ^clojure.lang.Named x)]
-          (str ns "/" name)
-          name))))
+  (cond (string?  x) x
+        (keyword? x) (let [name (.getName ^clojure.lang.Named x)]
+                       (if-let [ns (.getNamespace ^clojure.lang.Named x)]
+                         (str ns "/" name)
+                         name))
+        (integer? x) (str x)
+        :else (throw (Exception. (str "Invalid keyname type: " (type x))))))
 
-(comment (map scoped-name [:foo :foo/bar :foo.bar/baz])
+(def ^:deprecated scoped-name keyname) ; For backwards-compatibility
+
+(comment (map keyname [:foo :foo/bar 12 :foo.bar/baz])
          (time (dotimes [_ 10000] (name :foo)))
-         (time (dotimes [_ 10000] (scoped-name :foo))))
+         (time (dotimes [_ 10000] (keyname :foo))))

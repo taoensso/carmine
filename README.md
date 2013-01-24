@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.2.1"]
+[com.taoensso/carmine "1.3.0"]
 ```
 
 # Carmine, a Clojure Redis client & message queue
@@ -37,7 +37,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "1.2.1"]
+[com.taoensso/carmine "1.3.0"]
 ```
 
 and `require` the library:

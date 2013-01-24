@@ -100,8 +100,8 @@
 (defmacro parse-keywords [& body] `(with-mparser keyword   ~@body))
 
 (defn make-keyfn
-  "Returns a function that joins keywords and strings to form an idiomatic
-  compound Redis key name.
+  "Returns a function that joins keywords, integers, and strings to form an
+  idiomatic compound Redis key name.
 
   (let [k (make-keyfn :account)]
     (k \"1j4nhg7\" :email-address)) => \"account:1j4nhg7:email-address\"
@@ -111,7 +111,7 @@
     * Singular category names (\"account\" rather than \"accounts\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
   [& prefix-parts]
-  (let [join-parts (fn [parts] (str/join ":" (map utils/scoped-name
+  (let [join-parts (fn [parts] (str/join ":" (map utils/keyname
                                                  (filter identity parts))))
         prefix     (when (seq prefix-parts) (str (join-parts prefix-parts) ":"))]
     (fn [& parts] (str prefix (join-parts parts)))))
