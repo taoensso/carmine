@@ -51,15 +51,20 @@
   (try (>= (version-compare version-str min-version-str) 0)
        (catch Exception _ false)))
 
-(defn scoped-name
-  "Like `name` but includes namespace in string when present."
+(defn keyname
+  "Like `name` but supports integers and includes namespace in string when
+  present."
   [x]
-  (if (string? x) x
-      (let [name (.getName ^clojure.lang.Named x)]
-        (if-let [ns (.getNamespace ^clojure.lang.Named x)]
-          (str ns "/" name)
-          name))))
+  (cond (string?  x) x
+        (keyword? x) (let [name (.getName ^clojure.lang.Named x)]
+                       (if-let [ns (.getNamespace ^clojure.lang.Named x)]
+                         (str ns "/" name)
+                         name))
+        (integer? x) (str x)
+        :else (throw (Exception. (str "Invalid keyname type: " (type x))))))
 
-(comment (map scoped-name [:foo :foo/bar :foo.bar/baz])
+(def ^:deprecated scoped-name keyname) ; For backwards-compatibility
+
+(comment (map keyname [:foo :foo/bar 12 :foo.bar/baz])
          (time (dotimes [_ 10000] (name :foo)))
-         (time (dotimes [_ 10000] (scoped-name :foo))))
+         (time (dotimes [_ 10000] (keyname :foo))))
