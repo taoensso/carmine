@@ -68,3 +68,11 @@
 (comment (map keyname [:foo :foo/bar 12 :foo.bar/baz])
          (time (dotimes [_ 10000] (name :foo)))
          (time (dotimes [_ 10000] (keyname :foo))))
+
+;; Clojure 1.5
+(defn keywordize-map [m] (reduce (fn [m [k v]] (assoc m (keyword k) v)) {} m))
+
+;; TODO Waiting for Clojure 1.5 support
+;; (defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {}
+;;                                     (or m nil) ; For < 1.5.0-RC3 (CLJ-1098)
+;;                                     ))
