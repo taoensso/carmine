@@ -219,8 +219,14 @@
                   {:my-val "bar"})))
 
 (defn hgetall*
-  "Like `hgetall` but automatically coerces reply into a hash-map."
-  [key] (with-parser #(apply hash-map %) (hgetall key)))
+  "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
+  keywordizes map keys."
+  [key & [keywordize?]]
+  (with-parser
+    (if keywordize?
+      #(utils/keywordize-map (apply hash-map %))
+      #(apply hash-map %))
+    (hgetall key)))
 
 (defn info*
   "Like `info` but automatically coerces reply into a hash-map."
