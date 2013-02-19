@@ -343,10 +343,10 @@
                                             :listener? true))
          in#   (conns/in-stream conn#)]
 
-     ;; Create a thread to actually listen for and process messages from
-     ;; server. Thread will close when connection closes.
-     (-> (bound-fn [] (@handler-atom# (protocol/get-basic-reply! in#) @state-atom#))
-         repeatedly doall future)
+     (future-call ; Thread to long-poll for messages
+      (bound-fn []
+        (while true ; Closes when conn closes
+          (@handler-atom# (protocol/get-basic-reply! in#) @state-atom#))))
 
      (protocol/with-context conn# ~@body)
      (Listener. conn# handler-atom# state-atom#)))
