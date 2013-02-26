@@ -27,10 +27,19 @@
              (GenericKeyedObjectPool. (conns/make-connection-factory))
              (merge defaults (apply hash-map options))))))
 
+(defn- make-uri-conn-spec [uri]
+  (let [uri (if (string? uri) (java.net.URI. uri) uri)
+        user (.getUserInfo uri)
+        port (.getPort uri)]
+    {:host (.getHost uri) :port (if (pos? port) port 6379)
+     :password (if user (second (.split user ":")))}))
+
 (defn make-conn-spec
-  [& {:keys [host port password timeout db]
+  [& {:keys [host port password timeout db uri] :as conn
       :or   {host "127.0.0.1" port 6379 password nil timeout 0 db 0}}]
-  {:host host :port port :password password :timeout timeout :db db})
+  (if uri
+    (make-uri-conn-spec uri)
+    {:host host :port port :password password :timeout timeout :db db}))
 
 (defmacro with-conn
   "Evaluates body in the context of a thread-bound pooled connection to a Redis
