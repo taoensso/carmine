@@ -72,12 +72,12 @@
                    :else                        :serialized)
 
         ^bytes ba (case type
-                    :string  (bytestring arg)
-                    :keyword (bytestring (name arg))
+                    :string        (bytestring arg)
+                    :keyword       (bytestring (name arg))
                     :simple-number (bytestring (str arg))
                     :bytes arg
-                    :preserved  (nippy/freeze-to-bytes (.value ^Preserved arg))
-                    :serialized (nippy/freeze-to-bytes arg))
+                    :preserved   (nippy/freeze-to-bytes (.value ^Preserved arg))
+                    :serialized  (nippy/freeze-to-bytes arg))
 
         payload-size (alength ba)
         marked-type? (not (or (= type :string) (= type :simple-number)))
@@ -101,7 +101,7 @@
   "Sends a command to Redis server using its byte string protocol:
 
       *<no. of args>     crlf
-      [ $<size of arg N> crlf
+      [$<size of arg N>  crlf
         <arg data>       crlf ...]"
   [& args]
   (let [^BufferedOutputStream out (or (:out-stream *context*)
@@ -111,7 +111,7 @@
     (.write out (bytestring (str (count args))))
     (send-crlf out)
 
-    (dorun (map (partial send-arg out) args))
+    (doseq [arg args] (send-arg out arg))
     (.flush out)
 
     (when-let [pq (:parser-queue *context*)] (swap! pq conj *parser*))))
@@ -122,8 +122,8 @@
   "BLOCKS to receive a single reply from Redis server. Applies basic parsing
   and returns the result.
 
-  Redis will reply to commands with different kinds of replies. It is possible
-  to check the kind of reply from the first byte sent by the server:
+  Redis will reply to commands with different kinds of replies, identified by
+  their first byte:
       * `+` for single line reply.
       * `-` for error message.
       * `:` for integer reply.
