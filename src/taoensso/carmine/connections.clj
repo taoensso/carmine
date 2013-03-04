@@ -1,6 +1,8 @@
 (ns taoensso.carmine.connections
   "Handles life cycle of socket connections to Redis server. Connection pool is
-  implemented using Apache Commons pool. Adapted from redis-clojure."
+  implemented using Apache Commons pool. Adapted from redis-clojure.
+
+  Ref. Sentinel client spec: http://redis.io/topics/sentinel-clients"
   {:author "Peter Taoussanis"}
   (:require [taoensso.carmine (utils :as utils) (protocol :as protocol)])
   (:import  [java.net Socket URI]
@@ -11,7 +13,8 @@
 ;; Hack to allow cleaner separation of ns concerns
 (utils/declare-remote taoensso.carmine/ping
                       taoensso.carmine/auth
-                      taoensso.carmine/select)
+                      taoensso.carmine/select
+                      taoensso.carmine/add-sentinel-server!)
 
 (defprotocol IConnection
   (conn-alive? [this])
@@ -39,9 +42,13 @@
   java.io.Closeable
   (close [_] (.close pool)))
 
-(defn make-new-connection "Actually creates and returns a new socket connection."
-  [{:keys [host port password timeout-ms db] :as spec}]
-  (let [socket (doto (Socket. ^String host ^Integer port)
+(declare resolve-spec! ^:dynamic *pool*) ; For Sentinel support
+
+(defn make-new-connection
+  "Actually creates and returns a new socket connection."
+  [spec]
+  (let [{:keys [host port password timeout-ms db] :as spec} (resolve-spec! spec)
+        socket (doto (Socket. ^String host ^Integer port)
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer (or timeout-ms 0)))
@@ -60,7 +67,9 @@
   IConnectionPool
   (get-conn     [_ spec] (make-new-connection spec))
   (release-conn [_ conn] (close-conn conn))
-  (release-conn [_ conn exception] (close-conn conn)))
+  (release-conn [_ conn exception] (close-conn conn))
+  (clear-conns  [_])
+  (clear-conns  [_ spec]))
 
 (defn make-connection-factory []
   (reify KeyedPoolableObjectFactory
@@ -124,12 +133,15 @@
 
 (def conn-spec
   (memoize
-   (fn [{:keys [uri host port password timeout-ms db] :as opts}]
+   (fn [{:keys [uri host port password timeout-ms db
+               sentinel-group sentinel-master sentinel-timeout] :as opts}]
      (let [defaults {:host "127.0.0.1" :port 6379}
+           sentinel-defaults (when sentinel-group {:sentinel-timeout 100})
            opts     (if-let [timeout (:timeout opts)] ; Support deprecated opt
                       (assoc opts :timeout-ms timeout)
                       opts)]
-       (merge defaults opts (parse-uri uri))))))
+       (merge defaults sentinel-defaults opts (parse-uri uri)
+              (when sentinel-group {:host nil :port nil}))))))
 
 (defn pooled-conn "Returns [<open-pool> <pooled-connection>]."
   [pool-opts spec-opts]
@@ -141,3 +153,64 @@
                     [pool (get-conn pool spec)])))
         (catch Exception e
           (throw (Exception. "Carmine connection error" e)))))))
+
+(comment (make-conn-spec {}))
+
+;;;; Sentinel (EXPERIMENTAL)
+
+(utils/defonce* sentinel-groups     "{group-name [[ip port]] ...]}" (atom {}))
+(utils/defonce* last-resolved-specs "{spec resolved-spec}"          (atom {}))
+(def ^:dynamic *pool* nil)
+
+(comment (taoensso.carmine/add-sentinel-server! "my-app" "127.0.0.1"))
+
+(defn- resolve-spec!
+  "Ensures spec has a :host and :port (either statically, or as resolved via
+  the Redis Sentinel discovery procedure).
+
+  When called by a connection pool, clears any pool connections whose spec
+  previously resolved differently. I.e. close pool connections any time the
+  pool's resolved master address changes."
+
+  ;; TODO UPDATE: Wait first on finalized Sentinel spec; the approach outlined
+  ;; here may be out of date (or otherwise unnecessarily slow).
+  ;; TODO Waiting for commands.json to be updated with Sentinel commands.
+  ;; TODO Possible optimization: also have a rate-limited
+  ;; `sort-sentinel-servers!` fn that will sort servers by their response time.
+
+  [spec]
+  (if-not (:sentinel-group spec)
+    spec ; => Static :host and :port
+
+    ;; Resolve master :host and :port via Sentinel (never cache!)
+    (let [last-resolved-spec (@last-resolved-specs spec)
+          resolved-spec ; TODO
+          (let []
+            ;; * Iterate list of [ip port] pairs in sentinel group, trying to
+            ;;   connect to each with short :sentinel-timeout. (never cache)
+            ;;
+            ;;   ON A SUCCESSFUL CONNECTION:
+            ;;     * Try `SENTINEL get-master-addr-by-name :sentinel-master`
+            ;;       to return ip:port, null, or -IDONTKNOW.
+            ;;
+            ;;     ON SUCCESSFUL ip:port
+            ;;       * Use as Redis master for pipeline.
+            ;;       * Ensure sentinel is at top of group.
+            ;;       * When not rate-limited, `SENTINEL get-master-add-by-name`
+            ;;         and add any new sentinel servers to the END of our group.
+            ;;
+            ;;   ON NO SUCCESSFUL ip:port
+            ;;     * No sentinel could be contacted => an error saying so.
+            ;;     * All sentinels replied with null => Sentinels don't know
+            ;;       requested master name.
+            ;;     * >= 1 sentinels replied with -IDONTKNOW => Sentinels don't
+            ;;       know the address of the requested master.
+            )]
+
+      ;; Maintain last-resolved-specs
+      (when (and *pool* (not= resolved-spec last-resolved-spec))
+        (swap! last-resolved-specs assoc spec resolved-spec)
+        (when last-resolved-spec
+          (clear-conns *pool* last-resolved-spec)))
+
+      resolved-spec)))

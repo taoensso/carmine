@@ -25,6 +25,10 @@
                      :timeout-ms 6000
                      :db 3}}
 
+    ;; Redis Sentinel (see also `add-sentinel-server!`)
+    {:pool {} :spec {:sentinel-group  \"my-app\"
+                     :sentinel-master \"master\"}}
+
   For pool options, Ref. http://goo.gl/EiTbn."
   [conn & body]
   `(let [{pool-opts# :pool spec-opts# :spec} ~conn
@@ -36,6 +40,36 @@
 (comment (wcar {} (ping) "not-a-Redis-command" (ping))
          (with-open [p (conns/conn-pool {})]
            (wcar {:pool p} (ping) (ping))))
+
+;;;; Sentinel (EXPERIMENTAL)
+
+(defn- remove-sentinel-server [group-name ip & [groups]]
+  (vec (remove (fn [[ip* port]] (= ip ip*))
+               ((or @conns/sentinel-groups groups) group-name))))
+
+(defn add-sentinel-server!
+  "(add-sentinel-server! \"my-app\" \"127.0.0.1\" 26379)"
+  [group-name ip & [port to-front?]]
+  (swap! conns/sentinel-groups
+         (fn [groups]
+           (assoc groups group-name
+                  (let [groups (remove-sentinel-server group-name ip groups)
+                        server [ip (or port 26379)]]
+                    (if to-front?
+                      (vec (cons server groups))
+                      (conj groups server)))))))
+
+(defn remove-sentinel-server!
+  "(remove-sentinel-server! \"my-app\" \"127.0.0.1\")"
+  [group-name ip]
+  (swap! conns/sentinel-groups
+         (fn [groups]
+           (assoc groups group-name
+                  (remove-sentinel-server group-name ip groups)))))
+
+(comment (add-sentinel-server!    "my-app" "127.0.0.1" 26379 true)
+         (add-sentinel-server!    "my-app" "127.0.0.2")
+         (remove-sentinel-server! "my-app" "127.0.0.1"))
 
 ;;;; Misc
 

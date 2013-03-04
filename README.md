@@ -23,7 +23,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Small, uncomplicated **all-Clojure** library.
   * **Fully documented**, up-to-date API, including **full Redis 2.6 support**.
   * **Great performance**.
-  * Industrial strength **connection pooling**.
+  * Industrial strength **connection pooling** and [Sentinel](http://redis.io/topics/sentinel) support.
   * Composable, **first-class command functions**.
   * Flexible, high-performance **binary-safe serialization** using [Nippy](https://github.com/ptaoussanis/nippy).
   * Full support for **Lua scripting**, **Pub/Sub**, etc.
@@ -370,6 +370,21 @@ Tundra can be easily extended to **any K/V-capable datastore**, but DynamoDB mak
 ```
 
 So the entire API consists of 3 fns: `worker`, `ensure`, and `dirty`. See their docstrings for more info.
+
+### Redis Sentinel
+
+For **automatic failover**, first configure Redis Sentinel as per [the docs](http://redis.io/topics/sentinel).
+
+On Carmine's end, there's only two changes you need to make:
+
+1. Use `car/add-sentinel-server!` to let Carmine know where your Sentinel servers are.
+2. Add the appropriate connection spec options to your `wconn` call (see docstring for details).
+
+When executing commands, Carmine will now first resolve the destination Redis server address through the configured Sentinel server(s).
+
+### Redis Cluster
+
+TODO: Waiting for a finalized client spec
 
 ## Performance
 
