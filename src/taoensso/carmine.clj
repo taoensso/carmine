@@ -10,7 +10,8 @@
              (commands    :as commands)])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
            [taoensso.carmine.connections ConnectionPool]
-           [taoensso.carmine.protocol    Preserved]))
+           [taoensso.carmine.protocol    Preserved]
+           java.net.URI))
 
 ;;;; Connections
 
@@ -27,10 +28,21 @@
              (GenericKeyedObjectPool. (conns/make-connection-factory))
              (merge defaults (apply hash-map options))))))
 
+(defn- parse-uri [uri]
+  (when uri
+    (let [^URI uri (if (instance? URI uri) uri (URI. uri))
+          [user password] (.split (str (.getUserInfo uri)) ":")
+          port (.getPort uri)]
+      (-> {:host (.getHost uri)}
+          (#(if (pos? port) (assoc % :port     port)     %))
+          (#(if password    (assoc % :password password) %))))))
+
+(comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/"))
+
 (defn make-conn-spec
-  [& {:keys [host port password timeout db]
-      :or   {host "127.0.0.1" port 6379 password nil timeout 0 db 0}}]
-  {:host host :port port :password password :timeout timeout :db db})
+  [& {:keys [uri host port password timeout db] :as opts}]
+  (let [defaults {:host "127.0.0.1" :port 6379 :timeout 0 :db 0}]
+    (merge defaults opts (parse-uri uri))))
 
 (defmacro with-conn
   "Evaluates body in the context of a thread-bound pooled connection to a Redis
