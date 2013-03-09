@@ -6,10 +6,6 @@
     [taoensso.carmine :as car])
   (:import java.util.Date ))
 
-(def minute (* 1000 60))
-
-(def half-hour (* minute 30))
-
 (def pool- (atom nil)) 
 
 (def spec-server- (atom nil))
