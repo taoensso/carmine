@@ -17,6 +17,11 @@
              :bench {:dependencies [[org.clojars.tavisrudd/redis-clojure "1.3.1"]
                                     [clj-redis "0.0.12"]
                                     [accession "0.1.1"]]}}
+ 
+  :test-selectors {:default #(not-any? % [:locks])
+                   :locks :locks
+                   :all (constantly true)}
+
   :aliases {"test-all" ["with-profile" "test,1.3:test,1.4:test,1.5" "test"]}
   :min-lein-version "2.0.0"
   :warn-on-reflection true)
