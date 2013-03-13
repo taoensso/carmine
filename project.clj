@@ -7,7 +7,7 @@
                  [commons-pool/commons-pool   "1.6"]
                  [commons-codec/commons-codec "1.6"]
                  [org.clojure/data.json       "0.2.1"]
-                 [com.taoensso/timbre         "1.4.0"]
+                 [com.taoensso/timbre         "1.5.2"]
                  [com.taoensso/nippy          "1.1.0"]]
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
              :1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
