@@ -113,7 +113,7 @@ Types are handled as follows:
  * Simple Clojure numbers (integers, longs, floats, doubles) become Redis strings.
  * Everything else gets automatically de/serialized.
 
-You can force automatic de/serialization for an argument of any type by wrapping it with `car/preserve`.
+You can force automatic de/serialization for an argument of any type by wrapping it with `car/serialize`.
 
 ### Documentation and Command Coverage
 

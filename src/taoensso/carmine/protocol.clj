@@ -27,7 +27,7 @@
 ;; Define a special type that can be used to box values for which we'd like
 ;; to force automatic de/serialization (e.g. simple number types that are
 ;; normally converted to byte strings).
-(deftype Preserved [value])
+(deftype Serialized [value])
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
@@ -59,7 +59,7 @@
     * String args become byte strings.
     * Simple numbers (integers, longs, floats, doubles) become byte strings.
     * Binary (byte array) args go through un-munged.
-    * Everything else (incl. preserved args) gets serialized."
+    * Everything else gets serialized."
   [^BufferedOutputStream out arg]
   (let [type (cond (string?  arg) :string ; Most common 1st!
                    ;;(keyword? arg) :keyword
@@ -68,16 +68,17 @@
                        (instance? Integer arg)
                        (instance? Float   arg)) :simple-number
                    (instance? bytes-class arg)  :bytes
-                   (instance? Preserved arg)    :preserved
                    :else                        :serialized)
 
         ^bytes ba (case type
                     :string        (bytestring arg)
                     :keyword       (bytestring (name arg))
                     :simple-number (bytestring (str arg))
-                    :bytes arg
-                    :preserved   (nippy/freeze-to-bytes (.value ^Preserved arg))
-                    :serialized  (nippy/freeze-to-bytes arg))
+                    :bytes         arg
+                    :serialized    (nippy/freeze-to-bytes
+                                    (if (instance? Serialized arg)
+                                      (.value ^Serialized arg)
+                                      arg)))
 
         payload-size (alength ba)
         marked-type? (not (or (= type :string) (= type :simple-number)))
@@ -93,8 +94,8 @@
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (when marked-type?
       (case type
-        :bytes (send-bin out)
-        (:preserved :serialized) (send-clj out)))
+        :bytes      (send-bin out)
+        :serialized (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!

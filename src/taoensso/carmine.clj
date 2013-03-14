@@ -10,7 +10,7 @@
              (commands    :as commands)])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
            [taoensso.carmine.connections ConnectionPool]
-           [taoensso.carmine.protocol    Preserved]
+           [taoensso.carmine.protocol    Serialized]
            java.net.URI))
 
 ;;;; Connections
@@ -134,10 +134,12 @@
          ((make-keyfn) :foo.bar/baz :qux)
          ((make-keyfn) nil "foo"))
 
-(defn preserve
+(defn serialize
   "Forces argument of any type (including simple number and binary types) to be
   subject to automatic de/serialization."
-  [x] (protocol/Preserved. x))
+  [x] (protocol/Serialized. x))
+
+(def preserve "DEPRECATED. Please use `serialize`." serialize)
 
 ;;;; Standard commands
 
