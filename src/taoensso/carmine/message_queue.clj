@@ -2,7 +2,7 @@
   "Carmine-backed Clojure message queue. All heavy lifting by Redis (2.6+).
   Simple implementation. Very simple API. Reliable. Fast.
 
-  Currently ALPHA QUALITY!!!
+  Alpha - subject to change.
 
   Redis keys:
     * mqueue:<qname>:messages      -> hash, {id content}
@@ -13,7 +13,7 @@
     * mqueue:<qname>:backoff?      -> ttl flag, used for queue-wide (every-worker)
                                       polling backoff
 
-  See http://antirez.com/post/250 for implementation details."
+  Ref. http://antirez.com/post/250 for implementation details."
   {:author "Peter Taoussanis"}
   (:require [clojure.string   :as str]
             [taoensso.carmine :as car]
