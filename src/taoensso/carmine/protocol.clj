@@ -169,10 +169,10 @@
                               reply-type))))))
 
 (defn- apply-parser [parser reply] (if parser (parser reply) reply))
-(defn- skip-reply?     [reply] (= reply :taoensso.carmine.protocol/skip-reply))
 (defn- exception-check [reply] (if (instance? Exception reply) (throw reply) reply))
-(defn- skip-check      [reply] (if (skip-reply? reply) nil reply))
 
+;; TODO Add support for a value parser that doesn't actually request anything
+;; from server but just regurgitates a given value. Will be useful for `remember`.
 (defn get-replies!
   "BLOCKS to receive one or more (pipelined) replies from Redis server. Applies
   all parsing and returns the result."
@@ -188,16 +188,11 @@
       (if (= reply-count 1)
         (->> (get-basic-reply! in)
              (apply-parser (peek parsers))
-             skip-check
              exception-check)
 
-        (let [replies
-              (->> (repeatedly reply-count (partial get-basic-reply! in))
-                   (map #(apply-parser %1 %2) parsers)
-                   (remove skip-reply?))]
-          (if-not (next replies)
-            (let [[r] replies] (exception-check r))
-            (vec replies)))))))
+        (->> (repeatedly reply-count (partial get-basic-reply! in))
+             (map #(apply-parser %1 %2) parsers)
+             (vec))))))
 
 (defn get-one-reply! [] (get-replies! 1))
 
