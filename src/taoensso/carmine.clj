@@ -81,17 +81,8 @@
   will be parsed with (parser-fn reply)."
   [parser-fn & body]
   `(with-parser
-     (fn [multi-bulk-reply#] (vec (map ~parser-fn multi-bulk-reply#)))
+     (fn [multi-bulk-reply#] (utils/mapv* ~parser-fn multi-bulk-reply#))
      ~@body))
-
-(defmacro with-reply
-  "Executes body then BLOCKS to receive a single reply from Redis server."
-  [& body] `(do ~@body (protocol/get-one-reply!)))
-
-(defmacro with-replies
-  "Executes body then BLOCKS to receive all waiting (pipelined) replies from
-  Redis server."
-  [& body] `(do ~@body (protocol/get-replies!)))
 
 ;;; Note (number? x) checks for backwards compatibility with pre-v0.11 Carmine
 ;;; versions that auto-serialized simple number types
@@ -140,21 +131,37 @@
   subject to automatic de/serialization."
   [x] (protocol/Serialized. x))
 
-(def preserve "DEPRECATED. Please use `serialize`." serialize)
+(defn return
+  "Special command that takes any value and returns it unchanged as part of
+  an enclosing `with-conn` pipeline response."
+  [value]
+  (swap! (:parser-queue protocol/*context*) conj
+         (with-meta (constantly value)
+           {:dummy-reply? true})))
+
+(comment (wc (return :foo) (ping) (return :bar)))
+
+(defmacro with-replies ; TODO Would `pipeline` be a clearer name?
+  "Alpha - subject to change.
+  Evaluates body, immediately returning the server's response to any contained
+  Redis commands (i.e. before enclosing `with-conn` ends).
+
+  As an implementation detail, stashes and then `return`s any replies already
+  queued with Redis server: i.e. should be compatible with pipelining."
+  [& body]
+  `(let [stashed-replies# (protocol/get-replies! nil true)]
+     ~@body
+     (let [replies# (protocol/get-replies!)]
+       (doseq [reply# stashed-replies#] (return reply#))
+       replies#)))
+
+(comment (wc (echo 1) (println (with-replies (ping))) (echo 2)))
 
 ;;;; Standard commands
 
 (commands/defcommands) ; This kicks ass - big thanks to Andreas Bielk!
 
 ;;;; Helper commands
-
-(defn remember
-  "Special command that takes any value and returns it unchanged as part of
-  an enclosing `with-conn` pipeline response."
-  [value]
-  (let [temp-key (str "carmine:temp:remember")]
-    (skip-replies (setex temp-key "60" value))
-    (get temp-key)))
 
 (def hash-script
   (memoize
@@ -171,14 +178,11 @@
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply."
   [script numkeys key & args]
-  (remember
-   (try (apply evalsha* script numkeys key args)
-        (protocol/get-one-reply!)
-        (catch Exception e
-          (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
-            (do (apply eval script numkeys key args)
-                (protocol/get-one-reply!))
-            (throw e))))))
+  (try (return (with-replies (apply evalsha* script numkeys key args)))
+       (catch Exception e
+         (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
+           (apply eval script numkeys key args)
+           (throw e)))))
 
 (def ^:private interpolate-script
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
@@ -388,6 +392,13 @@
 
      ~message-handlers ; Initial state
      ~@subscription-commands))
+
+;;;; Renamed/deprecated
+
+(def preserve "DEPRECATED. Please use `serialize`." serialize)
+(def remember "DEPRECATED. Please use `return`."    return)
+(def ^:macro skip-replies "DEPRECATED. Please use `with-replies`." #'with-replies)
+(def ^:macro with-reply   "DEPRECATED. Please use `with-replies`." #'with-replies)
 
 ;;;; Dev/tests
 
