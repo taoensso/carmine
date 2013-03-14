@@ -274,7 +274,7 @@
   (let [num-key      (test-key "num-key")
         preserve-key (test-key "preserve-key")]
     (wcar (car/set num-key 10)
-          (car/set preserve-key (car/preserve 10)))
+          (car/set preserve-key (car/serialize 10)))
     (is (= (wcar (car/get num-key))      "10"))
     (is (= (wcar (car/get preserve-key)) 10))))
 
