@@ -55,7 +55,7 @@
          spec# (or ~connection-spec (make-conn-spec))
          conn# (try (conns/get-conn pool# spec#)
                     (catch Exception e#
-                      (throw (Exception. "Carmine connection error"))))]
+                      (throw (Exception. "Carmine connection error" e#))))]
      (try
        (let [response# (protocol/with-context conn# ~@body)]
          (conns/release-conn pool# conn#) response#)
