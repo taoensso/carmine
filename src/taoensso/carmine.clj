@@ -93,10 +93,6 @@
   Redis server."
   [& body] `(do ~@body (protocol/get-replies!)))
 
-(defmacro skip-replies
-  [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
-              ~@body))
-
 ;;; Note (number? x) checks for backwards compatibility with pre-v0.11 Carmine
 ;;; versions that auto-serialized simple number types
 (defn as-long   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
@@ -304,10 +300,10 @@
   Body may contain a (discard) call to abort transaction."
   [watch-keys & body]
   `(try
-     (skip-replies ; skip "OK" and "QUEUED" replies
-      (when (seq ~watch-keys) (apply watch ~watch-keys))
-      (multi)
-      ~@body)
+     (with-replies ; discard "OK" and "QUEUED" replies
+       (when (seq ~watch-keys) (apply watch ~watch-keys))
+       (multi)
+       ~@body)
      (with-parser #(if (instance? Exception %) [] %) (exec))))
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
