@@ -4,9 +4,9 @@
 
   Ref: http://redis.io/topics/protocol"
   {:author "Peter Taoussanis"}
-  (:require [clojure.string :as str]
-            [taoensso.carmine (utils :as utils)]
-            [taoensso.nippy :as nippy])
+  (:require [clojure.string         :as str]
+            [taoensso.carmine.utils :as utils]
+            [taoensso.nippy         :as nippy])
   (:import  [java.io DataInputStream BufferedOutputStream]))
 
 ;; Hack to allow cleaner separation of namespaces
@@ -27,7 +27,7 @@
 ;; Define a special type that can be used to box values for which we'd like
 ;; to force automatic de/serialization (e.g. simple number types that are
 ;; normally converted to byte strings).
-(deftype Preserved [value])
+(deftype Serialized [value])
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
@@ -59,7 +59,7 @@
     * String args become byte strings.
     * Simple numbers (integers, longs, floats, doubles) become byte strings.
     * Binary (byte array) args go through un-munged.
-    * Everything else (incl. preserved args) gets serialized."
+    * Everything else gets serialized."
   [^BufferedOutputStream out arg]
   (let [type (cond (string?  arg) :string ; Most common 1st!
                    ;;(keyword? arg) :keyword
@@ -68,16 +68,17 @@
                        (instance? Integer arg)
                        (instance? Float   arg)) :simple-number
                    (instance? bytes-class arg)  :bytes
-                   (instance? Preserved arg)    :preserved
                    :else                        :serialized)
 
         ^bytes ba (case type
                     :string        (bytestring arg)
                     :keyword       (bytestring (name arg))
                     :simple-number (bytestring (str arg))
-                    :bytes arg
-                    :preserved   (nippy/freeze-to-bytes (.value ^Preserved arg))
-                    :serialized  (nippy/freeze-to-bytes arg))
+                    :bytes         arg
+                    :serialized    (nippy/freeze-to-bytes
+                                    (if (instance? Serialized arg)
+                                      (.value ^Serialized arg)
+                                      arg)))
 
         payload-size (alength ba)
         marked-type? (not (or (= type :string) (= type :simple-number)))
@@ -93,13 +94,12 @@
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (when marked-type?
       (case type
-        :bytes (send-bin out)
-        (:preserved :serialized) (send-clj out)))
+        :bytes      (send-bin out)
+        :serialized (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!
   "Sends a command to Redis server using its byte string protocol:
-
       *<no. of args>     crlf
       [$<size of arg N>  crlf
         <arg data>       crlf ...]"
@@ -132,8 +132,8 @@
   [^DataInputStream in]
   (let [reply-type (char (.readByte in))]
     (case reply-type
-      \+ (.readLine in)
-      \- (Exception. (.readLine in))
+      \+                 (.readLine in)
+      \- (Exception.     (.readLine in))
       \: (Long/parseLong (.readLine in))
 
       ;; Bulk data replies need checking for special in-data markers
@@ -163,54 +163,48 @@
                  :bin [payload payload-size]))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (vec (repeatedly bulk-count (partial get-basic-reply! in))))
+           (utils/repeatedly* bulk-count (partial get-basic-reply! in)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
-(defn- apply-parser [parser reply] (if parser (parser reply) reply))
-(defn- skip-reply?     [reply] (= reply :taoensso.carmine.protocol/skip-reply))
-(defn- exception-check [reply] (if (instance? Exception reply) (throw reply) reply))
-(defn- skip-check      [reply] (if (skip-reply? reply) nil reply))
+(defn- get-reply! [^DataInputStream in throw-exceptions? parser]
+  (let [parsed-reply
+        (if parser
+          (parser (when-not (:dummy-reply? (meta parser))
+                    (get-basic-reply! in)))
+          (get-basic-reply! in))]
+    (if (and throw-exceptions? (instance? Exception parsed-reply))
+      (throw parsed-reply)
+      parsed-reply)))
 
 (defn get-replies!
-  "BLOCKS to receive one or more (pipelined) replies from Redis server. Applies
-  all parsing and returns the result."
-  [& [reply-count]]
+  "BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
+  parsing and returns the result. Note that Redis returns replies as a FIFO
+  queue per connection."
+  [& [always-as-vec?]]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
-        reply-count (if reply-count reply-count (count parsers))]
+        reply-count (count parsers)]
 
     (when (pos? reply-count)
-      (swap! (:parser-queue *context*) #(subvec % reply-count))
+      ;; (swap! (:parser-queue *context*) #(subvec % reply-count))
+      (reset! (:parser-queue *context*) [])
 
-      (if (= reply-count 1)
-        (->> (get-basic-reply! in)
-             (apply-parser (peek parsers))
-             skip-check
-             exception-check)
-
-        (let [replies
-              (->> (repeatedly reply-count (partial get-basic-reply! in))
-                   (map #(apply-parser %1 %2) parsers)
-                   (remove skip-reply?))]
-          (if-not (next replies)
-            (let [[r] replies] (exception-check r))
-            (vec replies)))))))
-
-(defn get-one-reply! [] (get-replies! 1))
+      (if (and (= reply-count 1) (not always-as-vec?))
+        (get-reply! in true (first parsers))
+        (utils/mapv* (partial get-reply! in false) parsers)))))
 
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server.
-  For non-listener connections, sends Redis commands to server as pipeline and
-  returns the server's response."
+  For non-listener connections, returns server's response."
   [connection & body]
-  `(let [listener?#
-         (:listener? (taoensso.carmine.connections/get-spec ~connection))]
+  `(let [listener?# (:listener? (taoensso.carmine.connections/get-spec
+                                 ~connection))]
      (binding [*context*
                (Context. (taoensso.carmine.connections/in-stream  ~connection)
                          (taoensso.carmine.connections/out-stream ~connection)
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (if listener?# nil (get-replies!)))))
+       (when-not listener?# (get-replies!)))))

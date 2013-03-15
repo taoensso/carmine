@@ -1,8 +1,11 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.6.0"]
+[com.taoensso/carmine "1.7.0-beta1"] ; Development
+[com.taoensso/carmine "1.6.0"]       ; Stable
 ```
+
+**NOTE:** 1.7.x should be backwards-compatible with 1.6.x, but I'd recommend you test it if you're using a lot of low-level facilities (manual pipeline control and reply parsing, etc.). Please do report any problems!
 
 # Carmine, a Clojure Redis client & message queue
 
@@ -113,7 +116,7 @@ Types are handled as follows:
  * Simple Clojure numbers (integers, longs, floats, doubles) become Redis strings.
  * Everything else gets automatically de/serialized.
 
-You can force automatic de/serialization for an argument of any type by wrapping it with `car/preserve`.
+You can force automatic de/serialization for an argument of any type by wrapping it with `car/serialize`.
 
 ### Documentation and Command Coverage
 

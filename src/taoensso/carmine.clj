@@ -10,7 +10,7 @@
              (commands    :as commands)])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
            [taoensso.carmine.connections ConnectionPool]
-           [taoensso.carmine.protocol    Preserved]
+           [taoensso.carmine.protocol    Serialized]
            java.net.URI))
 
 ;;;; Connections
@@ -55,7 +55,7 @@
          spec# (or ~connection-spec (make-conn-spec))
          conn# (try (conns/get-conn pool# spec#)
                     (catch Exception e#
-                      (throw (Exception. "Carmine connection error"))))]
+                      (throw (Exception. "Carmine connection error" e#))))]
      (try
        (let [response# (protocol/with-context conn# ~@body)]
          (conns/release-conn pool# conn#) response#)
@@ -64,33 +64,25 @@
 ;;;; Misc
 
 (defmacro with-parser
-  "Wraps body so that replies to any wrapped Redis commands will be parsed with
-  (parser-fn reply). Composable."
+  "Alpha - subject to change.
+  Wraps body so that replies to any wrapped Redis commands will be parsed with
+  (parser-fn reply). Composable. When `parser-fn` is nil, clears any current
+  parsers."
   [parser-fn & body]
-  `(if-let [current-parser# protocol/*parser*]
-     (binding [protocol/*parser* (comp current-parser# ~parser-fn)] ~@body)
-     (binding [protocol/*parser* ~parser-fn] ~@body)))
+  `(if-not ~parser-fn
+     (binding [protocol/*parser* nil] ~@body)
+     (if-let [current-parser# protocol/*parser*]
+       (binding [protocol/*parser* (comp current-parser# ~parser-fn)] ~@body)
+       (binding [protocol/*parser* ~parser-fn] ~@body))))
 
 (defmacro with-mparser
-  "Wraps body so that multi-bulk (vector) replies to any wrapped Redis commands
+  "Alpha - subject to change.
+  Wraps body so that multi-bulk (vector) replies to any wrapped Redis commands
   will be parsed with (parser-fn reply)."
   [parser-fn & body]
   `(with-parser
-     (fn [multi-bulk-reply#] (vec (map ~parser-fn multi-bulk-reply#)))
+     (fn [multi-bulk-reply#] (utils/mapv* ~parser-fn multi-bulk-reply#))
      ~@body))
-
-(defmacro with-reply
-  "Executes body then BLOCKS to receive a single reply from Redis server."
-  [& body] `(do ~@body (protocol/get-one-reply!)))
-
-(defmacro with-replies
-  "Executes body then BLOCKS to receive all waiting (pipelined) replies from
-  Redis server."
-  [& body] `(do ~@body (protocol/get-replies!)))
-
-(defmacro skip-replies
-  [& body] `(with-parser (constantly :taoensso.carmine.protocol/skip-reply)
-              ~@body))
 
 ;;; Note (number? x) checks for backwards compatibility with pre-v0.11 Carmine
 ;;; versions that auto-serialized simple number types
@@ -134,24 +126,42 @@
          ((make-keyfn) :foo.bar/baz :qux)
          ((make-keyfn) nil "foo"))
 
-(defn preserve
+(defn serialize
   "Forces argument of any type (including simple number and binary types) to be
   subject to automatic de/serialization."
-  [x] (protocol/Preserved. x))
+  [x] (protocol/Serialized. x))
+
+(defn return
+  "Special command that takes any value and returns it unchanged as part of
+  an enclosing `with-conn` pipeline response."
+  [value]
+  (swap! (:parser-queue protocol/*context*) conj
+         (with-meta (constantly value)
+           {:dummy-reply? true})))
+
+(comment (wc (return :foo) (ping) (return :bar)))
+
+(defmacro with-replies ; TODO Would `pipeline` be a clearer name?
+  "Alpha - subject to change.
+  Evaluates body, immediately returning the server's response to any contained
+  Redis commands (i.e. before enclosing `with-conn` ends).
+
+  As an implementation detail, stashes and then `return`s any replies already
+  queued with Redis server: i.e. should be compatible with pipelining."
+  [& body]
+  `(let [stashed-replies# (protocol/get-replies! true)]
+     ~@body
+     (let [replies# (protocol/get-replies!)]
+       (doseq [reply# stashed-replies#] (return reply#))
+       replies#)))
+
+(comment (wc (echo 1) (println (with-replies (ping))) (echo 2)))
 
 ;;;; Standard commands
 
 (commands/defcommands) ; This kicks ass - big thanks to Andreas Bielk!
 
 ;;;; Helper commands
-
-(defn remember
-  "Special command that takes any value and returns it unchanged as part of
-  an enclosing `with-conn` pipeline response."
-  [value]
-  (let [temp-key (str "carmine:temp:remember")]
-    (skip-replies (setex temp-key "60" value))
-    (get temp-key)))
 
 (def hash-script
   (memoize
@@ -168,14 +178,11 @@
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply."
   [script numkeys key & args]
-  (remember
-   (try (apply evalsha* script numkeys key args)
-        (protocol/get-one-reply!)
-        (catch Exception e
-          (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
-            (do (apply eval script numkeys key args)
-                (protocol/get-one-reply!))
-            (throw e))))))
+  (try (return (with-replies (apply evalsha* script numkeys key args)))
+       (catch Exception e
+         (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
+           (apply eval script numkeys key args)
+           (throw e)))))
 
 (def ^:private interpolate-script
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
@@ -297,10 +304,10 @@
   Body may contain a (discard) call to abort transaction."
   [watch-keys & body]
   `(try
-     (skip-replies ; skip "OK" and "QUEUED" replies
-      (when (seq ~watch-keys) (apply watch ~watch-keys))
-      (multi)
-      ~@body)
+     (with-replies ; discard "OK" and "QUEUED" replies
+       (when (seq ~watch-keys) (apply watch ~watch-keys))
+       (multi)
+       ~@body)
      (with-parser #(if (instance? Exception %) [] %) (exec))))
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
@@ -385,6 +392,13 @@
 
      ~message-handlers ; Initial state
      ~@subscription-commands))
+
+;;;; Renamed/deprecated
+
+(def preserve "DEPRECATED. Please use `serialize`." serialize)
+(def remember "DEPRECATED. Please use `return`."    return)
+(def ^:macro skip-replies "DEPRECATED. Please use `with-replies`." #'with-replies)
+(def ^:macro with-reply   "DEPRECATED. Please use `with-replies`." #'with-replies)
 
 ;;;; Dev/tests
 
