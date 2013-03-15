@@ -178,22 +178,20 @@
       parsed-reply)))
 
 (defn get-replies!
-  "BLOCKS to receive one or more (pipelined) replies from Redis server. Applies
-  all parsing and returns the result. Note that Redis returns replies as a FIFO
+  "BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
+  parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  ;; TODO Drop reply-count altogether and just reset! [] on `get-replies!`?
-  [& [reply-count always-vec?]]
+  [& [always-as-vec?]]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
-        reply-count (if reply-count
-                      (min (count parsers) reply-count)
-                      (count parsers))]
+        reply-count (count parsers)]
 
     (when (pos? reply-count)
-      (swap! (:parser-queue *context*) #(subvec % reply-count))
+      ;; (swap! (:parser-queue *context*) #(subvec % reply-count))
+      (reset! (:parser-queue *context*) [])
 
-      (if (and (= reply-count 1) (not always-vec?))
+      (if (and (= reply-count 1) (not always-as-vec?))
         (get-reply! in true (first parsers))
         (utils/mapv* (partial get-reply! in false) parsers)))))
 

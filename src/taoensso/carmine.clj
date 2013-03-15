@@ -149,7 +149,7 @@
   As an implementation detail, stashes and then `return`s any replies already
   queued with Redis server: i.e. should be compatible with pipelining."
   [& body]
-  `(let [stashed-replies# (protocol/get-replies! nil true)]
+  `(let [stashed-replies# (protocol/get-replies! true)]
      ~@body
      (let [replies# (protocol/get-replies!)]
        (doseq [reply# stashed-replies#] (return reply#))
