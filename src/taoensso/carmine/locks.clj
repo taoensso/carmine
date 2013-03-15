@@ -40,10 +40,9 @@
                   "if redis.call('setnx', _:lkey, _:uuid) == 1 then
                     redis.call('pexpire', _:lkey, _:lock-timeout-ms)
                     return 1
-                  elseif redis.call('ttl', _:lkey) < 0 then
-                    redis.call('pexpire', _:lkey, _:lock-timeout-ms)
-                  end
-                  return 0"
+                  else
+                    return 0
+                  end"
                   {:lkey            (lkey lock-name)}
                   {:uuid            uuid
                    :lock-timeout-ms lock-timeout-ms})
@@ -97,7 +96,7 @@
   lock when successful. Returns {:result <body's result>} on successful release,
   or nil if the lock could not be acquired. If the lock is successfully acquired
   but expires before being released, throws an exception."
-  [lock-name & [lock-timeout-ms wait-timeout-ms & body]]
+  [lock-name lock-timeout-ms wait-timeout-ms & body]
   `(when-let [uuid# (acquire-lock ~lock-name ~lock-timeout-ms ~wait-timeout-ms)]
      (try
        {:result (do ~@body)} ; Wrapped to distinguish nil body result
