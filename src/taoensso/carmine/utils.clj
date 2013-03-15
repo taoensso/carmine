@@ -1,6 +1,7 @@
 (ns taoensso.carmine.utils
   {:author "Peter Taoussanis"}
-  (:require [clojure.string :as str]))
+  (:require [clojure.string      :as str]
+            [clojure.tools.macro :as macro]))
 
 (defmacro declare-remote
   "Declares the given ns-qualified names, preserving symbol metadata. Useful for
@@ -14,6 +15,14 @@
                     `(do (in-ns  '~(symbol ns))
                          (declare ~(with-meta (symbol v) m))))) names)
          (in-ns '~(symbol original-ns)))))
+
+(defmacro defonce*
+  "Like `clojure.core/defonce` but supports optional docstring and attributes
+  map for name symbol."
+  {:arglists '([name expr])}
+  [name & sigs]
+  (let [[name [expr]] (macro/name-with-attributes name sigs)]
+    `(clojure.core/defonce ~name ~expr)))
 
 (defmacro time-ns
   "Returns number of nanoseconds it takes to execute body."
