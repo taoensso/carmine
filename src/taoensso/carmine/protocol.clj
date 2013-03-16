@@ -129,16 +129,17 @@
       * `:` for integer reply.
       * `$` for bulk reply.
       * `*` for multi-bulk reply."
-  [^DataInputStream in]
+  [^DataInputStream in throw-exceptions?]
   (let [reply-type (char (.readByte in))]
     (case reply-type
-      \+                 (.readLine in)
-      \- (Exception.     (.readLine in))
+      \+ (.readLine in)
+      \- (let [e (Exception. (.readLine in))]
+           (if throw-exceptions? (throw e) e))
       \: (Long/parseLong (.readLine in))
 
       ;; Bulk data replies need checking for special in-data markers
       \$ (let [data-size (Integer/parseInt (.readLine in))]
-           (when-not (neg? data-size)
+           (when-not (neg? data-size) ; NULL bulk reply
              (let [possibly-special-type? (>= data-size 2)
                    type (or (when possibly-special-type?
                               (.mark in 2)
@@ -163,19 +164,18 @@
                  :bin [payload payload-size]))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count (partial get-basic-reply! in)))
+           (utils/repeatedly* bulk-count (partial get-basic-reply! in
+                                                  throw-exceptions?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
 (defn- get-reply! [^DataInputStream in throw-exceptions? parser]
-  (let [parsed-reply
-        (if parser
-          (parser (when-not (:dummy-reply? (meta parser))
-                    (get-basic-reply! in)))
-          (get-basic-reply! in))]
-    (if (and throw-exceptions? (instance? Exception parsed-reply))
-      (throw parsed-reply)
-      parsed-reply)))
+  (if parser
+    (let [m (meta parser)]
+      (parser (when-not (:dummy-reply? m)
+                (get-basic-reply! in (or (:throw-exceptions? m)
+                                         throw-exceptions?)))))
+    (get-basic-reply! in throw-exceptions?)))
 
 (defn get-replies!
   "BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
