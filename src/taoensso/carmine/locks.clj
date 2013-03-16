@@ -13,10 +13,7 @@
 
 (utils/defonce* config "Alpha - subject to change."
   (atom {:conns {:pool (car/make-conn-pool)
-                 :spec (car/make-conn-spec)}
-         ;; :defaults {:lock-timeout-ms 2000
-         ;;            :wait-timeout-ms 500}
-         }))
+                 :spec (car/make-conn-spec)}}))
 
 (defn set-config! [[k & ks] val] (swap! config assoc-in (cons k ks) val))
 
@@ -25,11 +22,10 @@
   `(let [{pool# :pool spec# :spec} (:conns @config)]
      (car/with-conn pool# spec# ~@body)))
 
-;;(def ^:private lkey (memoize (car/make-keyfn "carmine" "lock")))
-(defn- lkey [lock-name] (str "carmine:lock:" (name lock-name)))
+(def ^:private lkey (car/make-keyfn "carmine" "lock"))
 
 (defn acquire-lock
-  "Attempts to acquire a distributed lock, returning owner's UUID iff successful."
+  "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
   [lock-name lock-timeout-ms wait-timeout-ms]
   (let [max-udt (+ wait-timeout-ms (System/currentTimeMillis))
         uuid    (str (java.util.UUID/randomUUID))]
@@ -56,15 +52,15 @@
   "Attempts to release a distributed lock, returning true iff successful."
   [lock-name owner-uuid]
   (-> (car/lua-script
-       "if redis.call('get', _:lkey) == _:uuid then
+        "if redis.call('get', _:lkey) == _:uuid then
          redis.call('del', _:lkey)
          return 1
        else
          return 0
        end"
-       {:lkey (lkey lock-name)}
-       {:uuid owner-uuid})
-      car/parse-bool wcar))
+        {:lkey (lkey lock-name)}
+        {:uuid owner-uuid})
+       car/parse-bool wcar))
 
 (comment
   (when-let [uuid (acquire-lock "my-lock" 2000 500)]
