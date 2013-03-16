@@ -188,37 +188,27 @@
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
 
   (interpolate-script \"return redis.call('set', _:my-key, _:my-val)\"
-                      {:my-key \"foo\"} {:my-val \"bar\"})
-  => {:script \"return redis.call('set', KEYS[1], ARGV[1])\"
-      :eval-args [\"1\" \"foo\" \"bar\"]}"
+                      [:my-key] [:my-val])
+  => \"return redis.call('set', KEYS[1], ARGV[1])\""
   (memoize
-   (fn [script key-vars-map arg-vars-map]
-     (let [key-vars-map (into (sorted-map) key-vars-map)
-           arg-vars-map (into (sorted-map) arg-vars-map)
-
-           ;; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
+   (fn [script key-vars arg-vars]
+     (let [;; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
            subst-map (fn [vars array-name]
                        (zipmap (map #(str "_" %) vars)
                                (map #(str array-name "[" % "]")
                                     (map inc (range)))))]
-
-       {:script
-        (reduce (fn [s [match replacement]] (str/replace s match replacement))
-                (str script)
-                (merge (subst-map (clojure.core/keys key-vars-map) "KEYS")
-                       (subst-map (clojure.core/keys arg-vars-map) "ARGV")))
-
-        :eval-args (-> [(str (count key-vars-map))]
-                       (into (vals key-vars-map))
-                       (into (vals arg-vars-map)))}))))
+       (reduce (fn [s [match replacement]] (str/replace s match replacement))
+               (str script)
+               (merge (subst-map key-vars "KEYS")
+                      (subst-map arg-vars "ARGV")))))))
 
 (comment
   (interpolate-script "return redis.call('set', _:my-key, _:my-val)"
-                      {:my-key "foo"} {:my-val "bar"})
+                      [:my-key] [:my-val])
 
   (interpolate-script "Hello _:k1 _:k1 _:k2 _:k3 _:a1 _:a2 _:a3"
-                      {:k3 "k3" :k1 "k1" :k2 "k2"}
-                      {:a3 "a3" :a1 "a1" :a2 "a2"}))
+                      [:k3 :k1 :k2]
+                      [:a3 :a1 :a2]))
 
 (defn lua-script
   "All singing, all dancing Lua script helper. Like `eval*` but allows script
@@ -227,9 +217,10 @@
   Keys are given separately from other args as an implementation detail for
   clustering purposes."
   [script key-vars-map arg-vars-map]
-  (let [{:keys [script eval-args]}
-        (interpolate-script script key-vars-map arg-vars-map)]
-    (apply eval* script eval-args)))
+  (apply eval* (interpolate-script script (clojure.core/keys key-vars-map)
+                                          (clojure.core/keys arg-vars-map))
+         (count key-vars-map)
+         (into (vec (vals key-vars-map)) (vals arg-vars-map))))
 
 (comment
   (wc (lua-script "redis.call('set', _:my-key, _:my-val)
