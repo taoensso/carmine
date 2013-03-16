@@ -297,7 +297,6 @@ Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See t
 ```clojure
 (:require [taoensso.carmine.locks :as locks]) ; Add to `ns` macro
 
-;; (lock-name lock-timeout-ms wait-timeout-ms & body])
 (locks/with-lock "my-lock"
   1000 ; Time to hold lock
   500  ; Time to wait (block) for lock acquisition
