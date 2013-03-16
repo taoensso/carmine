@@ -68,17 +68,8 @@
      (release-lock "my-lock" uuid)
      (release-lock "my-lock" uuid)]))
 
-(defn have-lock?
-  [lock-name owner-uuid]
-  (-> (car/lua-script
-       "if redis.call('get', _:lkey) == _:uuid then
-         return 1
-       else
-         return 0
-       end"
-       {:lkey (lkey lock-name)}
-       {:uuid owner-uuid})
-      car/parse-bool wcar))
+(defn have-lock? [lock-name owner-uuid]
+  (= (wcar (car/get (lkey lock-name))) owner-uuid))
 
 (comment
   (when-let [uuid (acquire-lock "my-lock" 2000 500)]
