@@ -299,6 +299,7 @@
        (when (seq ~watch-keys) (apply watch ~watch-keys))
        (multi)
        ~@body)
+     ;; Body discards will result in an (exec) exception:
      (with-parser #(if (instance? Exception %) [] %) (exec))))
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
