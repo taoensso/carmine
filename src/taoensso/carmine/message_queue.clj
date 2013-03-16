@@ -1,17 +1,16 @@
 (ns taoensso.carmine.message-queue
-  "Carmine-backed Clojure message queue. All heavy lifting by Redis (2.6+).
+  "Alpha - subject to change.
+  Carmine-backed Clojure message queue. All heavy lifting by Redis (2.6+).
   Simple implementation. Very simple API. Reliable. Fast.
 
-  Alpha - subject to change.
-
   Redis keys:
-    * mqueue:<qname>:messages      -> hash, {id content}
-    * mqueue:<qname>:locks         -> hash, {id lock-acquired-time}
-    * mqueue:<qname>:id-circle     -> list, rotating list of ids
-    * mqueue:<qname>:recently-done -> set, used for efficient id removal from
-                                      circle
-    * mqueue:<qname>:backoff?      -> ttl flag, used for queue-wide (every-worker)
-                                      polling backoff
+    * carmine:mq:<qname>:messages      -> hash, {id content}
+    * carmine:mq:<qname>:locks         -> hash, {id lock-acquired-time}
+    * carmine:mq:<qname>:id-circle     -> list, rotating list of ids
+    * carmine:mq:<qname>:recently-done -> set, used for efficient id removal from
+                                          circle
+    * carmine:mq:<qname>:backoff?      -> ttl flag, used for queue-wide (every-worker)
+                                          polling backoff
 
   Ref. http://antirez.com/post/250 for implementation details."
   {:author "Peter Taoussanis"}
@@ -22,7 +21,7 @@
   (:import  [java.util UUID]))
 
 (def ^:private qkey "Prefixed queue key"
-  (memoize (car/make-keyfn "mqueue")))
+  (memoize (car/make-keyfn "carmine" "mq")))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue. Returns message

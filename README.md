@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.7.0-beta1"] ; Development
+[com.taoensso/carmine "1.7.0-beta2"] ; Development
 [com.taoensso/carmine "1.6.0"]       ; Stable
 ```
 
@@ -31,6 +31,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Full support for custom **reply parsing**.
  * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
  * Simple, high-performance **message queue** (Redis 2.6+).
+ * Simple, high-performance **distributed lock** (Redis 2.6+).
  * **Ring session-store**.
 
 ## Getting Started
@@ -276,20 +277,34 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 Redis makes a great [message queue server](http://antirez.com/post/250):
 
 ```clojure
-(:require [taoensso.carmine.message-queue :as carmine-mq]) ; Add to `ns` macro
+(:require [taoensso.carmine.message-queue :as mq]) ; Add to `ns` macro
 
 (def my-worker
-  (carmine-mq/make-dequeue-worker
+  (mq/make-dequeue-worker
    pool spec-server1 "my-queue"
    :handler-fn (fn [msg] (println "Received" msg))))
 
-(carmine-mq/enqueue "my-queue" "my message!")
+(mq/enqueue "my-queue" "my message!")
 %> Received my message!
 
-(carmine-mq/stop my-worker)
+(mq/stop my-worker)
 ```
 
 Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.message-queue` namespace for details.
+
+### Distributed Locks
+
+```clojure
+(:require [taoensso.carmine.locks :as locks]) ; Add to `ns` macro
+
+;; (lock-name lock-timeout-ms wait-timeout-ms & body])
+(locks/with-lock "my-lock"
+  1000 ; Time to hold lock
+  500  ; Time to wait (block) for lock acquisition
+  (println "This was printed under lock!"))
+```
+
+Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.locks` namespace for details.
 
 ## Performance
 
