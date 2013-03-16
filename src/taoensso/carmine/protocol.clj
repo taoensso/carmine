@@ -178,10 +178,11 @@
     (get-basic-reply! in throw-exceptions?)))
 
 (defn get-replies!
-  "BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
+  "IMPLEMENTATION DETAIL - please don't use this. Use `with-replies` instead.
+  BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [& [always-as-vec?]]
+  [always-as-vec?]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -207,4 +208,4 @@
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (when-not listener?# (get-replies!)))))
+       (when-not listener?# (get-replies! false)))))

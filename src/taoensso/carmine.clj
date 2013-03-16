@@ -151,7 +151,7 @@
   [& body]
   `(let [stashed-replies# (protocol/get-replies! true)]
      ~@body
-     (let [replies# (protocol/get-replies!)]
+     (let [replies# (protocol/get-replies! false)]
        (doseq [reply# stashed-replies#] (return reply#))
        replies#)))
 
