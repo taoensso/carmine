@@ -15,7 +15,7 @@
   (atom {:conns {:pool (car/make-conn-pool)
                  :spec (car/make-conn-spec)}}))
 
-(defn set-config! [[k & ks] val] (swap! config assoc-in (cons k ks) val))
+(defn set-config! [ks val] (swap! config assoc-in ks val))
 
 (defmacro ^:private wcar
   [& body]
