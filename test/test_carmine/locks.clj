@@ -1,4 +1,4 @@
-(ns taoensso.carmine.test.locks
+(ns test-carmine.locks
   "Locks test assumes a redis instance on localhost"
   (:require 
     [taoensso.carmine :as car])
@@ -7,10 +7,9 @@
     [taoensso.carmine.locks :only (acquire-lock release-lock with-lock set-config! clear-all)]))
 
 
-(set-config! [:conns :spec] (car/make-conn-spec :host "localhost"))
+(set-config! [:conns :spec] (car/make-conn-spec :host "127.0.0.1"))
 (set-config! [:conns :pool] (car/make-conn-pool))
 
-(use-fixtures :once (fn [f] (f) (clear-all)))
 
 (deftest ^:locks basic-locking 
   (is (acquire-lock 2 2000 2000)) ; for 2 sec
