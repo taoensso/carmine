@@ -26,6 +26,7 @@
 
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
+  ;; TODO Waiting on http://goo.gl/YemR7 for simpler (non-Lua) solution
   [lock-name lock-timeout-ms wait-timeout-ms]
   (let [max-udt (+ wait-timeout-ms (System/currentTimeMillis))
         uuid    (str (java.util.UUID/randomUUID))]
@@ -42,7 +43,7 @@
                   {:lkey            (lkey lock-name)}
                   {:uuid            uuid
                    :lock-timeout-ms lock-timeout-ms})
-                 car/parse-bool car/with-replies)
+                 car/with-replies car/as-bool)
            (car/return uuid)
            (do (Thread/sleep 1) (recur))))))))
 
@@ -60,7 +61,7 @@
        end"
         {:lkey (lkey lock-name)}
         {:uuid owner-uuid})
-       car/parse-bool wcar))
+      wcar car/as-bool))
 
 (comment
   (when-let [uuid (acquire-lock "my-lock" 2000 500)]
