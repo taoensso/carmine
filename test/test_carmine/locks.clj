@@ -1,7 +1,6 @@
 (ns test-carmine.locks
-  (:require [taoensso.carmine :as car])
-  (:use  [clojure.test]
-         [taoensso.carmine.locks :only (acquire-lock release-lock with-lock)]))
+  (:use [clojure.test]
+        [taoensso.carmine.locks :only (acquire-lock release-lock with-lock)]))
 
 (deftest basic-locking
   (is (acquire-lock 2 2000 2000)) ; For 2 secs
