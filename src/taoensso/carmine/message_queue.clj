@@ -21,7 +21,7 @@
             [taoensso.timbre  :as timbre])
   (:import  [java.util UUID]))
 
-(def ^:private qkey "Prefixed queue key"
+(def qkey "Prefixed queue key"
   (memoize (car/make-keyfn "mqueue")))
 
 (defn status
@@ -37,11 +37,12 @@
         local lock_acquired = tonumber(redis.call('hget', _:qk-locks, _:msg-id) or 0)
         if (lock_acquired ~= 0) and (current_time - lock_acquired) < lock_ttl then
           return 'processing'
-        elseif redis.call('hexists',_:qk-messages, _:msg-id)
+        elseif redis.call('hexists',_:qk-messages, _:msg-id) == 1 then
           return 'pending'
         end
+        return nil
       end
-     return nil -- can we assume it was done?"
+     "
   {:qk-messages  (qkey qname "messages")
    :qk-locks  (qkey qname "locks")
    :qk-recently-done  (qkey qname "recently-done")}
@@ -98,6 +99,7 @@ Exposes implementation details: prefer `make-dequeue-worker` when possible."
       redis.call('lrem', _:qk-id-circle, 1, msg_id) -- Efficient here
       redis.call('srem', _:qk-recently-done, msg_id)
       redis.call('hdel', _:qk-messages, msg_id)
+      redis.call('hdel', _:qk-locks, msg_id)
       return nil
     else
       local current_time  = tonumber(_:current-time)
