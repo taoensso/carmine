@@ -94,6 +94,8 @@
           (throw (RuntimeException. (str "Lock expired before it was released: "
                                          ~lock-name))))))))
 
+(defn clear-all [] (wcar (car/flushdb)))
+
 (comment
   (timbre/set-level! :debug)
   (with-lock "my-lock" 2000 500 (Thread/sleep 1000) "foo!")  ; {:result "foo!"}
