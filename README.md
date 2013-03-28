@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.7.0-beta2"] ; Development
+[com.taoensso/carmine "1.7.0-beta3"] ; Development
 [com.taoensso/carmine "1.6.0"]       ; Stable
 ```
 
