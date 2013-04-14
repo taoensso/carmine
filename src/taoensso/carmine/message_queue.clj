@@ -138,35 +138,35 @@ Exposes implementation details: prefer `make-dequeue-worker` when possible."
 (start [this]))
 
 (defrecord DequeueWorker [pool spec qname opts active?]
-IDequeueWorker
-(stop  [_] (reset! active? false) nil)
-(start [_]
-  (when-not @active?
-    (reset! active? true)
-    (let [{:keys [handler-fn throttle-msecs backoff-msecs]} opts
-          flat-opts (apply concat opts)]
-      (future
-        (while @active?
-          (when-let [poll-reply (car/with-conn pool spec
-                                  (apply dequeue-1 qname :worker-context? true
-                                          flat-opts))]
-            (if (= poll-reply "backoff")
-              (Thread/sleep backoff-msecs)
-              (let [[message-id message-content type] poll-reply]
-                (when (= type "retry")
-                  (timbre/warn (str "Retrying message from queue: "
-                                    qname "\n") poll-reply))
+  IDequeueWorker 
+  (stop  [_] (reset! active? false) nil) 
+  (start [_]
+    (when-not @active?
+      (reset! active? true)
+      (let [{:keys [handler-fn throttle-msecs backoff-msecs]} opts
+            flat-opts (apply concat opts)]
+        (future
+          (while @active?
+            (when-let [poll-reply (car/with-conn pool spec
+                                    (apply dequeue-1 qname :worker-context? true
+                                           flat-opts))]
+              (if (= poll-reply "backoff")
+                (Thread/sleep backoff-msecs)
+                (let [[message-id message-content type] poll-reply]
+                  (when (= type "retry")
+                    (timbre/warn (str "Retrying message from queue: "
+                                      qname "\n") poll-reply))
 
-                (try (handler-fn message-content)
-                      (car/with-conn pool spec
-                        (car/sadd (qkey qname "recently-done")
-                                      message-id))
-                      (catch Throwable e
-                        (timbre/error
-                        e (str "Exception while handling message from queue: "
-                                qname "\n") poll-reply))))))
-          (when throttle-msecs (Thread/sleep throttle-msecs))))))
-  nil))
+                  (try (handler-fn message-content)
+                       (car/with-conn pool spec
+                         (car/sadd (qkey qname "recently-done")
+                                       message-id))
+                       (catch Throwable t
+                         (timbre/error
+                          t (str "Error while handling message from queue: "
+                                 qname "\n") poll-reply))))))
+            (when throttle-msecs (Thread/sleep throttle-msecs))))))
+    nil)) 
 
 (defn make-dequeue-worker
 "Creates a threaded worker to poll for and handle messages pushed to named
