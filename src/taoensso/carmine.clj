@@ -348,7 +348,9 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (@handler-atom# (protocol/get-basic-reply! in# false) @state-atom#))))
+          (try
+            (@handler-atom# (protocol/get-basic-reply! in# false) @state-atom#)
+            (catch Throwable _#)))))
 
      (protocol/with-context conn# ~@body)
      (Listener. conn# handler-atom# state-atom#)))
