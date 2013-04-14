@@ -7,7 +7,8 @@
              (utils       :as utils)
              (protocol    :as protocol)
              (connections :as conns)
-             (commands    :as commands)])
+             (commands    :as commands)]
+            [taoensso.timbre :as timbre])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
            [taoensso.carmine.connections ConnectionPool]
            [taoensso.carmine.protocol    Serialized]
@@ -348,9 +349,11 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (try
-            (@handler-atom# (protocol/get-basic-reply! in# false) @state-atom#)
-            (catch Throwable _#)))))
+          (let [reply# (protocol/get-basic-reply! in# false)]
+            (try
+              (@handler-atom# reply# @state-atom#)
+              (catch Throwable t#
+                (timbre/error t# "Listener handler exception")))))))
 
      (protocol/with-context conn# ~@body)
      (Listener. conn# handler-atom# state-atom#)))
