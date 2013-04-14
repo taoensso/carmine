@@ -134,9 +134,9 @@
                        (car/with-conn pool spec
                          (car/sadd (qkey qname "recently-done")
                                        message-id))
-                       (catch Throwable e
+                       (catch Throwable t
                          (timbre/error
-                          e (str "Exception while handling message from queue: "
+                          t (str "Error while handling message from queue: "
                                  qname "\n") poll-reply))))))
             (when throttle-msecs (Thread/sleep throttle-msecs))))))
     nil))
