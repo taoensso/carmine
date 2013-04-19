@@ -1,8 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.7.0-beta6"] ; Development
-[com.taoensso/carmine "1.6.0"]       ; Stable
+[com.taoensso/carmine "1.7.0"]
 ```
 
 **NOTE:** 1.7.x should be backwards-compatible with 1.6.x, but I'd recommend you test it if you're using a lot of low-level facilities (manual pipeline control and reply parsing, etc.). Please do report any problems!
@@ -41,7 +40,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Depend on Carmine in your `project.clj`:
 
 ```clojure
-[com.taoensso/carmine "1.6.0"]
+[com.taoensso/carmine "1.7.0"]
 ```
 
 and `require` the library:
