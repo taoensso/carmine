@@ -21,7 +21,7 @@
   (:import  [java.util UUID]))
 
 (def ^:private qkey "Prefixed queue key"
-  (memoize (car/make-keyfn "carmine" "mq")))
+  (memoize (partial car/kname "carmine" "mq")))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue. Returns message

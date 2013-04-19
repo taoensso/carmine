@@ -107,28 +107,20 @@
 (defmacro parse-bools    [& body] `(with-mparser as-bool   ~@body))
 (defmacro parse-keywords [& body] `(with-mparser keyword   ~@body))
 
-(defn make-keyfn
-  "Returns a function that joins keywords, integers, and strings to form an
-  idiomatic compound Redis key name.
+(defn kname
+  "Joins keywords, integers, and strings to form an idiomatic compound Redis key
+  name.
 
-  (let [k (make-keyfn :account)]
-    (k \"1j4nhg7\" :email-address)) => \"account:1j4nhg7:email-address\"
-
-  Recommended key naming style:
+  Suggested key naming style:
     * \"category:subcategory:id:field\" basic form.
     * Singular category names (\"account\" rather than \"accounts\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
-  [& prefix-parts]
-  (let [join-parts (fn [parts] (str/join ":" (map utils/keyname
-                                                 (filter identity parts))))
-        prefix     (when (seq prefix-parts) (str (join-parts prefix-parts) ":"))]
-    (fn [& parts] (str prefix (join-parts parts)))))
 
-(comment ((make-keyfn :foo :bar) :baz "qux")
-         ((make-keyfn :foo.bar/baz) :qux)
-         ((make-keyfn) :foo :bar)
-         ((make-keyfn) :foo.bar/baz :qux)
-         ((make-keyfn) nil "foo"))
+  ;; TODO Use `reduced` on Clojure 1.5 dependency bump
+  [& parts]
+  (str/join ":" (map utils/keyname (filter identity parts))))
+
+(comment (kname :foo/bar :baz "qux" nil 10))
 
 (defn serialize
   "Forces argument of any type (including simple number and binary types) to be
@@ -399,6 +391,11 @@
 (def remember "DEPRECATED. Please use `return`."    return)
 (def ^:macro skip-replies "DEPRECATED. Please use `with-replies`." #'with-replies)
 (def ^:macro with-reply   "DEPRECATED. Please use `with-replies`." #'with-replies)
+
+(defn make-keyfn "DEPRECATED. Please use `kname`."
+  [& prefix-parts]
+  (let [prefix (when (seq prefix-parts) (str (apply kname prefix-parts) ":"))]
+    (fn [& parts] (str prefix (apply kname parts)))))
 
 ;;;; Dev/tests
 
