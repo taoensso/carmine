@@ -22,7 +22,7 @@
   `(let [{pool# :pool spec# :spec} (:conns @config)]
      (car/with-conn pool# spec# ~@body)))
 
-(def ^:private lkey (car/make-keyfn "carmine" "lock"))
+(def ^:private lkey (partial car/kname "carmine" "lock"))
 
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
