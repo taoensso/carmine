@@ -310,9 +310,13 @@
 ;;
 ;; To facilitate the unusual requirements we define a Listener to be a
 ;; combination of persistent, NON-pooled connection and threaded message
-;; handler:
+;; handler.
 
-(defrecord Listener [connection handler state])
+(declare close-listener)
+
+(defrecord Listener [connection handler state]
+  java.io.Closeable
+  (close [this] (close-listener this)))
 
 (defmacro with-new-listener
   "Creates a persistent connection to Redis server and a thread to listen for
