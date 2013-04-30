@@ -34,7 +34,7 @@
 (defmacro bench
   "Repeatedly executes form and returns time taken to complete execution."
   [num-laps form & {:keys [warmup-laps num-threads as-ms?]
-                :or   {as-ms? true}}]
+                    :or   {as-ms? true}}]
   `(try (when ~warmup-laps (dotimes [_# ~warmup-laps] ~form))
         (let [nanosecs#
               (if-not ~num-threads
@@ -78,7 +78,6 @@
          (time (dotimes [_ 10000] (name :foo)))
          (time (dotimes [_ 10000] (keyname :foo))))
 
-;; Clojure 1.5
 (defn keywordize-map [m] (reduce (fn [m [k v]] (assoc m (keyword k) v)) {} m))
 
 ;; TODO Waiting for Clojure 1.5 support
