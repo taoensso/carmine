@@ -41,8 +41,11 @@
 (comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/"))
 
 (defn make-conn-spec
-  [& {:keys [uri host port password timeout db] :as opts}]
-  (let [defaults {:host "127.0.0.1" :port 6379 :timeout 0 :db 0}]
+  [& {:keys [uri host port password timeout-ms db] :as opts}]
+  (let [defaults {:host "127.0.0.1" :port 6379}
+        opts     (if-let [timeout (:timeout opts)] ; Support deprecated opt
+                   (assoc opts :timeout-ms timeout)
+                   opts)]
     (merge defaults opts (parse-uri uri))))
 
 (defmacro with-conn

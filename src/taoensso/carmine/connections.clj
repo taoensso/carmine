@@ -53,15 +53,15 @@
 
 (defn make-new-connection
   "Actually creates and returns a new socket connection."
-  [{:keys [host port password timeout db] :as spec}]
+  [{:keys [host port password timeout-ms db] :as spec}]
   (let [socket (doto (Socket. ^String host ^Integer port)
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
-                 (.setSoTimeout ^Integer timeout))
+                 (.setSoTimeout ^Integer (or timeout-ms 0)))
         conn (Connection. socket spec)]
     (when password (protocol/with-context conn (taoensso.carmine/auth password)))
-    (when (not (zero? db)) (protocol/with-context conn
-                             (taoensso.carmine/select (str db))))
+    (when (and db (not (zero? db))) (protocol/with-context conn
+                                      (taoensso.carmine/select (str db))))
     conn))
 
 (defrecord NonPooledConnectionPool []
