@@ -178,6 +178,7 @@
     * `throttle-msecs` specifies thread sleep period between each poll.
     * `backoff-msecs` specifies thread sleep period each time end of queue is
       reached. Backoff is synchronized between all dequeue workers."
+  ;; TODO Allow handler-fn to return e/o #{:success :error :retry}, etc.
   [connection-pool connection-spec qname
    & {:keys [handler-fn handler-ttl-msecs throttle-msecs backoff-msecs auto-start?]
       :or   {handler-fn (fn [msg] (timbre/info (str "Message received from queue: "
