@@ -98,6 +98,7 @@
         redis.call('lrem', _:qk-id-circle, 1, msg_id) -- Efficient here
         redis.call('srem', _:qk-recently-done, msg_id)
         redis.call('hdel', _:qk-messages, msg_id)
+        redis.call('hdel', _:qk-locks, msg_id)
         return nil
       else
         local current_time  = tonumber(_:current-time)
