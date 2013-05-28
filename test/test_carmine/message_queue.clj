@@ -1,55 +1,44 @@
 (ns test_carmine.message_queue
-  (:use clojure.test
-        clojure.pprint
-        taoensso.carmine.message-queue)
-  (:require [clojure.string :as str]
-            [taoensso.carmine :as car]))
-
+  (:use     [clojure.test])
+  (:require [clojure.string   :as str]
+            [taoensso.carmine :as car]
+            [taoensso.carmine.message-queue :as mq]))
 
 (def p (car/make-conn-pool))
 (def s (car/make-conn-spec))
-
 (defmacro wcar [& body] `(car/with-conn p s ~@body))
 
-;; Delete all queue keys
+(def testq "testq")
+(def tkey (partial mq/qkey testq))
 
-
-(def qkey- @#'taoensso.carmine.message-queue/qkey)
-
-(use-fixtures :each 
-              (fn [f] 
-                (let [queues (wcar (car/keys (qkey- "*")))]
-                  (when (seq queues) (wcar (apply car/del queues))))
-                  (f) 
-                ))
+(use-fixtures :each
+  (fn [f] ; Delete all queue keys
+    (when-let [queues (seq (wcar (car/keys (tkey "*"))))]
+      (wcar (apply car/del queues)))
+    (f)))
 
 (defn generate-keys []
-  (doall (into [] (map #(wcar (enqueue "myq" (str %))) (range 10)))))
+  (into [] (map #(wcar (mq/enqueue testq (str %))) (range 10))))
 
-(deftest baseline 
+(deftest baseline
   (let [ids (generate-keys)]
-    (is (= (wcar (dequeue-1 "myq")) "backoff")) 
-    (is (= (wcar (dequeue-1 "myq")) [(-> ids first first ) "0" "new"])) 
-    )) 
+    (is (= (wcar (mq/dequeue-1 testq)) "backoff"))
+    (is (= (wcar (mq/dequeue-1 testq)) [(-> ids first first ) "0" "new"]))))
 
 (defn slurp-keys []
   (doseq [i (range 10)]
-    (let [[_id _ s] (wcar (dequeue-1 "myq" :worker-context? true))] 
-      (wcar (car/sadd (qkey- "myq" "recently-done") _id)))))
+    (let [[id _ s] (wcar (mq/dequeue-1 testq :worker-context? true))]
+      (wcar (car/sadd (tkey "recently-done") id)))))
 
 (deftest worker-mimicking
   (let [[[id _]] (generate-keys)]
-    (is (= (wcar (status "myq" id)) "pending")) 
-    (is (= (wcar (dequeue-1 "myq")) "backoff")) 
-    (is (= (wcar (dequeue-1 "myq" :worker-context? true)) [id "0" "new"])) 
-    (is (= (wcar (status "myq" id)) "processing")) 
-    (wcar (car/sadd (qkey- "myq" "recently-done") id))
-    (is (= (wcar (status "myq" id)) "done")) 
+    (is (= (wcar (mq/status testq id)) "pending"))
+    (is (= (wcar (mq/dequeue-1 testq)) "backoff"))
+    (is (= (wcar (mq/dequeue-1 testq :worker-context? true)) [id "0" "new"]))
+    (is (= (wcar (mq/status testq id)) "processing"))
+    (wcar (car/sadd (tkey "recently-done") id))
+    (is (= (wcar (mq/status testq id)) "done"))
     (slurp-keys)
-    (Thread/sleep 2000); waiting for backoff to expire
+    (Thread/sleep 2000) ; Wait for backoff to expire
     (slurp-keys)
-    (is (= (wcar (status "myq" id)) nil)) 
-    )
-  )
-
-
+    (is (= (wcar (mq/status testq id)) nil))))
