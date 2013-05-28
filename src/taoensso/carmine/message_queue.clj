@@ -20,8 +20,34 @@
             [taoensso.timbre  :as timbre])
   (:import  [java.util UUID]))
 
-(def ^:private qkey "Prefixed queue key"
+(def qkey "Prefixed queue key"
   (memoize (partial car/kname "carmine" "mq")))
+
+(defn status
+  "Returns job status or nil if not known"
+  [qname msg-id]
+  (let [ handler-ttl-msecs (* 60 60 1000) ]
+    (car/lua-script
+     "if redis.call('sismember', _:qk-recently-done, _:msg-id) == 1 then
+        return 'done' -- this is known temporarily until a worker cleans it up
+      else
+        local current_time  = tonumber(_:current-time)
+        local lock_ttl      = tonumber(_:handler-ttl-msecs)
+        local lock_acquired = tonumber(redis.call('hget', _:qk-locks, _:msg-id) or 0)
+        if (lock_acquired ~= 0) and (current_time - lock_acquired) < lock_ttl then
+          return 'processing'
+        elseif redis.call('hexists',_:qk-messages, _:msg-id) == 1 then
+          return 'pending'
+        end
+        return nil
+      end
+     "
+  {:qk-messages  (qkey qname "messages")
+   :qk-locks  (qkey qname "locks")
+   :qk-recently-done  (qkey qname "recently-done")}
+  {:msg-id msg-id
+  :current-time (str (System/currentTimeMillis))
+  :handler-ttl-msecs (str handler-ttl-msecs)})))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue. Returns message
@@ -72,6 +98,7 @@
         redis.call('lrem', _:qk-id-circle, 1, msg_id) -- Efficient here
         redis.call('srem', _:qk-recently-done, msg_id)
         redis.call('hdel', _:qk-messages, msg_id)
+        redis.call('hdel', _:qk-locks, msg_id)
         return nil
       else
         local current_time  = tonumber(_:current-time)
