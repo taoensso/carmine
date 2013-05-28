@@ -12,7 +12,7 @@
                  [com.taoensso/nippy          "1.2.0"]]
   :profiles {:1.3   {:dependencies [[org.clojure/clojure "1.3.0"]]}
              :1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
-             :1.5   {:dependencies [[org.clojure/clojure "1.5.0-alpha3"]]}
+             :1.5   {:dependencies [[org.clojure/clojure "1.5.1"]]}
              :dev   {:dependencies [[ring/ring-core      "1.1.0"]]}
              :test  {:dependencies [[ring/ring-core      "1.1.0"]]}
              :bench {:dependencies [[org.clojars.tavisrudd/redis-clojure "1.3.1"]
