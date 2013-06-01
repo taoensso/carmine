@@ -6,24 +6,23 @@ Current [semantic](http://semver.org/) version:
 
 # Carmine, a Clojure Redis client & message queue
 
-[Redis](http://www.redis.io/) is *awesome* and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
+[Redis](http://www.redis.io/) is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
 
-## Aren't There Already A Bunch of Clients?
+##### Aren't there already a bunch of clients?
 
 Plenty: there's [redis-clojure](https://github.com/tavisrudd/redis-clojure), [clj-redis](https://github.com/mmcgrana/clj-redis) based on [Jedis](https://github.com/xetorthio/jedis), [Accession](https://github.com/abedra/accession), and (the newest) [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure).
 
-Each has its strengths but these strengths often fail to overlap, leaving one with no easy answer to an obvious question: *which one should you use*?
+Each has its strengths but these strengths often fail to overlap, leaving one with no easy answer to an obvious question: _which one should you use_?
 
 Carmine is an attempt to **cohesively bring together the best bits from each client**. And by bringing together the work of others I'm hoping to encourage more folks to **pool their efforts** and get behind one banner. (Rah-rah and all that).
 
-## What's In The Box?
+## What's in the box™?
  * Small, uncomplicated **all-Clojure** library.
- * **Good performance**.
- * **Modern targets**: Redis 2.0+ (with full [2.6](http://antirez.com/post/redis-2.6-is-near.html) support), Clojure 1.3+, [Leiningen 2](https://github.com/technomancy/leiningen/wiki/Upgrading) support (not mandatory).
+ * **Fully documented**, up-to-date API, including **full Redis 2.6 support**.
+ * **Great performance**.
  * Industrial strength **connection pooling**.
- * Complete and accurate command definitions with **full documentation**.
  * Composable, **first-class command functions**.
- * Flexible, high-performance **binary-safe serialization**.
+ * Flexible, high-performance **binary-safe serialization** using [Nippy](https://github.com/ptaoussanis/nippy).
  * Full support for **Lua scripting**, **Pub/Sub**, etc.
  * Full support for custom **reply parsing**.
  * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
@@ -31,20 +30,15 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
  * Simple, high-performance **distributed lock** (Redis 2.6+).
  * **Ring session-store**.
 
-## Getting Started
+## Getting started
 
-### Leiningen
+### Dependencies
 
-Depend on Carmine in your `project.clj`:
-
-```clojure
-[com.taoensso/carmine "1.8.0"]
-```
-
-and `require` the library:
+Add the necessary dependency to your [Leiningen](http://leiningen.org/) `project.clj` and `require` the library in your ns:
 
 ```clojure
-(ns my-app (:require [taoensso.carmine :as car]))
+[com.taoensso/carmine "1.8.0"] ; project.clj
+(ns my-app (:require [taoensso.carmine :as car])) ; ns
 ```
 
 ### Connections
@@ -62,7 +56,7 @@ Unless you need the added flexibility of specifying the pool and spec for each r
 (defmacro wcar [& body] `(car/with-conn pool spec-server1 ~@body))
 ```
 
-### Basic Commands
+### Basic commands
 
 Sending commands is easy:
 
@@ -116,7 +110,7 @@ Types are handled as follows:
 
 You can force automatic de/serialization for an argument of any type by wrapping it with `car/serialize`.
 
-### Documentation and Command Coverage
+### Documentation and command coverage
 
 Like [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure), Carmine uses the [official Redis command reference](https://github.com/antirez/redis-doc/blob/master/commands.json) to generate its own command API. Which means that not only is Carmine's command coverage *always complete*, but it's also **fully documented**:
 
@@ -168,7 +162,7 @@ Both of these calls are equivalent but the latter counted the keys for us. `zuni
 
 Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `lua-script`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
 
-### Commands Are (Just) Functions
+### Commands are (just) functions
 
 In Carmine, Redis commands are *real functions*. Which means you can *use* them like real functions:
 
@@ -246,7 +240,7 @@ You can adjust subscriptions and/or handlers:
 
 Note that subscriptions are *connection-local*: you can have three different listeners each listening for different messages, using different handlers. This is great stuff.
 
-### Reply Parsing
+### Reply parsing
 
 Want a little more control over how server replies are parsed? You have all the control you need:
 
@@ -257,7 +251,7 @@ Want a little more control over how server replies are parsed? You have all the 
 => ["PONG" "pong" "pong" "PONG"]
 ```
 
-### Binary Data
+### Binary data
 
 Carmine's serializer has no problem handling arbitrary byte[] data. But the serializer involves overhead that may not always be desireable. So for maximum flexibility Carmine gives you automatic, *zero-overhead* read and write facilities for raw binary data:
 
@@ -267,7 +261,7 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 => ["OK" [#<byte[] [B@7c3ab3b4> 50]]
 ```
 
-### Message Queue
+### Message queue
 
 **Redis 2.6+ only, currently ALPHA QUALITY**
 
@@ -289,7 +283,7 @@ Redis makes a great [message queue server](http://antirez.com/post/250):
 
 Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.message-queue` namespace for details.
 
-### Distributed Locks
+### Distributed locks
 
 ```clojure
 (:require [taoensso.carmine.locks :as locks]) ; Add to `ns` macro
@@ -314,20 +308,27 @@ In principle it should be possible to get close to the theoretical maximum perfo
 
 Likewise, I'll happily trade a little less throughput for simpler code.
 
-### YourKit
+## Project links
+
+  * [API documentation](http://ptaoussanis.github.io/carmine/).
+  * My other [Clojure libraries](https://www.taoensso.com/clojure-libraries) (Redis & DynamoDB clients, logging+profiling, I18n+L10n, serialization, A/B testing).
+
+##### This project supports the **CDS and ClojureWerkz project goals**:
+
+  * [CDS](http://clojure-doc.org/), the **Clojure Documentation Site**, is a contributer-friendly community project aimed at producing top-notch Clojure tutorials and documentation.
+
+  * [ClojureWerkz](http://clojurewerkz.org/) is a growing collection of open-source, batteries-included **Clojure libraries** that emphasise modern targets, great documentation, and thorough testing.
+
+##### YourKit
 
 Carmine was developed with the help of the [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp). YourKit, LLC kindly supports open source projects by offering an open source license. They also make the [YourKit .NET Profiler](http://www.yourkit.com/.net/profiler/index.jsp).
 
-## Carmine Supports the ClojureWerkz and CDS Project Goals
+## Contact & contribution
 
-ClojureWerkz is a growing collection of open-source, batteries-included [Clojure libraries](http://clojurewerkz.org/) that emphasise modern targets, great documentation, and thorough testing.
+Please use the [project's GitHub issues page](https://github.com/ptaoussanis/carmine/issues) for project questions/comments/suggestions/whatever **(pull requests welcome!)**. Am very open to ideas if you have any!
 
-CDS (Clojure Documentation Site) is a contributor-friendly community project aimed at producing top-notch [Clojure tutorials](http://clojure-doc.org/) and documentation.
-
-## Contact & Contribution
-
-Reach me (Peter Taoussanis) at [taoensso.com](https://www.taoensso.com) for questions/comments/suggestions/whatever. I'm very open to ideas if you have any! I'm also on Twitter: [@ptaoussanis](https://twitter.com/#!/ptaoussanis).
+Otherwise reach me (Peter Taoussanis) at [taoensso.com](https://www.taoensso.com) or on Twitter ([@ptaoussanis](https://twitter.com/#!/ptaoussanis)). Cheers!
 
 ## License
 
-Copyright &copy; 2012 Peter Taoussanis. Distributed under the [Eclipse Public License](http://www.eclipse.org/legal/epl-v10.html), the same as Clojure.
+Copyright &copy; 2012, 2013 Peter Taoussanis. Distributed under the [Eclipse Public License](http://www.eclipse.org/legal/epl-v10.html), the same as Clojure.
