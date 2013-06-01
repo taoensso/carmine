@@ -309,7 +309,7 @@ Likewise, I'll happily trade a little less throughput for simpler code.
 ## Project links
 
   * [API documentation](http://ptaoussanis.github.io/carmine/).
-  * My other [Clojure libraries](https://www.taoensso.com/clojure-libraries) (Redis & DynamoDB clients, logging+profiling, I18n+L10n, serialization, A/B testing).
+  * My other [Clojure libraries](https://www.taoensso.com/clojure-libraries) (Redis & DynamoDB clients, logging+profiling, i18n+L10n, serialization, A/B testing).
 
 ##### This project supports the **CDS and ClojureWerkz project goals**:
 
