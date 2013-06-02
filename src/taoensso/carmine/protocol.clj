@@ -164,8 +164,7 @@
                  :bin [payload payload-size]))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count (partial get-basic-reply! in
-                                                  throw-exceptions?)))
+           (utils/repeatedly* bulk-count #(get-basic-reply! in throw-exceptions?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
@@ -194,7 +193,7 @@
 
       (if (and (= reply-count 1) (not always-as-vec?))
         (get-reply! in true (first parsers))
-        (utils/mapv* (partial get-reply! in false) parsers)))))
+        (utils/mapv* #(get-reply! in false %) parsers)))))
 
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server.
