@@ -76,6 +76,7 @@
   ;; {:ping 498, :set 580, :get 557}
   (bench-carmine)
   ;; {:ping 642, :set 717, :get 718} ; Carmine 0.9.0
+  ;; {:ping 704, :set 755, :get 778} ; Carmine 1.9.1
   (bench-accession)
   ;; {:ping 2214, :set "DNF", :get "DNF"} ; Doesn't close sockets!!
 
