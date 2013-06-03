@@ -84,13 +84,13 @@
 ;; (defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {}
 ;;                                     (or m nil) ; For < 1.5.0-RC3 (CLJ-1098)
 ;;                                     ))
-
 (defn repeatedly* "Like `repeatedly` but faster and returns a vector."
   [n f]
-  (loop [v (transient []) idx 0]
+  (loop [v (transient [])
+         idx 0]
     (if (>= idx n)
       (persistent! v)
-      (recur (conj! v (f)) (inc idx)))))
+      (recur (conj! v (f)) (unchecked-inc idx)))))
 
 (defn mapv* ; Imported from Clojure 1.4
   ([f coll] (-> (reduce (fn [v o] (conj! v (f o))) (transient []) coll)
