@@ -81,12 +81,13 @@
                                       arg)))
 
         payload-size (alength ba)
-        marked-type? (not (or (= type :string) (= type :simple-number)))
+        marked-type? (not (or (identical? type :string)
+                              (identical? type :simple-number)))
         data-size    (if marked-type? (+ payload-size 2) payload-size)]
 
     ;; To support various special goodies like serialization, we reserve
     ;; strings that begin with a null terminator
-    (when (and (= type :string) (.startsWith ^String arg "\u0000"))
+    (when (and (identical? type :string) (.startsWith ^String arg "\u0000"))
       (throw (Exception.
               (str "String arguments cannot begin with the null terminator: "
                    arg))))
@@ -149,8 +150,7 @@
                                   bs-clj :clj
                                   bs-bin :bin
                                   nil))) :str)
-
-                   str?         (= type :str)
+                   str?         (identical? type :str)
                    payload-size (int (if str? data-size (- data-size 2)))
                    payload      (byte-array payload-size)]
 
