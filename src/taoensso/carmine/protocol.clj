@@ -192,7 +192,7 @@
       (reset! (:parser-queue *context*) [])
 
       (if (and (= reply-count 1) (not always-as-vec?))
-        (get-reply! in true (first parsers))
+        (get-reply! in true (nth parsers 0))
         (utils/mapv* #(get-reply! in false %) parsers)))))
 
 (defmacro with-context
