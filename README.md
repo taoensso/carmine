@@ -10,25 +10,23 @@ Current [semantic](http://semver.org/) version:
 
 ##### Aren't there already a bunch of clients?
 
-Plenty: there's [redis-clojure](https://github.com/tavisrudd/redis-clojure), [clj-redis](https://github.com/mmcgrana/clj-redis) based on [Jedis](https://github.com/xetorthio/jedis), [Accession](https://github.com/abedra/accession), and (the newest) [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure).
-
-Each has its strengths but these strengths often fail to overlap, leaving one with no easy answer to an obvious question: _which one should you use_?
+Plenty: there's [redis-clojure](https://github.com/tavisrudd/redis-clojure), [clj-redis](https://github.com/mmcgrana/clj-redis) based on [Jedis](https://github.com/xetorthio/jedis), [Accession](https://github.com/abedra/accession), and (the newest) [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure). Each has its strengths but these strengths often fail to overlap, leaving one with no easy answer to an obvious question: _which one should you use_?
 
 Carmine is an attempt to **cohesively bring together the best bits from each client**. And by bringing together the work of others I'm hoping to encourage more folks to **pool their efforts** and get behind one banner. (Rah-rah and all that).
 
 ## What's in the box™?
- * Small, uncomplicated **all-Clojure** library.
- * **Fully documented**, up-to-date API, including **full Redis 2.6 support**.
- * **Great performance**.
- * Industrial strength **connection pooling**.
- * Composable, **first-class command functions**.
- * Flexible, high-performance **binary-safe serialization** using [Nippy](https://github.com/ptaoussanis/nippy).
- * Full support for **Lua scripting**, **Pub/Sub**, etc.
- * Full support for custom **reply parsing**.
- * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
- * Simple, high-performance **message queue** (Redis 2.6+).
- * Simple, high-performance **distributed lock** (Redis 2.6+).
- * **Ring session-store**.
+  * Small, uncomplicated **all-Clojure** library.
+  * **Fully documented**, up-to-date API, including **full Redis 2.6 support**.
+  * **Great performance**.
+  * Industrial strength **connection pooling**.
+  * Composable, **first-class command functions**.
+  * Flexible, high-performance **binary-safe serialization** using [Nippy](https://github.com/ptaoussanis/nippy).
+  * Full support for **Lua scripting**, **Pub/Sub**, etc.
+  * Full support for custom **reply parsing**.
+  * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
+  * Simple, high-performance **message queue** (Redis 2.6+).
+  * Simple, high-performance **distributed lock** (Redis 2.6+).
+  * **Ring session-store**.
 
 ## Getting started
 
@@ -311,7 +309,7 @@ Likewise, I'll happily trade a little less throughput for simpler code.
 ## Project links
 
   * [API documentation](http://ptaoussanis.github.io/carmine/).
-  * My other [Clojure libraries](https://www.taoensso.com/clojure-libraries) (Redis & DynamoDB clients, logging+profiling, I18n+L10n, serialization, A/B testing).
+  * My other [Clojure libraries](https://www.taoensso.com/clojure-libraries) (Redis & DynamoDB clients, logging+profiling, i18n+L10n, serialization, A/B testing).
 
 ##### This project supports the **CDS and ClojureWerkz project goals**:
 

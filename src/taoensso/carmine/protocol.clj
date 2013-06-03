@@ -164,8 +164,7 @@
                  :bin [payload payload-size]))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count (partial get-basic-reply! in
-                                                  throw-exceptions?)))
+           (utils/repeatedly* bulk-count #(get-basic-reply! in throw-exceptions?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
@@ -182,7 +181,7 @@
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [always-as-vec?]
+  [as-bulk?]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -192,9 +191,9 @@
       ;; (swap! (:parser-queue *context*) #(subvec % reply-count))
       (reset! (:parser-queue *context*) [])
 
-      (if (and (= reply-count 1) (not always-as-vec?))
-        (get-reply! in true (first parsers))
-        (utils/mapv* (partial get-reply! in false) parsers)))))
+      (if (and (= reply-count 1) (not as-bulk?))
+        (get-reply! in true (nth parsers 0))
+        (utils/mapv* #(get-reply! in false %) parsers)))))
 
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server.
