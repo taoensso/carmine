@@ -196,17 +196,16 @@
                                (atom false))]
     (when auto-start? (start worker)) worker))
 
-(defn clear-all
-  "Cleans up all queue related data"
-  []
+(defn clear
+  "Removes all queue's currently queued messages and all queue metadata."
+  [qname]
   (car/lua-script
-   "local queues = redis.call ('keys', _:keys)
-    for i,q in pairs(queues) do 
+   "local queues = redis.call('keys', _:keys)
+    for i,q in pairs(queues) do
       redis.call('del',queues[i])
-    end
-    "
-    {:keys (qkey "*")} {}) 
-  )
+    end"
+   {:keys (qkey qname)}
+   {}))
 
 ;;;; Examples, tests, etc.
 
@@ -217,7 +216,8 @@
       (defmacro wcar [& body] `(car/with-conn p s ~@body)))
 
   ;; Delete all queue keys
-  
+  (when-let [queues (seq (wcar (car/keys (qkey "*"))))]
+    (wcar (apply car/del queues)))
 
   (def my-worker (make-dequeue-worker nil nil "myq"))
   (wcar (doall (map #(enqueue "myq" (str %)) (range 10))))

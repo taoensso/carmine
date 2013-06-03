@@ -1,7 +1,5 @@
 (ns test_carmine.message_queue
-  (:use  
-    clojure.test
-    clojure.pprint)
+  (:use     [clojure.test])
   (:require [clojure.string   :as str]
             [taoensso.carmine :as car]
             [taoensso.carmine.message-queue :as mq]))
@@ -45,23 +43,22 @@
     (slurp-keys)
     (is (= (wcar (mq/status testq id)) nil))))
 
-(defn describe-queue 
-  "The state of the given queue within redis"
+(defn queue-metadata "Returns given queue's current metadata."
    [qname]
-   {:backoff (wcar (car/get (mq/qkey qname "backoff?")))
-    :id-circle (wcar (car/lrange (mq/qkey qname "id-circle") 0 -1))    
+   {:backoff?  (wcar (car/get      (mq/qkey qname "backoff?")))
+    :id-circle (wcar (car/lrange   (mq/qkey qname "id-circle") 0 -1))
     :messsages (wcar (car/hgetall* (mq/qkey qname "messages")))
-    :locks (wcar (car/hgetall* (mq/qkey qname "locks")))})
+    :locks     (wcar (car/hgetall* (mq/qkey qname "locks")))})
 
-(deftest cleanup 
-  (wcar (mq/clear-all))
-  (let [[id c] (wcar (mq/enqueue "foo" 1))]   
-    (is (= c) 2); one message + end of circle
-    (is (= (wcar (mq/dequeue-1 "foo" :worker-context? true)) "backoff")) 
-    (:backoff (describe-queue "foo")) 
+(deftest cleanup
+  (wcar (mq/clear testq))
+  (let [[id c] (wcar (mq/enqueue testq 1))]
+    (is (= c) 2) ; One message + end of circle
+    (is (= (wcar (mq/dequeue-1 testq :worker-context? true)) "backoff"))
     (Thread/sleep 2000) ; Wait for backoff to expire
-    (is (= (wcar (mq/dequeue-1 "foo" :worker-context? true)) [id 1 "new"]))
-    (wcar (mq/clear-all)) 
-    (is (= (describe-queue "foo")) {:backoff nil :id-circle [] :messsages {} :locks {}})))
+    (is (= (wcar (mq/dequeue-1 testq :worker-context? true)) [id 1 "new"]))
+    (wcar (mq/clear testq))
+    (is (= (queue-metadata testq))
+        {:backoff? nil :id-circle [] :messsages {} :locks {}})))
 
 
