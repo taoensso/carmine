@@ -80,7 +80,7 @@
       (is (= @prm i))
       (assertion q id))
     "default" nil 1 assert-done
-    "retry" :retry 2 assert-unlocked
+    "retry"   :retry 2 assert-unlocked
     "success" :success 3 assert-done
     "error"   :error 4 assert-done
     ))

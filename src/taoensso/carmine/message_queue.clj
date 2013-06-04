@@ -141,7 +141,7 @@
 (defn ^:private unlock [pool spec qname message-id]
   (car/with-conn pool spec (car/hdel (qkey qname "locks") message-id)))
 
-(defn handle-error 
+(defn ^:private handle-error 
   [pool spec qname message-id poll-reply & [t & _]]
   (mark-as-done pool spec qname message-id)
   (timbre/error (or t "") (str "Error while handling message from queue: " qname "\n") poll-reply)
