@@ -11,7 +11,7 @@
             [taoensso.timbre :as timbre])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
            [taoensso.carmine.connections ConnectionPool]
-           [taoensso.carmine.protocol    Serialized]
+           [taoensso.carmine.protocol    Serialized Raw]
            java.net.URI))
 
 ;;;; Connections
@@ -129,6 +129,10 @@
   "Forces argument of any type (including simple number and binary types) to be
   subject to automatic de/serialization."
   [x] (protocol/Serialized. x))
+
+(defn raw "Alpha - subject to change." [x] (protocol/Raw. x))
+(defmacro parse-raw "Alpha - subject to change."
+  [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
 
 (defn return
   "Special command that takes any value and returns it unchanged as part of
@@ -348,7 +352,7 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply! in# false)]
+          (let [reply# (protocol/get-basic-reply! in# false false)]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#

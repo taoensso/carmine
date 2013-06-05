@@ -24,10 +24,9 @@
 (def ^:private ^:const charset     "UTF-8")
 (def ^:private ^:const bytes-class (Class/forName "[B"))
 
-;; Define a special type that can be used to box values for which we'd like
-;; to force automatic de/serialization (e.g. simple number types that are
-;; normally converted to byte strings).
+;;; Wrapper types to box values for which we'd like specific `send-arg` behaviour
 (deftype Serialized [value])
+(deftype Raw        [value])
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
@@ -61,13 +60,14 @@
     * Binary (byte array) args go through un-munged.
     * Everything else gets serialized."
   [^BufferedOutputStream out arg]
-  (let [type (cond (string?  arg) :string ; Most common 1st!
+  (let [type (cond (string? arg) :string ; Most common 1st!
                    ;;(keyword? arg) :keyword
                    (or (instance? Long    arg)
                        (instance? Double  arg)
                        (instance? Integer arg)
                        (instance? Float   arg)) :simple-number
                    (instance? bytes-class arg)  :bytes
+                   (instance? Raw         arg)  :raw
                    :else                        :serialized)
 
         ^bytes ba (case type
@@ -75,13 +75,14 @@
                     :keyword       (bytestring (name arg))
                     :simple-number (bytestring (str arg))
                     :bytes         arg
+                    :raw           (.value ^Raw arg)
                     :serialized    (nippy/freeze-to-bytes
                                     (if (instance? Serialized arg)
                                       (.value ^Serialized arg)
                                       arg)))
 
         payload-size (alength ba)
-        marked-type? (not (or (= type :string) (= type :simple-number)))
+        marked-type? (case type (:bytes :serialized) true false)
         data-size    (if marked-type? (+ payload-size 2) payload-size)]
 
     ;; To support various special goodies like serialization, we reserve
@@ -129,7 +130,7 @@
       * `:` for integer reply.
       * `$` for bulk reply.
       * `*` for multi-bulk reply."
-  [^DataInputStream in throw-exceptions?]
+  [^DataInputStream in throw-exceptions? raw?]
   (let [reply-type (char (.readByte in))]
     (case reply-type
       \+ (.readLine in)
@@ -140,44 +141,48 @@
       ;; Bulk data replies need checking for special in-data markers
       \$ (let [data-size (Integer/parseInt (.readLine in))]
            (when-not (neg? data-size) ; NULL bulk reply
-             (let [possibly-special-type? (>= data-size 2)
-                   type (or (when possibly-special-type?
+             (let [maybe-marked-type? (and (not raw?) (>= data-size 2))
+                   type (or (when maybe-marked-type?
                               (.mark in 2)
                               (let [h (byte-array 2)]
                                 (.readFully in h 0 2)
                                 (condp =ba? h
                                   bs-clj :clj
                                   bs-bin :bin
-                                  nil))) :str)
+                                  nil)))
+                            (if raw? :raw :str))
 
-                   str?         (= type :str)
-                   payload-size (int (if str? data-size (- data-size 2)))
+                   marked-type? (case type (:clj :bin) true false)
+                   payload-size (int (if marked-type? (- data-size 2) data-size))
                    payload      (byte-array payload-size)]
 
-               (when (and possibly-special-type? str? (.reset in)))
+               (when (and maybe-marked-type? (not marked-type?)) (.reset in))
                (.readFully in payload 0 payload-size)
                (.readFully in (byte-array 2) 0 2) ; Discard final crlf
 
                (case type
                  :str (String. payload 0 payload-size charset)
                  :clj (nippy/thaw-from-bytes payload)
-                 :bin [payload payload-size]))))
+                 :bin [payload payload-size]
+                 :raw payload))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count #(get-basic-reply! in throw-exceptions?)))
+           (utils/repeatedly* bulk-count
+             #(get-basic-reply! in throw-exceptions? raw?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
 (defn- get-reply! [^DataInputStream in throw-exceptions? parser]
+  ;; TODO Reliance on metadata breaks composability
   (if parser
     (let [m (meta parser)]
       (parser (when-not (:dummy-reply? m)
                 (get-basic-reply! in (or (:throw-exceptions? m)
-                                         throw-exceptions?)))))
-    (get-basic-reply! in throw-exceptions?)))
+                                         throw-exceptions?) (:raw? m)))))
+    (get-basic-reply! in throw-exceptions? false)))
 
 (defn get-replies!
-  "IMPLEMENTATION DETAIL - please don't use this. Use `with-replies` instead.
+  "Implementation detail - don't use this.
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
