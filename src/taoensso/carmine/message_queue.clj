@@ -218,7 +218,7 @@
     for i,q in pairs(queues) do
       redis.call('del',queues[i])
     end"
-   {:keys (qkey qname)}
+   {:keys (qkey qname "*")}
    {}))
 
 ;;;; Examples, tests, etc.

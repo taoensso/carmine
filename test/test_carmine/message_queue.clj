@@ -53,14 +53,19 @@
 
 (deftest cleanup
   (wcar (mq/clear testq))
-  (let [[id c] (wcar (mq/enqueue testq 1))]
+  (wcar (mq/clear "untouched"))
+  (let [[id c] (wcar (mq/enqueue testq 1)) [u-id u-c] (wcar (mq/enqueue "untouched" 1))]
     (is (= c) 2) ; One message + end of circle
     (is (= (wcar (mq/dequeue-1 testq :worker-context? true)) "backoff"))
     (Thread/sleep 2000) ; Wait for backoff to expire
     (is (= (wcar (mq/dequeue-1 testq :worker-context? true)) [id 1 "new"]))
     (wcar (mq/clear testq))
-    (is (= (queue-metadata testq))
-        {:backoff? nil :id-circle [] :messsages {} :locks {}})))
+    (is (= (queue-metadata testq)
+        {:backoff? nil :id-circle [] :messsages {} :recently-done [] :locks {}}))
+    (is (= (queue-metadata "untouched"); cleanup is isolated
+        {:backoff? nil, :id-circle [u-id "end-of-circle"]
+         :messsages {u-id 1}, :recently-done [], :locks {}}))
+    (wcar (mq/clear "untouched"))))
 
 (defn create-worker [q resp]
   (let [prm (promise)]
