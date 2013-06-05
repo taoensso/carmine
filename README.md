@@ -1,7 +1,7 @@
 Current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.9.1"] ; Requires Clojure 1.4+ as of 1.9.0
+[com.taoensso/carmine "1.10.0"] ; Requires Clojure 1.4+ as of 1.9.0
 ```
 
 # Carmine, a Clojure Redis client & message queue
@@ -35,7 +35,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Add the necessary dependency to your [Leiningen](http://leiningen.org/) `project.clj` and `require` the library in your ns:
 
 ```clojure
-[com.taoensso/carmine "1.9.1"] ; project.clj
+[com.taoensso/carmine "1.10.0"] ; project.clj
 (ns my-app (:require [taoensso.carmine :as car])) ; ns
 ```
 
