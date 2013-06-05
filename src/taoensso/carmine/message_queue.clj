@@ -135,17 +135,20 @@
   (stop  [this])
   (start [this]))
 
-(defn ^:private mark-as-done [pool spec qname message-id]
+(defn- mark-as-done [pool spec qname message-id]
   (car/with-conn pool spec (car/sadd (qkey qname "recently-done") message-id)))
 
-(defn ^:private unlock [pool spec qname message-id]
+(defn- unlock [pool spec qname message-id]
   (car/with-conn pool spec (car/hdel (qkey qname "locks") message-id)))
 
-(defn ^:private handle-error 
-  [pool spec qname message-id poll-reply & [t & _]]
+(defn- handle-error
+  [pool spec qname message-id poll-reply & [throwable]]
   (mark-as-done pool spec qname message-id)
-  (timbre/error (or t "") (str "Error while handling message from queue: " qname "\n") poll-reply)
-  )
+  (let [error-msg (str "Error while handling message from queue: "
+                       qname "\n" poll-reply)]
+    (if throwable
+      (timbre/error throwable error-msg)
+      (timbre/error error-msg))))
 
 (defrecord DequeueWorker [pool spec qname opts active?]
   IDequeueWorker
@@ -164,23 +167,25 @@
                 (Thread/sleep backoff-msecs)
                 (let [[message-id message-content type] poll-reply]
                   (when (= type "retry")
-                    (timbre/warn (str "Retrying message from queue: " qname "\n") poll-reply))
+                    (timbre/warn (str "Retrying message from queue: "
+                                      qname "\n") poll-reply))
                   (try
-                      (case (handler-fn message-content)
-                        :success (mark-as-done pool spec qname message-id)
-                        :retry   (unlock pool spec qname message-id)
-                        :error   (handle-error pool spec qname message-id poll-reply)                                              (mark-as-done pool spec qname message-id))
-                       (catch Throwable t
-                         (handle-error pool spec qname message-id poll-reply t))))))
-            (when throttle-msecs (Thread/sleep throttle-msecs))))))
-    nil))
-
+                    (case (handler-fn message-content)
+                      :success (mark-as-done pool spec qname message-id)
+                      :retry   (unlock       pool spec qname message-id)
+                      :error   (handle-error pool spec qname message-id poll-reply)
+                      (mark-as-done pool spec qname message-id))
+                    (catch Throwable t
+                      (handle-error pool spec qname message-id poll-reply t))))))
+            (when throttle-msecs (Thread/sleep throttle-msecs)))))
+      true)))
 
 (defn make-dequeue-worker
   "Creates a threaded worker to poll for and handle messages pushed to named
   queue.
     * `handler-fn` should be a unary fn of dequeued messages (presumably with
-      side-effects).
+      side-effects) that throws an exception or returns e/o #{:success :error
+      :retry}.
     * `handler-ttl-msecs` specifies how long a handler may keep a message
       before that handler is considered fatally stalled and the message
       re-activated in queue. BEWARE the risk of duplicate processing if ttl is
@@ -188,7 +193,6 @@
     * `throttle-msecs` specifies thread sleep period between each poll.
     * `backoff-msecs` specifies thread sleep period each time end of queue is
       reached. Backoff is synchronized between all dequeue workers."
-  ;; TODO Allow handler-fn to return e/o #{:success :error :retry}, etc.
   [connection-pool connection-spec qname
    & {:keys [handler-fn handler-ttl-msecs throttle-msecs backoff-msecs auto-start?]
       :or   {handler-fn (fn [msg] (timbre/info (str "Message received from queue: "

@@ -1,5 +1,5 @@
 (ns test_carmine.message_queue
-  (:use clojure.test clojure.template)
+  (:use     [clojure.test])
   (:require [clojure.string   :as str]
             [taoensso.carmine :as car]
             [taoensso.carmine.message-queue :as mq]))
@@ -65,7 +65,7 @@
 (defn create-worker [q resp]
   (let [prm (promise)]
     (mq/make-dequeue-worker p s q :handler-fn (fn [x] (deliver prm x) resp))
-     prm))
+    prm))
 
 (defn assert-done [q id]
   (is (= (get-in (queue-metadata q) [:recently-done 0]) id)))
@@ -75,12 +75,11 @@
 
 (deftest statuses
   (wcar (mq/clear testq))
-  (do-template [q resp i assertion]
-    (let [prm (create-worker q resp) [id _] (wcar (mq/enqueue q i))]
-      (is (= @prm i))
-      (assertion q id))
-    "default" nil 1 assert-done
-    "retry"   :retry 2 assert-unlocked
-    "success" :success 3 assert-done
-    "error"   :error 4 assert-done
-    ))
+  (are [q resp i assertion]
+       (let [prm (create-worker q resp) [id _] (wcar (mq/enqueue q i))]
+         (is (= @prm i))
+         (assertion q id))
+       "default" nil      1 assert-done
+       "retry"   :retry   2 assert-unlocked
+       "success" :success 3 assert-done
+       "error"   :error   4 assert-done))
