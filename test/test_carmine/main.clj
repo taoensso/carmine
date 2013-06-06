@@ -321,10 +321,12 @@
 (deftest test-reply-parsing
   (let [k (test-key "reply-parsing")]
     (wcar (car/set k [:a :A :b :B :c :C :d :D]))
-    (is (= ["PONG" {:a :A :b :B :c :C :d :D} "PONG" "PONG"]
+    (is (= ["PONG" {:a :A :b :B :c :C :d :D} "pong" "pong" "PONG"]
            (wcar (car/ping)
                  (car/with-parser #(apply hash-map %) (car/get k))
-                 (car/ping)
+                 (car/with-parser str/lower-case
+                   (car/ping)
+                   (car/ping))
                  (car/ping))))))
 
 (deftest test-transactions
