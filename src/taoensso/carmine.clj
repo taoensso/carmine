@@ -126,19 +126,22 @@
 
 (comment (wc (return :foo) (ping) (return :bar)))
 
-(defmacro with-replies ; TODO Would `pipeline` be a clearer name?
-  "Alpha - subject to change.
+(defmacro with-replies*
+  "Alpha - subject to change!
   Evaluates body, immediately returning the server's response to any contained
   Redis commands (i.e. before enclosing `with-conn` ends).
 
   As an implementation detail, stashes and then `return`s any replies already
   queued with Redis server: i.e. should be compatible with pipelining."
-  [& body]
+  [as-vector? & body]
   `(let [stashed-replies# (protocol/get-replies! true)]
      ~@body
-     (let [replies# (protocol/get-replies! false)]
+     (let [replies# (protocol/get-replies! ~as-vector?)]
        (doseq [reply# stashed-replies#] (return reply#))
        replies#)))
+
+(defmacro with-replies     [& body] `(with-replies* false ~@body))
+(defmacro with-replies-vec [& body] `(with-replies* true  ~@body))
 
 (comment (wc (echo 1) (println (with-replies (ping))) (echo 2)))
 

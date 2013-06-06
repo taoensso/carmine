@@ -185,7 +185,7 @@
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [as-bulk?]
+  [as-vector?]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -195,7 +195,7 @@
       ;; (swap! (:parser-queue *context*) #(subvec % reply-count))
       (reset! (:parser-queue *context*) [])
 
-      (if (and (= reply-count 1) (not as-bulk?))
+      (if (and (= reply-count 1) (not as-vector?))
         (get-reply! in true (nth parsers 0))
         (utils/mapv* #(get-reply! in false %) parsers)))))
 
