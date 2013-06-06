@@ -172,14 +172,13 @@
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
-(defn- get-reply! [^DataInputStream in throw-exceptions? parser]
-  ;; TODO Reliance on metadata breaks composability
+(defn- get-reply! [^DataInputStream in throw-exceptions?* parser]
   (if parser
-    (let [m (meta parser)]
-      (parser (when-not (:dummy-reply? m)
-                (get-basic-reply! in (or (:throw-exceptions? m)
-                                         throw-exceptions?) (:raw? m)))))
-    (get-basic-reply! in throw-exceptions? false)))
+    (let [{:keys [dummy-reply? throw-exceptions? raw?] :as m} (meta parser)]
+      (parser (when-not dummy-reply?
+                (get-basic-reply! in (or throw-exceptions? throw-exceptions?*)
+                                  raw?))))
+    (get-basic-reply! in throw-exceptions?* false)))
 
 (defn get-replies!
   "Implementation detail - don't use this.

@@ -67,27 +67,6 @@
 
 ;;;; Misc
 
-(defmacro with-parser
-  "Alpha - subject to change.
-  Wraps body so that replies to any wrapped Redis commands will be parsed with
-  (parser-fn reply). Composable. When `parser-fn` is nil, clears any current
-  parsers."
-  [parser-fn & body]
-  `(if-not ~parser-fn
-     (binding [protocol/*parser* nil] ~@body)
-     (if-let [current-parser# protocol/*parser*]
-       (binding [protocol/*parser* (comp current-parser# ~parser-fn)] ~@body)
-       (binding [protocol/*parser* ~parser-fn] ~@body))))
-
-(defmacro with-mparser
-  "Alpha - subject to change.
-  Wraps body so that multi-bulk (vector) replies to any wrapped Redis commands
-  will be parsed with (parser-fn reply)."
-  [parser-fn & body]
-  `(with-parser
-     (fn [multi-bulk-reply#] (utils/mapv* ~parser-fn multi-bulk-reply#))
-     ~@body))
-
 ;;; Note (number? x) checks for backwards compatibility with pre-v0.11 Carmine
 ;;; versions that auto-serialized simple number types
 (defn as-long   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
@@ -100,15 +79,18 @@
                             (throw (Exception. (str "Couldn't coerce as bool: "
                                                     x))))))
 
-(defmacro parse-long     [& body] `(with-parser as-long    ~@body))
-(defmacro parse-double   [& body] `(with-parser as-double  ~@body))
-(defmacro parse-bool     [& body] `(with-parser as-bool    ~@body))
-(defmacro parse-keyword  [& body] `(with-parser keyword    ~@body))
+(defmacro with-parser
+  "Alpha - subject to change!!
+  Wraps body so that replies to any wrapped Redis commands will be parsed with
+  `(f reply)`. Replaces any current parser; removes parser when `f` is nil.
 
-(defmacro parse-longs    [& body] `(with-mparser as-long   ~@body))
-(defmacro parse-doubles  [& body] `(with-mparser as-double ~@body))
-(defmacro parse-bools    [& body] `(with-mparser as-bool   ~@body))
-(defmacro parse-keywords [& body] `(with-mparser keyword   ~@body))
+  `f` may have metadata: :dummy-reply?, :throw-exceptions? :raw?."
+  [f & body] `(binding [protocol/*parser* ~f] ~@body))
+
+(defmacro parse-long    [& body] `(with-parser as-long   ~@body))
+(defmacro parse-double  [& body] `(with-parser as-double ~@body))
+(defmacro parse-bool    [& body] `(with-parser as-bool   ~@body))
+(defmacro parse-keyword [& body] `(with-parser keyword   ~@body))
 
 (defn kname
   "Joins keywords, integers, and strings to form an idiomatic compound Redis key
