@@ -24,7 +24,7 @@
 (def ^:private ^:const charset     "UTF-8")
 (def ^:private ^:const bytes-class (Class/forName "[B"))
 
-;;; Wrapper types to box values for which we'd like specific `send-arg` behaviour
+;;; Wrapper types to box values for which we'd like specific coercion behaviour
 (deftype Serialized [value])
 (deftype Raw        [value])
 
