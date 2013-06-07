@@ -25,8 +25,8 @@
 (def ^:private ^:const bytes-class (Class/forName "[B"))
 
 ;;; Wrapper types to box values for which we'd like specific coercion behaviour
-(deftype Serialized [value])
-(deftype Raw        [value])
+(deftype Frozen [value])
+(deftype Raw    [value])
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
@@ -34,14 +34,14 @@
   ^bytes [^String s] (.getBytes s charset))
 
 ;;; Request delimiters
-(def ^bytes   bs-crlf  (bytestring "\r\n"))
-(def ^Integer bs-*     (int (first (bytestring "*"))))
-(def ^Integer bs-$     (int (first (bytestring "$"))))
+(def ^bytes   bs-crlf (bytestring "\r\n"))
+(def ^Integer bs-*    (int (first (bytestring "*"))))
+(def ^Integer bs-$    (int (first (bytestring "$"))))
 
 ;; Carmine-only markers that'll be used _within_ bulk data to indicate that
 ;; the data requires special reply handling
 (def ^bytes bs-bin     (bytestring "\u0000<")) ; Binary data marker
-(def ^bytes bs-clj     (bytestring "\u0000>")) ; Serialized data marker
+(def ^bytes bs-clj     (bytestring "\u0000>")) ; Frozen data marker
 
 ;;; Fns to actually send data to stream buffer
 (defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
@@ -68,7 +68,7 @@
                        (instance? Float   arg)) :simple-number
                    (instance? bytes-class arg)  :bytes
                    (instance? Raw         arg)  :raw
-                   :else                        :serialized)
+                   :else                        :frozen)
 
         ^bytes ba (case type
                     :string        (bytestring arg)
@@ -76,13 +76,13 @@
                     :simple-number (bytestring (str arg))
                     :bytes         arg
                     :raw           (.value ^Raw arg)
-                    :serialized    (nippy/freeze-to-bytes
-                                    (if (instance? Serialized arg)
-                                      (.value ^Serialized arg)
+                    :frozen        (nippy/freeze-to-bytes
+                                    (if (instance? Frozen arg)
+                                      (.value ^Frozen arg)
                                       arg)))
 
         payload-size (alength ba)
-        marked-type? (case type (:bytes :serialized) true false)
+        marked-type? (case type (:bytes :frozen) true false)
         data-size    (if marked-type? (+ payload-size 2) payload-size)]
 
     ;; To support various special goodies like serialization, we reserve
@@ -95,8 +95,8 @@
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (when marked-type?
       (case type
-        :bytes      (send-bin out)
-        :serialized (send-clj out)))
+        :bytes  (send-bin out)
+        :frozen (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!

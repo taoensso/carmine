@@ -11,7 +11,7 @@
             [taoensso.timbre :as timbre])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
            [taoensso.carmine.connections ConnectionPool]
-           [taoensso.carmine.protocol    Serialized Raw]
+           [taoensso.carmine.protocol    Frozen Raw]
            java.net.URI))
 
 ;;;; Connections
@@ -101,16 +101,14 @@
     * Singular category names (\"account\" rather than \"accounts\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
 
-  ;; TODO Use `reduced` on Clojure 1.5 dependency bump
-  [& parts]
-  (str/join ":" (map utils/keyname (filter identity parts))))
+  [& parts] (str/join ":" (map utils/keyname (filter identity parts))))
 
 (comment (kname :foo/bar :baz "qux" nil 10))
 
-(defn serialize
+(defn freeze
   "Forces argument of any type (including simple number and binary types) to be
   subject to automatic de/serialization."
-  [x] (protocol/Serialized. x))
+  [x] (protocol/Frozen. x))
 
 (defn raw "Alpha - subject to change." [x] (protocol/Raw. x))
 (defmacro parse-raw "Alpha - subject to change."
@@ -168,7 +166,7 @@
   [script numkeys key & args]
   (try (return (with-replies (apply evalsha* script numkeys key args)))
        (catch Exception e
-         (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
+         (if (.startsWith (.getMessage e) "NOSCRIPT")
            (apply eval script numkeys key args)
            (throw e)))))
 
@@ -284,7 +282,7 @@
   [watch-keys & body]
   `(try
      (with-replies ; discard "OK" and "QUEUED" replies
-       (when (seq ~watch-keys) (apply watch ~watch-keys))
+       (when-let [wk# (seq ~watch-keys)] (apply watch wk#))
        (multi)
        ~@body)
      ;; Body discards will result in an (exec) exception:
@@ -383,8 +381,9 @@
 
 ;;;; Renamed/deprecated
 
-(def preserve "DEPRECATED. Please use `serialize`." serialize)
-(def remember "DEPRECATED. Please use `return`."    return)
+(def serialize "DEPRECATED. Please use `freeze`." freeze)
+(def preserve  "DEPRECATED. Please use `freeze`." freeze)
+(def remember  "DEPRECATED. Please use `return`."    return)
 (def ^:macro skip-replies "DEPRECATED. Please use `with-replies`." #'with-replies)
 (def ^:macro with-reply   "DEPRECATED. Please use `with-replies`." #'with-replies)
 
