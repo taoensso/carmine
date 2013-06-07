@@ -133,10 +133,12 @@
   queued with Redis server: i.e. should be compatible with pipelining."
   [as-vector? & body]
   `(let [stashed-replies# (protocol/get-replies! true)]
-     ~@body
-     (let [replies# (protocol/get-replies! ~as-vector?)]
-       (doseq [reply# stashed-replies#] (return reply#))
-       replies#)))
+     (try ~@body
+          (protocol/get-replies! ~as-vector?)
+          (finally
+           ;; Broken in for Clojure <1.5, Ref. http://goo.gl/5DvRt
+           ;; (doseq [reply# stashed-replies#] (return reply#))
+           (dorun (map return stashed-replies#))))))
 
 (defmacro with-replies     [& body] `(with-replies* false ~@body))
 (defmacro with-replies-vec [& body] `(with-replies* true  ~@body))
