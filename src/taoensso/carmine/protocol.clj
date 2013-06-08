@@ -173,7 +173,8 @@
 (defn- get-parsed-reply! [^DataInputStream in parser]
   (if parser
     (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
-      (parser (when-not dummy-reply? (get-basic-reply! in raw?))))
+      (let [reply (when-not dummy-reply? (get-basic-reply! in raw?))]
+        (try (parser reply) (catch Exception e e))))
     (get-basic-reply! in)))
 
 (defn get-replies!
