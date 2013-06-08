@@ -129,16 +129,15 @@
       * `-` for error message.
       * `:` for integer reply.
       * `$` for bulk reply.
-      * `*` for multi-bulk reply."
-  [^DataInputStream in throw-exceptions? raw?]
+      * `*` for multi bulk reply."
+  [^DataInputStream in & [raw?]]
   (let [reply-type (char (.readByte in))]
     (case reply-type
       \+ (.readLine in)
-      \- (let [e (Exception. (.readLine in))]
-           (if throw-exceptions? (throw e) e))
+      \- (Exception.     (.readLine in))
       \: (Long/parseLong (.readLine in))
 
-      ;; Bulk data replies need checking for special in-data markers
+      ;; Bulk replies need checking for special in-data markers
       \$ (let [data-size (Integer/parseInt (.readLine in))]
            (when-not (neg? data-size) ; NULL bulk reply
              (let [maybe-marked-type? (and (not raw?) (>= data-size 2))
@@ -167,25 +166,22 @@
                  :raw payload))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count
-             #(get-basic-reply! in throw-exceptions? raw?)))
+           (utils/repeatedly* bulk-count #(get-basic-reply! in raw?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
-(defn- get-reply! [^DataInputStream in throw-exceptions?* parser]
+(defn- get-parsed-reply! [^DataInputStream in parser]
   (if parser
-    (let [{:keys [dummy-reply? throw-exceptions? raw?] :as m} (meta parser)]
-      (parser (when-not dummy-reply?
-                (get-basic-reply! in (or throw-exceptions? throw-exceptions?*)
-                                  raw?))))
-    (get-basic-reply! in throw-exceptions?* false)))
+    (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
+      (parser (when-not dummy-reply? (get-basic-reply! in raw?))))
+    (get-basic-reply! in)))
 
 (defn get-replies!
   "Implementation detail - don't use this.
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [as-vector?]
+  [as-pipeline?]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -195,9 +191,10 @@
       ;; (swap! (:parser-queue *context*) #(subvec % reply-count))
       (reset! (:parser-queue *context*) [])
 
-      (if (and (= reply-count 1) (not as-vector?))
-        (get-reply! in true (nth parsers 0))
-        (utils/mapv* #(get-reply! in false %) parsers)))))
+      (if (or (> reply-count 1) as-pipeline?)
+        (utils/mapv* #(get-parsed-reply! in %) parsers)
+        (let [reply (get-parsed-reply! in (nth parsers 0))]
+          (if (instance? Exception reply) (throw reply) reply))))))
 
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server.

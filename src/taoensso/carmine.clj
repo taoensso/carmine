@@ -82,9 +82,7 @@
 (defmacro with-parser
   "Alpha - subject to change!!
   Wraps body so that replies to any wrapped Redis commands will be parsed with
-  `(f reply)`. Replaces any current parser; removes parser when `f` is nil.
-
-  `f` may have metadata: :dummy-reply?, :throw-exceptions? :raw?."
+  `(f reply)`. Replaces any current parser; removes parser when `f` is nil."
   [f & body] `(binding [protocol/*parser* ~f] ~@body))
 
 (defmacro parse-long    [& body] `(with-parser as-long   ~@body))
@@ -119,31 +117,31 @@
   an enclosing `with-conn` pipeline response."
   [value]
   (swap! (:parser-queue protocol/*context*) conj
-         (with-meta (constantly value)
-           {:dummy-reply? true})))
+         (with-meta (constantly value) {:dummy-reply? true})))
 
 (comment (wc (return :foo) (ping) (return :bar)))
 
-(defmacro with-replies*
-  "Alpha - subject to change!
+(defmacro with-replies
+  "Alpha - subject to change!!
   Evaluates body, immediately returning the server's response to any contained
   Redis commands (i.e. before enclosing `with-conn` ends).
 
   As an implementation detail, stashes and then `return`s any replies already
   queued with Redis server: i.e. should be compatible with pipelining."
-  [as-vector? & body]
-  `(let [stashed-replies# (protocol/get-replies! true)]
-     (try ~@body
-          (protocol/get-replies! ~as-vector?)
-          (finally
-           ;; Broken in for Clojure <1.5, Ref. http://goo.gl/5DvRt
-           ;; (doseq [reply# stashed-replies#] (return reply#))
-           (dorun (map return stashed-replies#))))))
+  {:arglists '([:as-pipeline & body] [& body])}
+  [& [s1 & sn :as sigs]]
+  (let [as-pipeline? (= s1 :as-pipeline)
+        body (if as-pipeline? sn sigs)]
+    `(let [stashed-replies# (protocol/get-replies! true)]
+       (try ~@body
+            (protocol/get-replies! ~as-pipeline?)
+            (finally
+             ;; Broken in for Clojure <1.5, Ref. http://goo.gl/5DvRt
+             ;; (doseq [reply# stashed-replies#] (return reply#))
+             (dorun (map return stashed-replies#)))))))
 
-(defmacro with-replies     [& body] `(with-replies* false ~@body))
-(defmacro with-replies-vec [& body] `(with-replies* true  ~@body))
-
-(comment (wc (echo 1) (println (with-replies (ping))) (echo 2)))
+(comment (wc (echo 1) (println (with-replies (ping))) (echo 2))
+         (wc (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
 
 ;;;; Standard commands
 
@@ -337,7 +335,7 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply! in# false false)]
+          (let [reply# (protocol/get-basic-reply! in#)]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#
