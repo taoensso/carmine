@@ -171,11 +171,11 @@
                               reply-type))))))
 
 (defn- get-parsed-reply! [^DataInputStream in parser]
-  (if parser
+  (if-not parser
+    (get-basic-reply! in)
     (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
       (let [reply (when-not dummy-reply? (get-basic-reply! in raw?))]
-        (try (parser reply) (catch Exception e e))))
-    (get-basic-reply! in)))
+        (try (parser reply) (catch Exception e e))))))
 
 (defn get-replies!
   "Implementation detail - don't use this.

@@ -115,13 +115,16 @@
 (defn return
   "Alpha - subject to change.
   Special command that takes any value and returns it unchanged as part of
-  an enclosing `with-conn` pipeline response. Ignores any parser in enclosing
-  context."
+  an enclosing `with-conn` pipeline response."
   [value]
-  (swap! (:parser-queue protocol/*context*) conj
-         (with-meta (constantly value) {:dummy-reply? true})))
+  (let [vfn (constantly value)
+        parser protocol/*parser*]
+    (swap! (:parser-queue protocol/*context*) conj
+           (with-meta (if parser (comp parser vfn) vfn)
+             {:dummy-reply? true}))))
 
-(comment (wc (return :foo) (ping) (return :bar)))
+(comment (wc (return :foo) (ping) (return :bar))
+         (wc (with-parser name (return :foo)) (ping) (return :bar)))
 
 (defmacro with-replies
   "Alpha - subject to change!!
@@ -174,7 +177,7 @@
       (if (.startsWith (.getMessage ^Exception r) "NOSCRIPT")
         (with-parser parser (apply eval script numkeys key args))
         (throw r))
-      (return ((or parser identity) r)))))
+      (with-parser parser (return r)))))
 
 (def ^:private interpolate-script
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
