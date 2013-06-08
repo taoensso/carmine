@@ -113,8 +113,10 @@
   [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
 
 (defn return
-  "Special command that takes any value and returns it unchanged as part of
-  an enclosing `with-conn` pipeline response."
+  "Alpha - subject to change.
+  Special command that takes any value and returns it unchanged as part of
+  an enclosing `with-conn` pipeline response. Ignores any parser in enclosing
+  context."
   [value]
   (swap! (:parser-queue protocol/*context*) conj
          (with-meta (constantly value) {:dummy-reply? true})))
