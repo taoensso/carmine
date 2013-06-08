@@ -164,11 +164,14 @@
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply."
   [script numkeys key & args]
-  (try (return (with-replies (apply evalsha* script numkeys key args)))
-       (catch Exception e
-         (if (.startsWith (.getMessage e) "NOSCRIPT")
-           (apply eval script numkeys key args)
-           (throw e)))))
+  (let [r (->> (apply evalsha* script numkeys key args)
+               (with-replies :as-pipeline)
+               (first))]
+    (if (instance? Exception r)
+      (if (.startsWith (.getMessage ^Exception r) "NOSCRIPT")
+        (apply eval script numkeys key args)
+        (throw r))
+      (return r))))
 
 (def ^:private interpolate-script
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
