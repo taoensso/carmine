@@ -124,7 +124,8 @@
 (defmacro with-replies
   "Alpha - subject to change!!
   Evaluates body, immediately returning the server's response to any contained
-  Redis commands (i.e. before enclosing `with-conn` ends).
+  Redis commands (i.e. before enclosing `with-conn` ends). Ignores any parser
+  in enclosing (not _enclosed_) context.
 
   As an implementation detail, stashes and then `return`s any replies already
   queued with Redis server: i.e. should be compatible with pipelining."
@@ -133,7 +134,7 @@
   (let [as-pipeline? (= s1 :as-pipeline)
         body (if as-pipeline? sn sigs)]
     `(let [stashed-replies# (protocol/get-replies! true)]
-       (try ~@body
+       (try (with-parser nil ~@body) ; Herewith dragons; tread lightly
             (protocol/get-replies! ~as-pipeline?)
             (finally
              ;; Broken in for Clojure <1.5, Ref. http://goo.gl/5DvRt
@@ -164,14 +165,14 @@
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply."
   [script numkeys key & args]
-  (let [r (->> (apply evalsha* script numkeys key args)
-               (with-replies :as-pipeline)
-               (first))]
+  (let [parser protocol/*parser*
+        [r & _] (->> (apply evalsha* script numkeys key args)
+                     (with-replies :as-pipeline))]
     (if (instance? Exception r)
       (if (.startsWith (.getMessage ^Exception r) "NOSCRIPT")
-        (apply eval script numkeys key args)
+        (with-parser parser (apply eval script numkeys key args))
         (throw r))
-      (return r))))
+      (return ((or parser identity) r)))))
 
 (def ^:private interpolate-script
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
