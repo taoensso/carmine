@@ -11,7 +11,7 @@
             [taoensso.timbre :as timbre])
   (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
            [taoensso.carmine.connections ConnectionPool]
-           [taoensso.carmine.protocol    Serialized Raw]
+           [taoensso.carmine.protocol    Frozen Raw]
            java.net.URI))
 
 ;;;; Connections
@@ -82,9 +82,7 @@
 (defmacro with-parser
   "Alpha - subject to change!!
   Wraps body so that replies to any wrapped Redis commands will be parsed with
-  `(f reply)`. Replaces any current parser; removes parser when `f` is nil.
-
-  `f` may have metadata: :dummy-reply?, :throw-exceptions? :raw?."
+  `(f reply)`. Replaces any current parser; removes parser when `f` is nil."
   [f & body] `(binding [protocol/*parser* ~f] ~@body))
 
 (defmacro parse-long    [& body] `(with-parser as-long   ~@body))
@@ -101,49 +99,53 @@
     * Singular category names (\"account\" rather than \"accounts\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
 
-  ;; TODO Use `reduced` on Clojure 1.5 dependency bump
-  [& parts]
-  (str/join ":" (map utils/keyname (filter identity parts))))
+  [& parts] (str/join ":" (map utils/keyname (filter identity parts))))
 
 (comment (kname :foo/bar :baz "qux" nil 10))
 
-(defn serialize
+(defn freeze
   "Forces argument of any type (including simple number and binary types) to be
   subject to automatic de/serialization."
-  [x] (protocol/Serialized. x))
+  [x] (protocol/Frozen. x))
 
 (defn raw "Alpha - subject to change." [x] (protocol/Raw. x))
 (defmacro parse-raw "Alpha - subject to change."
   [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
 
 (defn return
-  "Special command that takes any value and returns it unchanged as part of
+  "Alpha - subject to change.
+  Special command that takes any value and returns it unchanged as part of
   an enclosing `with-conn` pipeline response."
   [value]
-  (swap! (:parser-queue protocol/*context*) conj
-         (with-meta (constantly value)
-           {:dummy-reply? true})))
+  (let [vfn (constantly value)]
+    (swap! (:parser-queue protocol/*context*) conj
+           (with-meta (if-let [p protocol/*parser*] (comp p vfn) vfn)
+             {:dummy-reply? true}))))
 
-(comment (wc (return :foo) (ping) (return :bar)))
+(comment (wc (return :foo) (ping) (return :bar))
+         (wc (with-parser name (return :foo)) (ping) (return :bar)))
 
-(defmacro with-replies*
-  "Alpha - subject to change!
+(defmacro with-replies
+  "Alpha - subject to change!!
   Evaluates body, immediately returning the server's response to any contained
-  Redis commands (i.e. before enclosing `with-conn` ends).
+  Redis commands (i.e. before enclosing `with-conn` ends). Ignores any parser
+  in enclosing (not _enclosed_) context.
 
   As an implementation detail, stashes and then `return`s any replies already
   queued with Redis server: i.e. should be compatible with pipelining."
-  [as-vector? & body]
-  `(let [stashed-replies# (protocol/get-replies! true)]
-     ~@body
-     (let [replies# (protocol/get-replies! ~as-vector?)]
-       (doseq [reply# stashed-replies#] (return reply#))
-       replies#)))
+  {:arglists '([:as-pipeline & body] [& body])}
+  [& [s1 & sn :as sigs]]
+  (let [as-pipeline? (= s1 :as-pipeline)
+        body (if as-pipeline? sn sigs)]
+    `(let [stashed-replies# (protocol/get-replies! true)]
+       (try (with-parser nil ~@body) ; Herewith dragons; tread lightly
+            (protocol/get-replies! ~as-pipeline?)
+            (finally
+             ;; doseq here broken with Clojure <1.5, Ref. http://goo.gl/5DvRt
+             (with-parser nil (dorun (map return stashed-replies#))))))))
 
-(defmacro with-replies     [& body] `(with-replies* false ~@body))
-(defmacro with-replies-vec [& body] `(with-replies* true  ~@body))
-
-(comment (wc (echo 1) (println (with-replies (ping))) (echo 2)))
+(comment (wc (echo 1) (println (with-replies (ping))) (echo 2))
+         (wc (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
 
 ;;;; Standard commands
 
@@ -166,11 +168,13 @@
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply."
   [script numkeys key & args]
-  (try (return (with-replies (apply evalsha* script numkeys key args)))
-       (catch Exception e
-         (if (= (.substring (.getMessage e) 0 8) "NOSCRIPT")
-           (apply eval script numkeys key args)
-           (throw e)))))
+  (let [[r & _] (->> (apply evalsha* script numkeys key args)
+                     (with-replies :as-pipeline))]
+    (with-parser protocol/*parser*
+      (if (and (instance? Exception r)
+               (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
+        (apply eval script numkeys key args)
+        (return r)))))
 
 (def ^:private interpolate-script
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
@@ -284,7 +288,7 @@
   [watch-keys & body]
   `(try
      (with-replies ; discard "OK" and "QUEUED" replies
-       (when (seq ~watch-keys) (apply watch ~watch-keys))
+       (when-let [wk# (seq ~watch-keys)] (apply watch wk#))
        (multi)
        ~@body)
      ;; Body discards will result in an (exec) exception:
@@ -337,7 +341,7 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply! in# false false)]
+          (let [reply# (protocol/get-basic-reply! in#)]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#
@@ -383,8 +387,9 @@
 
 ;;;; Renamed/deprecated
 
-(def preserve "DEPRECATED. Please use `serialize`." serialize)
-(def remember "DEPRECATED. Please use `return`."    return)
+(def serialize "DEPRECATED. Please use `freeze`." freeze)
+(def preserve  "DEPRECATED. Please use `freeze`." freeze)
+(def remember  "DEPRECATED. Please use `return`."    return)
 (def ^:macro skip-replies "DEPRECATED. Please use `with-replies`." #'with-replies)
 (def ^:macro with-reply   "DEPRECATED. Please use `with-replies`." #'with-replies)
 

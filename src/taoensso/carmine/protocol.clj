@@ -25,8 +25,8 @@
 (def ^:private ^:const bytes-class (Class/forName "[B"))
 
 ;;; Wrapper types to box values for which we'd like specific coercion behaviour
-(deftype Serialized [value])
-(deftype Raw        [value])
+(deftype Frozen [value])
+(deftype Raw    [value])
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
@@ -34,14 +34,14 @@
   ^bytes [^String s] (.getBytes s charset))
 
 ;;; Request delimiters
-(def ^bytes   bs-crlf  (bytestring "\r\n"))
-(def ^Integer bs-*     (int (first (bytestring "*"))))
-(def ^Integer bs-$     (int (first (bytestring "$"))))
+(def ^bytes   bs-crlf (bytestring "\r\n"))
+(def ^Integer bs-*    (int (first (bytestring "*"))))
+(def ^Integer bs-$    (int (first (bytestring "$"))))
 
 ;; Carmine-only markers that'll be used _within_ bulk data to indicate that
 ;; the data requires special reply handling
 (def ^bytes bs-bin     (bytestring "\u0000<")) ; Binary data marker
-(def ^bytes bs-clj     (bytestring "\u0000>")) ; Serialized data marker
+(def ^bytes bs-clj     (bytestring "\u0000>")) ; Frozen data marker
 
 ;;; Fns to actually send data to stream buffer
 (defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
@@ -68,7 +68,7 @@
                        (instance? Float   arg)) :simple-number
                    (instance? bytes-class arg)  :bytes
                    (instance? Raw         arg)  :raw
-                   :else                        :serialized)
+                   :else                        :frozen)
 
         ^bytes ba (case type
                     :string        (bytestring arg)
@@ -76,13 +76,13 @@
                     :simple-number (bytestring (str arg))
                     :bytes         arg
                     :raw           (.value ^Raw arg)
-                    :serialized    (nippy/freeze-to-bytes
-                                    (if (instance? Serialized arg)
-                                      (.value ^Serialized arg)
+                    :frozen        (nippy/freeze-to-bytes
+                                    (if (instance? Frozen arg)
+                                      (.value ^Frozen arg)
                                       arg)))
 
         payload-size (alength ba)
-        marked-type? (case type (:bytes :serialized) true false)
+        marked-type? (case type (:bytes :frozen) true false)
         data-size    (if marked-type? (+ payload-size 2) payload-size)]
 
     ;; To support various special goodies like serialization, we reserve
@@ -95,8 +95,8 @@
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (when marked-type?
       (case type
-        :bytes      (send-bin out)
-        :serialized (send-clj out)))
+        :bytes  (send-bin out)
+        :frozen (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
 (defn send-request!
@@ -129,16 +129,15 @@
       * `-` for error message.
       * `:` for integer reply.
       * `$` for bulk reply.
-      * `*` for multi-bulk reply."
-  [^DataInputStream in throw-exceptions? raw?]
+      * `*` for multi bulk reply."
+  [^DataInputStream in & [raw?]]
   (let [reply-type (char (.readByte in))]
     (case reply-type
       \+ (.readLine in)
-      \- (let [e (Exception. (.readLine in))]
-           (if throw-exceptions? (throw e) e))
+      \- (Exception.     (.readLine in))
       \: (Long/parseLong (.readLine in))
 
-      ;; Bulk data replies need checking for special in-data markers
+      ;; Bulk replies need checking for special in-data markers
       \$ (let [data-size (Integer/parseInt (.readLine in))]
            (when-not (neg? data-size) ; NULL bulk reply
              (let [maybe-marked-type? (and (not raw?) (>= data-size 2))
@@ -167,25 +166,25 @@
                  :raw payload))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count
-             #(get-basic-reply! in throw-exceptions? raw?)))
+           (utils/repeatedly* bulk-count #(get-basic-reply! in raw?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
-(defn- get-reply! [^DataInputStream in throw-exceptions?* parser]
-  (if parser
-    (let [{:keys [dummy-reply? throw-exceptions? raw?] :as m} (meta parser)]
-      (parser (when-not dummy-reply?
-                (get-basic-reply! in (or throw-exceptions? throw-exceptions?*)
-                                  raw?))))
-    (get-basic-reply! in throw-exceptions?* false)))
+(defn- get-parsed-reply! [^DataInputStream in parser]
+  (if-not parser
+    (get-basic-reply! in)
+    (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
+      (let [reply (when-not dummy-reply? (get-basic-reply! in raw?))]
+        (try (parser reply)
+             (catch Exception e
+               (Exception. (str "Parser error: " (.getMessage e)) e)))))))
 
 (defn get-replies!
   "Implementation detail - don't use this.
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [as-vector?]
+  [& [as-pipeline?]]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -195,9 +194,10 @@
       ;; (swap! (:parser-queue *context*) #(subvec % reply-count))
       (reset! (:parser-queue *context*) [])
 
-      (if (and (= reply-count 1) (not as-vector?))
-        (get-reply! in true (nth parsers 0))
-        (utils/mapv* #(get-reply! in false %) parsers)))))
+      (if (or (> reply-count 1) as-pipeline?)
+        (utils/mapv* #(get-parsed-reply! in %) parsers)
+        (let [reply (get-parsed-reply! in (nth parsers 0))]
+          (if (instance? Exception reply) (throw reply) reply))))))
 
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server.
@@ -211,4 +211,4 @@
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (when-not listener?# (get-replies! false)))))
+       (when-not listener?# (get-replies!)))))

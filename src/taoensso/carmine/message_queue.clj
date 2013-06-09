@@ -44,8 +44,8 @@
      :qk-locks          (qkey qname "locks")
      :qk-recently-done  (qkey qname "recently-done")}
     {:msg-id            msg-id
-     :current-time      (str (System/currentTimeMillis))
-     :handler-ttl-msecs (str handler-ttl-msecs)}))
+     :current-time      (System/currentTimeMillis)
+     :handler-ttl-msecs handler-ttl-msecs}))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue. Returns message
@@ -55,15 +55,15 @@
    "redis.call('hset', _:qk-messages, _:msg-id, _:msg-content)
 
     -- lpushnx EOC sentinel to ensure an initialized id-circle
-    if redis.call ('exists', _:qk-id-circle) == 0 then
-      redis.call ('lpush', _:qk-id-circle, 'end-of-circle')
+    if redis.call('exists', _:qk-id-circle) == 0 then
+      redis.call('lpush', _:qk-id-circle, 'end-of-circle')
     end
 
-    return {_:msg-id, redis.call ('lpush', _:qk-id-circle, _:msg-id)}"
+    return {_:msg-id, redis.call('lpush', _:qk-id-circle, _:msg-id)}"
    {:qk-messages  (qkey qname "messages")
     :qk-id-circle (qkey qname "id-circle")}
    {:msg-id       (str (UUID/randomUUID))
-    :msg-content  (car/preserve message)}))
+    :msg-content  (car/serialize message)}))
 
 (defn dequeue-1
   "Rotates queue's id-circle and processes next id. Returns:
@@ -126,9 +126,9 @@
     :qk-id-circle      (qkey qname "id-circle")
     :qk-recently-done  (qkey qname "recently-done")
     :qk-backoff        (qkey qname "backoff?")}
-   {:current-time      (str (System/currentTimeMillis))
-    :handler-ttl-msecs (str handler-ttl-msecs)
-    :backoff-msecs     (str backoff-msecs)
+   {:current-time      (System/currentTimeMillis)
+    :handler-ttl-msecs handler-ttl-msecs
+    :backoff-msecs     backoff-msecs
     :worker-context?   (if worker-context? "1" "0")}))
 
 (defprotocol IDequeueWorker
