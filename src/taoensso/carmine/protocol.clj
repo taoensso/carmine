@@ -17,12 +17,13 @@
 (defrecord Context [in-stream out-stream parser-queue])
 (def ^:dynamic *context* nil)
 (def ^:dynamic *parser*  nil)
-(def no-context-error
+(def ^:private no-context-error
   (Exception. (str "Redis commands must be called within the context of a"
                    " connection to Redis server. See `with-conn`.")))
 
-(def ^:private ^:const charset     "UTF-8")
-(def ^:private ^:const bytes-class (Class/forName "[B"))
+(def ^:const charset     "UTF-8")
+(def ^:const bytes-class (Class/forName "[B"))
+(defn bytes? [x] (instance? bytes-class x))
 
 ;;; Wrapper types to box values for which we'd like specific coercion behaviour
 (deftype Frozen [value])
@@ -65,21 +66,21 @@
                    (or (instance? Long    arg)
                        (instance? Double  arg)
                        (instance? Integer arg)
-                       (instance? Float   arg)) :simple-number
+                       (instance? Float   arg)) :simple-num
                    (instance? bytes-class arg)  :bytes
                    (instance? Raw         arg)  :raw
                    :else                        :frozen)
 
         ^bytes ba (case type
-                    :string        (bytestring arg)
-                    :keyword       (bytestring (name arg))
-                    :simple-number (bytestring (str arg))
-                    :bytes         arg
-                    :raw           (.value ^Raw arg)
-                    :frozen        (nippy/freeze-to-bytes
-                                    (if (instance? Frozen arg)
-                                      (.value ^Frozen arg)
-                                      arg)))
+                    :string     (bytestring arg)
+                    :keyword    (bytestring (name arg))
+                    :simple-num (bytestring (str arg))
+                    :bytes      arg
+                    :raw        (.value ^Raw arg)
+                    :frozen     (nippy/freeze-to-bytes
+                                 (if (instance? Frozen arg)
+                                   (.value ^Frozen arg)
+                                   arg)))
 
         payload-size (alength ba)
         marked-type? (case type (:bytes :frozen) true false)
