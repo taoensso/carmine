@@ -142,9 +142,8 @@
        (try (with-parser nil ~@body) ; Herewith dragons; tread lightly
             (protocol/get-replies! ~as-pipeline?)
             (finally
-             ;; Broken in for Clojure <1.5, Ref. http://goo.gl/5DvRt
-             ;; (doseq [reply# stashed-replies#] (return reply#))
-             (dorun (map return stashed-replies#)))))))
+             ;; doseq here broken with Clojure <1.5, Ref. http://goo.gl/5DvRt
+             (with-parser nil (dorun (map return stashed-replies#))))))))
 
 (comment (wc (echo 1) (println (with-replies (ping))) (echo 2))
          (wc (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
