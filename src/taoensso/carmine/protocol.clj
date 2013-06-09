@@ -175,14 +175,16 @@
     (get-basic-reply! in)
     (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
       (let [reply (when-not dummy-reply? (get-basic-reply! in raw?))]
-        (try (parser reply) (catch Exception e e))))))
+        (try (parser reply)
+             (catch Exception e
+               (Exception. (str "Parser error: " (.getMessage e)) e)))))))
 
 (defn get-replies!
   "Implementation detail - don't use this.
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [as-pipeline?]
+  [& [as-pipeline?]]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -209,4 +211,4 @@
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (when-not listener?# (get-replies! false)))))
+       (when-not listener?# (get-replies!)))))
