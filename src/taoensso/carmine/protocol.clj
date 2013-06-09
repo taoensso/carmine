@@ -159,11 +159,14 @@
                (.readFully in payload 0 payload-size)
                (.readFully in (byte-array 2) 0 2) ; Discard final crlf
 
-               (case type
-                 :str (String. payload 0 payload-size charset)
-                 :clj (nippy/thaw-from-bytes payload)
-                 :bin [payload payload-size]
-                 :raw payload))))
+               (try
+                 (case type
+                   :str (String. payload 0 payload-size charset)
+                   :clj (nippy/thaw-from-bytes payload)
+                   :bin [payload payload-size]
+                   :raw payload)
+                 (catch Exception e
+                   (Exception. (str "Bad reply data: " (.getMessage e)) e))))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
            (utils/repeatedly* bulk-count #(get-basic-reply! in raw?)))
