@@ -172,11 +172,11 @@
   (let [parser protocol/*parser*
         [r & _] (->> (apply evalsha* script numkeys key args)
                      (with-replies :as-pipeline))]
-    (if (instance? Exception r)
-      (if (.startsWith (.getMessage ^Exception r) "NOSCRIPT")
-        (with-parser parser (apply eval script numkeys key args))
-        (throw r))
-      (with-parser parser (return r)))))
+    (with-parser parser
+      (if (and (instance? Exception r)
+               (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
+        (apply eval script numkeys key args)
+        (return r)))))
 
 (def ^:private interpolate-script
   "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
