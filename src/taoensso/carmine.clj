@@ -117,10 +117,9 @@
   Special command that takes any value and returns it unchanged as part of
   an enclosing `with-conn` pipeline response."
   [value]
-  (let [vfn (constantly value)
-        parser protocol/*parser*]
+  (let [vfn (constantly value)]
     (swap! (:parser-queue protocol/*context*) conj
-           (with-meta (if parser (comp parser vfn) vfn)
+           (with-meta (if-let [p protocol/*parser*] (comp p vfn) vfn)
              {:dummy-reply? true}))))
 
 (comment (wc (return :foo) (ping) (return :bar))
@@ -169,10 +168,9 @@
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply."
   [script numkeys key & args]
-  (let [parser protocol/*parser*
-        [r & _] (->> (apply evalsha* script numkeys key args)
+  (let [[r & _] (->> (apply evalsha* script numkeys key args)
                      (with-replies :as-pipeline))]
-    (with-parser parser
+    (with-parser protocol/*parser*
       (if (and (instance? Exception r)
                (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
         (apply eval script numkeys key args)
