@@ -108,7 +108,10 @@
   subject to automatic de/serialization."
   [x] (protocol/Frozen. x))
 
-(defn raw "Alpha - subject to change." [x] (protocol/Raw. x))
+(defn raw "Alpha - subject to change."
+  [x] (if (protocol/bytes? x) (protocol/Raw. x)
+          (throw (Exception. "Raw value must be byte[]"))))
+
 (defmacro parse-raw "Alpha - subject to change."
   [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
 
