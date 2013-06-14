@@ -3,13 +3,10 @@
   implemented using Apache Commons pool. Adapted from redis-clojure."
   {:author "Peter Taoussanis"}
   (:require [taoensso.carmine (utils :as utils) (protocol :as protocol)])
-  (:import  java.net.Socket
+  (:import  [java.net Socket URI]
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
             [org.apache.commons.pool KeyedPoolableObjectFactory]
             [org.apache.commons.pool.impl GenericKeyedObjectPool]))
-
-;; TODO Implement Redis Sentinel client draft spec:
-;; http://redis.io/topics/sentinel-clients
 
 ;; Hack to allow cleaner separation of ns concerns
 (utils/declare-remote taoensso.carmine/ping
@@ -64,16 +61,12 @@
                                       (taoensso.carmine/select (str db))))
     conn))
 
+;; A degenerate connection pool: gives pool-like interface for non-pooled conns
 (defrecord NonPooledConnectionPool []
   IConnectionPool
   (get-conn     [this spec] (make-new-connection spec))
   (release-conn [this conn] (close-conn conn))
   (release-conn [this conn exception] (close-conn conn)))
-
-(def non-pooled-connection-pool
-  "A degenerate connection pool. Gives us a pool-like interface for non-pooled
-  connections."
-  (NonPooledConnectionPool.))
 
 (defn make-connection-factory []
   (reify KeyedPoolableObjectFactory
@@ -100,3 +93,42 @@
     :min-evictable-idle-time-ms    (.setMinEvictableIdleTimeMillis pool v)
     (throw (Exception. (str "Unknown pool option: " opt))))
   pool)
+
+(def ^:private make-conn-pool*
+  (memoize
+   (fn [opts]
+     (if (nil? opts) (NonPooledConnectionPool.)
+       (let [defaults {:test-while-idle?              true
+                       :num-tests-per-eviction-run    -1
+                       :min-evictable-idle-time-ms    60000
+                       :time-between-eviction-runs-ms 30000}]
+         (ConnectionPool.
+          (reduce set-pool-option
+                  (GenericKeyedObjectPool. (make-connection-factory))
+                  (merge defaults opts))))))))
+
+(defn make-conn-pool ; 1.x backwards compatiblity
+  [opts] (if (instance? ConnectionPool opts) opts
+             (make-conn-pool* opts)))
+
+(comment (make-conn-pool nil) (make-conn-pool {}))
+
+(defn- parse-uri [uri]
+  (when uri
+    (let [^URI uri (if (instance? URI uri) uri (URI. uri))
+          [user password] (.split (str (.getUserInfo uri)) ":")
+          port (.getPort uri)]
+      (-> {:host (.getHost uri)}
+          (#(if (pos? port) (assoc % :port     port)     %))
+          (#(if password    (assoc % :password password) %))))))
+
+(comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/"))
+
+(def make-conn-spec
+  (memoize
+   (fn [{:keys [uri host port password timeout-ms db] :as opts}]
+     (let [defaults {:host "127.0.0.1" :port 6379}
+           opts     (if-let [timeout (:timeout opts)] ; Support deprecated opt
+                      (assoc opts :timeout-ms timeout)
+                      opts)]
+       (merge defaults opts (parse-uri uri))))))

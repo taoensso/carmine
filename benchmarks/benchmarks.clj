@@ -55,11 +55,7 @@
 
 ;;; Carmine
 
-(def carmine-spec     (car/make-conn-spec))
-(defonce carmine-pool (car/make-conn-pool))
-
-(defmacro wcar [& body]
-  `(bench (car/with-conn carmine-pool carmine-spec ~@body)))
+(defmacro wcar [& body] `(bench (car/wcar {:pool {} :spec {}} ~@body)))
 
 (defn bench-carmine
   []

@@ -15,10 +15,13 @@
   Ref. http://antirez.com/post/250 for implementation details."
   {:author "Peter Taoussanis"}
   (:require [clojure.string   :as str]
-            [taoensso.carmine :as car]
-            [taoensso.carmine (protocol :as protocol)]
+            [taoensso.carmine :as car :refer (wcar)]
             [taoensso.timbre  :as timbre])
-  (:import  [java.util UUID]))
+  (:import  [taoensso.carmine.connections ConnectionPool]
+            [java.util UUID]))
+
+;; TODO This ns is badly in need of a (breaking) refactor!
+;; TODO Add message-backoff feature (exponential-backoff retries, etc.).
 
 (def qkey "Prefixed queue key" (memoize (partial car/kname "carmine" "mq")))
 
@@ -135,22 +138,22 @@
   (stop  [this])
   (start [this]))
 
-(defn- mark-as-done [pool spec qname message-id]
-  (car/with-conn pool spec (car/sadd (qkey qname "recently-done") message-id)))
+(defn- mark-as-done [conn qname message-id]
+  (wcar conn (car/sadd (qkey qname "recently-done") message-id)))
 
-(defn- unlock [pool spec qname message-id]
-  (car/with-conn pool spec (car/hdel (qkey qname "locks") message-id)))
+(defn- unlock [conn qname message-id]
+  (wcar conn (car/hdel (qkey qname "locks") message-id)))
 
 (defn- handle-error
-  [pool spec qname message-id poll-reply & [throwable]]
-  (mark-as-done pool spec qname message-id)
+  [conn qname message-id poll-reply & [throwable]]
+  (mark-as-done conn qname message-id)
   (let [error-msg (str "Error while handling message from queue: "
                        qname "\n" poll-reply)]
     (if throwable
       (timbre/error throwable error-msg)
       (timbre/error error-msg))))
 
-(defrecord DequeueWorker [pool spec qname opts active?]
+(defrecord DequeueWorker [conn qname opts active?]
   IDequeueWorker
   (stop  [_] (reset! active? false) nil)
   (start [_]
@@ -160,7 +163,7 @@
             flat-opts (apply concat opts)]
         (future
           (while @active?
-            (when-let [poll-reply (car/with-conn pool spec
+            (when-let [poll-reply (wcar conn
                                     (apply dequeue-1 qname :worker-context? true
                                            flat-opts))]
               (if (= poll-reply "backoff")
@@ -171,16 +174,16 @@
                                       qname "\n") poll-reply))
                   (try
                     (case (handler-fn message-content)
-                      :success (mark-as-done pool spec qname message-id)
-                      :retry   (unlock       pool spec qname message-id)
-                      :error   (handle-error pool spec qname message-id poll-reply)
-                      (mark-as-done pool spec qname message-id))
+                      :success (mark-as-done conn qname message-id)
+                      :retry   (unlock       conn qname message-id)
+                      :error   (handle-error conn qname message-id poll-reply)
+                      (mark-as-done conn qname message-id))
                     (catch Throwable t
-                      (handle-error pool spec qname message-id poll-reply t))))))
+                      (handle-error conn qname message-id poll-reply t))))))
             (when throttle-msecs (Thread/sleep throttle-msecs)))))
       true)))
 
-(defn make-dequeue-worker
+(defn- make-dequeue-worker*
   "Creates a threaded worker to poll for and handle messages pushed to named
   queue.
     * `handler-fn` should be a unary fn of dequeued messages (presumably with
@@ -193,7 +196,7 @@
     * `throttle-msecs` specifies thread sleep period between each poll.
     * `backoff-msecs` specifies thread sleep period each time end of queue is
       reached. Backoff is synchronized between all dequeue workers."
-  [connection-pool connection-spec qname
+  [conn qname
    & {:keys [handler-fn handler-ttl-msecs throttle-msecs backoff-msecs auto-start?]
       :or   {handler-fn (fn [msg] (timbre/info (str "Message received from queue: "
                                                    qname "\n") msg))
@@ -202,13 +205,21 @@
              backoff-msecs     2000
              auto-start?       true}}]
 
-  (let [worker (DequeueWorker. connection-pool connection-spec qname
-                               {:handler-fn        handler-fn
-                                :handler-ttl-msecs handler-ttl-msecs
-                                :throttle-msecs    throttle-msecs
-                                :backoff-msecs     backoff-msecs}
-                               (atom false))]
-    (when auto-start? (start worker)) worker))
+  (let [worker (DequeueWorker. conn qname
+                 {:handler-fn        handler-fn
+                  :handler-ttl-msecs handler-ttl-msecs
+                  :throttle-msecs    throttle-msecs
+                  :backoff-msecs     backoff-msecs}
+                 (atom false))]
+    (when auto-start? (start worker))
+    worker))
+
+;; 1.x backwards compatiblity
+(def ^{:doc (-> make-dequeue-worker* var meta :doc)
+       :arglists (-> make-dequeue-worker* var meta :arglists
+                     (conj '[& deprecated-args]))}
+  make-dequeue-worker
+  (car/conn-shim make-dequeue-worker*))
 
 (defn clear
   "Removes all queue's currently queued messages and all queue metadata."
@@ -224,24 +235,18 @@
 ;;;; Examples, tests, etc.
 
 (comment
-
-  (do (def p (car/make-conn-pool))
-      (def s (car/make-conn-spec))
-      (defmacro wcar [& body] `(car/with-conn p s ~@body)))
-
   ;; Delete all queue keys
-  (when-let [queues (seq (wcar (car/keys (qkey "*"))))]
-    (wcar (apply car/del queues)))
+  (when-let [queues (seq (wcar {} (car/keys (qkey "*"))))]
+    (wcar {} (apply car/del queues)))
 
-  (def my-worker (make-dequeue-worker nil nil "myq"))
-  (wcar (doall (map #(enqueue "myq" (str %)) (range 10))))
+  (def my-worker (make-dequeue-worker {} "myq"))
+  (wcar {} (doall (map #(enqueue "myq" (str %)) (range 10))))
 
-  (wcar (dequeue-1 "myq"))
-  (wcar (car/lrange (qkey "myq" "id-circle") 0 -1))
+  (wcar {} (dequeue-1 "myq"))
+  (wcar {} (car/lrange (qkey "myq" "id-circle") 0 -1))
 
   (def my-buggy-worker
-    (make-dequeue-worker
-     nil nil "myq"
+    (make-dequeue-worker {}
      :handler-fn (fn [msg] (throw (Exception. "Oh noes")))
      :handler-ttl-msecs 10000))
 

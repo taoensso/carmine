@@ -1,6 +1,7 @@
 (ns taoensso.carmine.tests.locks
-  (:use [clojure.test]
-        [taoensso.carmine.locks :only (acquire-lock release-lock with-lock)]))
+  (:require [clojure.test :refer :all]
+            [taoensso.carmine.locks
+             :refer (acquire-lock release-lock with-lock)]))
 
 (deftest basic-locking
   (is (acquire-lock 2 2000 2000)) ; For 2 secs
@@ -20,9 +21,8 @@
      (is (not (release-lock 4 uuid)))))
 
 (deftest locking-scope
-  (try
-    (with-lock 5 2000 2000 (throw (Exception.)))
-    (catch Exception e nil))
+  (try (with-lock 5 2000 2000 (throw (Exception.)))
+       (catch Exception e nil))
   (is (not (nil? (acquire-lock 5 2000 2000)))))
 
 (deftest locking-failure

@@ -11,17 +11,9 @@
             [taoensso.carmine.utils :as utils]
             [taoensso.timbre        :as timbre]))
 
-(utils/defonce* config "Alpha - subject to change."
-  (atom {:conns {:pool (car/make-conn-pool)
-                 :spec (car/make-conn-spec)}}))
-
+(utils/defonce* config (atom {:conn {:pool {} :spec {}}}))
 (defn set-config! [ks val] (swap! config assoc-in ks val))
-
-(defmacro ^:private wcar
-  [& body]
-  `(let [{pool# :pool spec# :spec} (:conns @config)]
-     (car/with-conn pool# spec# ~@body)))
-
+(defmacro ^:private wcar* [& body] `(car/wcar (:conn @config) ~@body))
 (def ^:private lkey (partial car/kname "carmine" "lock"))
 
 (defn acquire-lock
@@ -30,7 +22,7 @@
   [lock-name lock-timeout-ms wait-timeout-ms]
   (let [max-udt (+ wait-timeout-ms (System/currentTimeMillis))
         uuid    (str (java.util.UUID/randomUUID))]
-    (wcar ; Hold one connection for all attempts
+    (wcar* ; Hold one connection for all attempts
      (loop []
        (when (> max-udt (System/currentTimeMillis))
          (if (-> (car/lua-script
@@ -61,7 +53,7 @@
        end"
         {:lkey (lkey lock-name)}
         {:uuid owner-uuid})
-      wcar car/as-bool))
+      wcar* car/as-bool))
 
 (comment
   (when-let [uuid (acquire-lock "my-lock" 2000 500)]
@@ -70,7 +62,7 @@
      (release-lock "my-lock" uuid)]))
 
 (defn have-lock? [lock-name owner-uuid]
-  (= (wcar (car/get (lkey lock-name))) owner-uuid))
+  (= (wcar* (car/get (lkey lock-name))) owner-uuid))
 
 (comment
   (when-let [uuid (acquire-lock "my-lock" 2000 500)]
@@ -104,7 +96,7 @@
       (future (with-lock "my-lock" 2000 2000 (Thread/sleep 1000) (println "baz!")))))
 
 (defn- release-all-locks! []
-  (when-let [lkeys (seq (wcar (car/keys (lkey "*"))))]
-    (wcar (apply car/del lkeys))))
+  (when-let [lkeys (seq (wcar* (car/keys (lkey "*"))))]
+    (wcar* (apply car/del lkeys))))
 
 (comment (release-all-locks!))

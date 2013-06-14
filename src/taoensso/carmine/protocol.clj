@@ -19,7 +19,7 @@
 (def ^:dynamic *parser*  nil)
 (def ^:private no-context-error
   (Exception. (str "Redis commands must be called within the context of a"
-                   " connection to Redis server. See `with-conn`.")))
+                   " connection to Redis server. See `wcar`.")))
 
 (def ^:const charset     "UTF-8")
 (def ^:const bytes-class (Class/forName "[B"))

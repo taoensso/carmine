@@ -24,17 +24,12 @@
   (let [[name [expr]] (macro/name-with-attributes name sigs)]
     `(clojure.core/defonce ~name ~expr)))
 
-(defmacro time-ns
-  "Returns number of nanoseconds it takes to execute body."
-  [& body]
-  `(let [t0# (System/nanoTime)]
-     ~@body
-     (- (System/nanoTime) t0#)))
+(defmacro time-ns "Returns number of nanoseconds it takes to execute body."
+  [& body] `(let [t0# (System/nanoTime)] ~@body (- (System/nanoTime) t0#)))
 
 (defmacro bench
   "Repeatedly executes form and returns time taken to complete execution."
-  [num-laps form & {:keys [warmup-laps num-threads as-ms?]
-                    :or   {as-ms? true}}]
+  [num-laps form & {:keys [warmup-laps num-threads as-ns?]}]
   `(try (when ~warmup-laps (dotimes [_# ~warmup-laps] ~form))
         (let [nanosecs#
               (if-not ~num-threads
@@ -46,17 +41,14 @@
                         doall
                         (map deref)
                         dorun))))]
-          (if ~as-ms? (Math/round (/ nanosecs# 1000000.0)) nanosecs#))
+          (if ~as-ns? nanosecs# (Math/round (/ nanosecs# 1000000.0))))
         (catch Exception e# (str "DNF: " (.getMessage e#)))))
 
-(defn version-compare
-  "Comparator for version strings like x.y.z, etc."
-  [x y]
-  (let [vals (fn [s] (vec (map #(Integer/parseInt %) (str/split s #"\."))))]
-    (compare (vals x) (vals y))))
+(defn version-compare "Comparator for version strings like x.y.z, etc."
+  [x y] (let [vals (fn [s] (vec (map #(Integer/parseInt %) (str/split s #"\."))))]
+          (compare (vals x) (vals y))))
 
-(defn version-sufficient?
-  [version-str min-version-str]
+(defn version-sufficient? [version-str min-version-str]
   (try (>= (version-compare version-str min-version-str) 0)
        (catch Exception _ false)))
 
@@ -65,14 +57,10 @@
   present."
   [x]
   (cond (string?  x) x
-        (keyword? x) (let [name (.getName ^clojure.lang.Named x)]
-                       (if-let [ns (.getNamespace ^clojure.lang.Named x)]
-                         (str ns "/" name)
-                         name))
+        (keyword? x) (let [n (name x)] (if-let [ns (namespace x)]
+                                         (str ns "/" n) n))
         (integer? x) (str x)
         :else (throw (Exception. (str "Invalid keyname type: " (type x))))))
-
-(def ^:deprecated scoped-name keyname) ; For backwards-compatibility
 
 (comment (map keyname [:foo :foo/bar 12 :foo.bar/baz])
          (time (dotimes [_ 10000] (name :foo)))
