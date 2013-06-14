@@ -70,7 +70,7 @@ Note that sending multiple commands at once like this will employ [pipelining](h
 If the server responds with an error, an exception is thrown:
 
 ```clojure
-(wcar (car/spop "foo" "bar"))
+(wcar (car/spop "foo"))
 => Exception ERR Operation against a key holding the wrong kind of value
 ```
 
