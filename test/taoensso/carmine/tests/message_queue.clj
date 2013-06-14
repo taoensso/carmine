@@ -1,4 +1,4 @@
-(ns test_carmine.message_queue
+(ns taoensso.carmine.tests.message-queue
   (:use     [clojure.test])
   (:require [clojure.string   :as str]
             [taoensso.carmine :as car]

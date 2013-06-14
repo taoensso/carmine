@@ -1,4 +1,4 @@
-(ns test-carmine.locks
+(ns taoensso.carmine.tests.locks
   (:use [clojure.test]
         [taoensso.carmine.locks :only (acquire-lock release-lock with-lock)]))
 
