@@ -10,7 +10,7 @@
                  [org.clojure/data.json       "0.2.1"]
                  [expectations                "1.4.43"]
                  [com.taoensso/timbre         "2.1.2"]
-                 [com.taoensso/nippy          "1.2.1"]]
+                 [com.taoensso/nippy          "2.0.0-beta1"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.1"]]}
              :dev   {:dependencies [[ring/ring-core "1.1.0"]]}
