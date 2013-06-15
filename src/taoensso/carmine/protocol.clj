@@ -199,7 +199,7 @@
       (reset! (:parser-queue *context*) [])
 
       (if (or (> reply-count 1) as-pipeline?)
-        (utils/mapv* #(get-parsed-reply! in %) parsers)
+        (mapv #(get-parsed-reply! in %) parsers)
         (let [reply (get-parsed-reply! in (nth parsers 0))]
           (if (instance? Exception reply) (throw reply) reply))))))
 

@@ -78,12 +78,7 @@
          (time (dotimes [_ 10000] (name :foo)))
          (time (dotimes [_ 10000] (keyname :foo))))
 
-(defn keywordize-map [m] (reduce (fn [m [k v]] (assoc m (keyword k) v)) {} m))
-
-;; TODO Waiting for Clojure 1.5 support
-;; (defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {}
-;;                                     (or m nil) ; For < 1.5.0-RC3 (CLJ-1098)
-;;                                     ))
+(defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {} (or m {})))
 
 (defn repeatedly* "Like `repeatedly` but faster and returns a vector."
   [n f]
@@ -91,10 +86,3 @@
     (if (>= idx n)
       (persistent! v)
       (recur (conj! v (f)) (inc idx)))))
-
-(defn mapv* ; Imported from Clojure 1.4
-  ([f coll] (-> (reduce (fn [v o] (conj! v (f o))) (transient []) coll)
-                persistent!))
-  ([f c1 c2]            (into [] (map f c1 c2)))
-  ([f c1 c2 c3]         (into [] (map f c1 c2 c3)))
-  ([f c1 c2 c3 & colls] (into [] (apply map f c1 c2 c3 colls))))
