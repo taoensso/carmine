@@ -193,14 +193,17 @@
                 (if (= poll-reply "eoq-backoff")
                   (when eoq-backoff-ms (Thread/sleep eoq-backoff-ms))
                   (let [r (try (handler {:message mcontent :attempt attempt})
-                               (catch Throwable t t))]
-                    (cond (or (= r :retry) (and (vector? r) (= (first r) :retry)))
-                          (retry mid (when (vector? r) (second r)))
-
-                          (or (= r :error) (instance? Throwable r))
-                          (error mid poll-reply (when (instance? Throwable r) r))
-
-                          :else (done mid)))))
+                               (catch Throwable t {:status :error
+                                                   :throwable t}))]
+                    (if-not (map? r)
+                      (done mid) ; TODO DEPRECATED
+                      (let [{:keys [status throwable backoff-ms]} r]
+                        (case status
+                          :success (done mid)
+                          :retry   (retry mid backoff-ms)
+                          :error   (error mid poll-reply throwable)
+                          (do (timbre/warn (str "Invalid handler status:" status))
+                              (done mid))))))))
               (catch Throwable t
                 (timbre/error t "FATAL worker error!")
                 (throw t)))
@@ -214,7 +217,9 @@
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
   named queue. Options:
    :handler        - (fn [{:keys [message attempt]}]) that throws an exception
-                     or returns e/o #{:success :error :retry [:retry <backoff-ms>]}.
+                     or returns {:status     <#{:success :error :retry}>
+                                 :throwable  <Throwable>
+                                 :backoff-ms <retry-backoff-ms}.
    :lock-ms        - Max time handler may keep a message before handler
                      considered fatally stalled and message re-queued. Must be
                      sufficiently high to prevent double handling.
