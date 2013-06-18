@@ -1,253 +1,267 @@
 (ns taoensso.carmine.message-queue
-  "Alpha - subject to change.
-  Carmine-backed Clojure message queue. All heavy lifting by Redis (2.6+).
+  "Carmine-backed Clojure message queue. All heavy lifting by Redis (2.6+).
   Simple implementation. Very simple API. Reliable. Fast.
 
   Redis keys:
-    * carmine:mq:<qname>:messages      -> hash, {id content}
-    * carmine:mq:<qname>:locks         -> hash, {id lock-acquired-time}
-    * carmine:mq:<qname>:id-circle     -> list, rotating list of ids
-    * carmine:mq:<qname>:recently-done -> set, used for efficient id removal from
-                                          circle
-    * carmine:mq:<qname>:backoff?      -> ttl flag, used for queue-wide (every-worker)
+    * carmine:mq:<qname>:messages      -> hash, {mid mcontent}
+    * carmine:mq:<qname>:locks         -> hash, {mid lock-expiry-time}
+    * carmine:mq:<qname>:backoffs      -> hash, {mid backoff-expiry-time}
+    * carmine:mq:<qname>:retry-counts  -> hash, {mid count}
+    * carmine:mq:<qname>:mid-circle    -> list, rotating list of mids
+    * carmine:mq:<qname>:recently-done -> set, for efficient mid removal from circle
+    * carmine:mq:<qname>:eoq-backoff?  -> ttl flag, used for queue-wide (every-worker)
                                           polling backoff
 
-  Ref. http://antirez.com/post/250 for implementation details."
+  Ref. http://antirez.com/post/250 for basic implementation details."
   {:author "Peter Taoussanis"}
   (:require [clojure.string   :as str]
             [taoensso.carmine :as car :refer (wcar)]
-            [taoensso.timbre  :as timbre])
-  (:import  [taoensso.carmine.connections ConnectionPool]
-            [java.util UUID]))
+            [taoensso.timbre  :as timbre]))
 
-;; TODO This ns is badly in need of a (breaking) refactor!
-;; TODO Add message-backoff feature (exponential-backoff retries, etc.).
+;;;; Implementation
 
 (def qkey "Prefixed queue key" (memoize (partial car/kname "carmine" "mq")))
 
-(defn status
-  "Returns current job status, or nil if unknown."
-  [qname msg-id & {:keys [handler-ttl-msecs]
-                   :or   {handler-ttl-msecs (* 60 60 1000)}}]
-  (car/lua-script
-   "if redis.call('sismember', _:qk-recently-done, _:msg-id) == 1 then
-      return 'done' -- known temporarily until a worker cleans it up
-    else
-      local current_time  = tonumber(_:current-time)
-      local lock_ttl      = tonumber(_:handler-ttl-msecs)
-      local lock_acquired = tonumber(redis.call('hget', _:qk-locks, _:msg-id) or 0)
-      if (lock_acquired ~= 0) and (current_time - lock_acquired) < lock_ttl then
-        return 'processing'
-      elseif redis.call('hexists',_:qk-messages, _:msg-id) == 1 then
-        return 'pending'
-      end
-      return nil
-    end"
-    {:qk-messages       (qkey qname "messages")
-     :qk-locks          (qkey qname "locks")
-     :qk-recently-done  (qkey qname "recently-done")}
-    {:msg-id            msg-id
-     :current-time      (System/currentTimeMillis)
-     :handler-ttl-msecs handler-ttl-msecs}))
+(defn clear-queues [conn & qnames]
+  (wcar conn
+    (doseq [qname qnames]
+      (when-let [qks (seq (wcar conn (car/keys (qkey qname "*"))))]
+        (apply car/del qks)))))
+
+(defn queue-status [conn qname]
+  (let [qk (partial qkey qname)]
+    (zipmap [:messages :locks :backoffs :retry-counts :mid-circle :recently-done
+             :eoq-backoff?]
+     (wcar conn
+       (car/hgetall*      (qk "messages"))
+       (car/hgetall*      (qk "locks"))
+       (car/hgetall*      (qk "backoffs"))
+       (car/hgetall*      (qk "retry-counts"))
+       (car/lrange        (qk "mid-circle") 0 -1)
+       (->> (car/smembers (qk "recently-done")) (car/with-parser set))
+       (->> (car/get      (qk "eoq-backoff?"))  (car/parse-bool))))))
+
+(defn message-status
+  "Returns current message status, e/o:
+    :queued        - Waiting for processing.
+    :locked        - Currently processing.
+    :recently-done - Finished processing, waiting for GC.
+    :backoff       - Waiting for retry after handler-imposed backoff.
+    nil            - Unknown status, or invalid message id."
+  [conn qname mid]
+  (wcar conn
+    (car/parse-keyword
+     (car/lua-script
+      "if redis.call('sismember', _:qk-recently-done, _:mid) == 1 then
+         return 'recently-done'
+       else
+         local now         = tonumber(_:now)
+         local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
+         local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
+
+         if     (now < lock_exp)    then return 'locked'
+         elseif (now < backoff_exp) then return 'backoff'
+         elseif redis.call('hexists',_:qk-messages, _:mid) == 1 then
+           return 'queued'
+         end
+         return nil
+       end"
+      {:qk-messages      (qkey qname "messages")
+       :qk-locks         (qkey qname "locks")
+       :qk-backoffs      (qkey qname "backoffs")
+       :qk-recently-done (qkey qname "recently-done")}
+      {:now (System/currentTimeMillis)
+       :mid mid}))))
 
 (defn enqueue
-  "Pushes given message (any Clojure datatype) to named queue. Returns message
-  id and the number of messages currently queued or recently dequeued."
+  "Pushes given message (any Clojure datatype) to named queue and returns a
+  unique message id."
   [qname message]
   (car/lua-script
-   "redis.call('hset', _:qk-messages, _:msg-id, _:msg-content)
+   "redis.call('hset', _:qk-messages, _:mid, _:mcontent)
 
-    -- lpushnx EOC sentinel to ensure an initialized id-circle
-    if redis.call('exists', _:qk-id-circle) == 0 then
-      redis.call('lpush', _:qk-id-circle, 'end-of-circle')
+    -- lpushnx end-of-circle marker to ensure an initialized mid-circle
+    if redis.call('exists', _:qk-mid-circle) == 0 then
+      redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
     end
 
-    return {_:msg-id, redis.call('lpush', _:qk-id-circle, _:msg-id)}"
-   {:qk-messages  (qkey qname "messages")
-    :qk-id-circle (qkey qname "id-circle")}
-   {:msg-id       (str (UUID/randomUUID))
-    :msg-content  (car/serialize message)}))
+    redis.call('lpush', _:qk-mid-circle, _:mid)
+    return _:mid"
+   {:qk-messages   (qkey qname "messages")
+    :qk-mid-circle (qkey qname "mid-circle")}
+   {:mid           (str (java.util.UUID/randomUUID))
+    :mcontent      (car/freeze message)}))
 
-(defn dequeue-1
-  "Rotates queue's id-circle and processes next id. Returns:
-    * nil if id is locked or was just garbage collected (i.e. previously marked
-      as done).
-    * \"backoff\" if circle is uninitialized or sentinel (end of circle) has
-      been reached.
-    * [message-id message \"new\"] or [message-id message \"retry\"] if message
-      should be (re)handled now.
-
-  Exposes implementation details: prefer `make-dequeue-worker` when possible."
-  [qname & {:keys [handler-ttl-msecs backoff-msecs worker-context?]
-            :or   {handler-ttl-msecs (* 60 60 1000)
-                   backoff-msecs     2000}}]
+(defn dequeue
+  "IMPLEMENTATION DETAIL: Use `worker` instead.
+  Rotates queue's mid-circle and processes next mid. Returns:
+    nil             - If msg locked, recently GC'd, or set to backoff.
+    \"eoq-backoff\" - If circle uninitialized or end-of-circle marker reached.
+    [<mid> <mcontent> <attempt-count>] - If message should be (re)handled now."
+  [qname & [{:keys [lock-ms eoq-backoff-ms]
+             :or   {lock-ms (* 60 60 1000)
+                    eoq-backoff-ms 2000}}]]
   (car/lua-script
-   "if redis.call('exists', _:qk-backoff) == 1 then
-      return 'backoff'
+   "if redis.call('exists', _:qk-eoq-backoff) == 1 then
+      return 'eoq-backoff'
     else
-
       -- TODO Waiting for Lua brpoplpush support to get us long polling
-      local msg_id = redis.call('rpoplpush', _:qk-id-circle, _:qk-id-circle)
+      local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle)
 
-      if (not msg_id) or (msg_id == 'end-of-circle') then
-        if _:worker-context? == '1' then
-          -- Initiate queue-wide polling backoff
-          redis.call('psetex', _:qk-backoff, _:backoff-msecs, 'true')
-        end
-        return 'backoff'
-      elseif redis.call('sismember', _:qk-recently-done, msg_id) == 1 then
-        redis.call('lrem', _:qk-id-circle, 1, msg_id) -- Efficient here
-        redis.call('srem', _:qk-recently-done, msg_id)
-        redis.call('hdel', _:qk-messages, msg_id)
-        redis.call('hdel', _:qk-locks, msg_id)
+      if (not mid) or (mid == 'end-of-circle') then
+        -- Set queue-wide polling backoff flag
+        redis.call('psetex', _:qk-eoq-backoff, _:eoq-backoff-ms, 'true')
+        return 'eoq-backoff'
+      elseif redis.call('sismember', _:qk-recently-done, mid) == 1 then -- GC
+        redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
+        redis.call('srem', _:qk-recently-done, mid)
+        redis.call('hdel', _:qk-messages,      mid)
+        redis.call('hdel', _:qk-locks,         mid)
         return nil
-      else
-        local current_time  = tonumber(_:current-time)
-        local lock_ttl      = tonumber(_:handler-ttl-msecs)
-        local lock_acquired = tonumber(redis.call('hget', _:qk-locks, msg_id) or 0)
-
-        if (lock_acquired ~= 0) and (current_time - lock_acquired) < lock_ttl then
-          return nil -- Has active lock
-        else
-
-          if _:worker-context? == '1' then
-            -- (Re)acquire lock
-            redis.call('hset', _:qk-locks, msg_id, current_time)
-          end
-          local msg_content = redis.call('hget', _:qk-messages, msg_id)
-
-          if (lock_acquired == 0) then
-            return {msg_id, msg_content, 'new'}
-          else
-            return {msg_id, msg_content, 'retry'}
-          end
-        end
       end
+
+      local now         = tonumber(_:now)
+      local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
+      local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid) or 0)
+
+      if (now < lock_exp) or (now < backoff_exp) then
+        return nil -- Has active lock or backoff
+      else
+        -- (Re)acquire lock
+        redis.call('hset', _:qk-locks, mid, now + tonumber(_:lock-ms))
+      end
+
+      local retries = 0
+      if (lock_exp ~= 0) then
+        retries = tonumber(redis.call('hincrby', _:qk-retry-counts, mid))
+      else
+        retries = tonumber(redis.call('hget', _:qk-retry-counts, mid) or 0)
+      end
+
+      local mcontent = redis.call('hget', _:qk-messages, mid)
+      local attempts = retries + 1
+      return {mid, mcontent, attempts}
     end"
-   {:qk-messages       (qkey qname "messages")
-    :qk-locks          (qkey qname "locks")
-    :qk-id-circle      (qkey qname "id-circle")
-    :qk-recently-done  (qkey qname "recently-done")
-    :qk-backoff        (qkey qname "backoff?")}
-   {:current-time      (System/currentTimeMillis)
-    :handler-ttl-msecs handler-ttl-msecs
-    :backoff-msecs     backoff-msecs
-    :worker-context?   (if worker-context? "1" "0")}))
-
-(defprotocol IDequeueWorker
-  (stop  [this])
-  (start [this]))
-
-(defn- mark-as-done [conn qname message-id]
-  (wcar conn (car/sadd (qkey qname "recently-done") message-id)))
-
-(defn- unlock [conn qname message-id]
-  (wcar conn (car/hdel (qkey qname "locks") message-id)))
-
-(defn- handle-error
-  [conn qname message-id poll-reply & [throwable]]
-  (mark-as-done conn qname message-id)
-  (let [error-msg (str "Error while handling message from queue: "
-                       qname "\n" poll-reply)]
-    (if throwable
-      (timbre/error throwable error-msg)
-      (timbre/error error-msg))))
-
-(defrecord DequeueWorker [conn qname opts active?]
-  IDequeueWorker
-  (stop  [_] (reset! active? false) nil)
-  (start [_]
-    (when-not @active?
-      (reset! active? true)
-      (let [{:keys [handler-fn throttle-msecs backoff-msecs]} opts
-            flat-opts (apply concat opts)]
-        (future
-          (while @active?
-            (when-let [poll-reply (wcar conn
-                                    (apply dequeue-1 qname :worker-context? true
-                                           flat-opts))]
-              (if (= poll-reply "backoff")
-                (Thread/sleep backoff-msecs)
-                (let [[message-id message-content type] poll-reply]
-                  (when (= type "retry")
-                    (timbre/warn (str "Retrying message from queue: "
-                                      qname "\n") poll-reply))
-                  (try
-                    (case (handler-fn message-content)
-                      :success (mark-as-done conn qname message-id)
-                      :retry   (unlock       conn qname message-id)
-                      :error   (handle-error conn qname message-id poll-reply)
-                      (mark-as-done conn qname message-id))
-                    (catch Throwable t
-                      (handle-error conn qname message-id poll-reply t))))))
-            (when throttle-msecs (Thread/sleep throttle-msecs)))))
-      true)))
-
-(defn- make-dequeue-worker*
-  "Creates a threaded worker to poll for and handle messages pushed to named
-  queue.
-    * `handler-fn` should be a unary fn of dequeued messages (presumably with
-      side-effects) that throws an exception or returns e/o #{:success :error
-      :retry}.
-    * `handler-ttl-msecs` specifies how long a handler may keep a message
-      before that handler is considered fatally stalled and the message
-      re-activated in queue. BEWARE the risk of duplicate processing if ttl is
-      too low.
-    * `throttle-msecs` specifies thread sleep period between each poll.
-    * `backoff-msecs` specifies thread sleep period each time end of queue is
-      reached. Backoff is synchronized between all dequeue workers."
-  [conn qname
-   & {:keys [handler-fn handler-ttl-msecs throttle-msecs backoff-msecs auto-start?]
-      :or   {handler-fn (fn [msg] (timbre/info (str "Message received from queue: "
-                                                   qname "\n") msg))
-             handler-ttl-msecs (* 60 60 1000)
-             throttle-msecs    200
-             backoff-msecs     2000
-             auto-start?       true}}]
-
-  (let [worker (DequeueWorker. conn qname
-                 {:handler-fn        handler-fn
-                  :handler-ttl-msecs handler-ttl-msecs
-                  :throttle-msecs    throttle-msecs
-                  :backoff-msecs     backoff-msecs}
-                 (atom false))]
-    (when auto-start? (start worker))
-    worker))
-
-;; 1.x backwards compatiblity
-(def ^{:doc (-> make-dequeue-worker* var meta :doc)
-       :arglists (-> make-dequeue-worker* var meta :arglists
-                     (conj '[& deprecated-args]))}
-  make-dequeue-worker
-  (car/conn-shim make-dequeue-worker*))
-
-(defn clear
-  "Removes all queue's currently queued messages and all queue metadata."
-  [qname]
-  (car/lua-script
-   "local queues = redis.call('keys', _:keys)
-    for i,q in pairs(queues) do
-      redis.call('del',queues[i])
-    end"
-   {:keys (qkey qname "*")}
-   {}))
-
-;;;; Examples, tests, etc.
+   {:qk-messages      (qkey qname "messages")
+    :qk-locks         (qkey qname "locks")
+    :qk-backoffs      (qkey qname "backoffs")
+    :qk-retry-counts  (qkey qname "retry-counts")
+    :qk-mid-circle    (qkey qname "mid-circle")
+    :qk-recently-done (qkey qname "recently-done")
+    :qk-eoq-backoff   (qkey qname "eoq-backoff?")}
+   {:now              (System/currentTimeMillis)
+    :lock-ms          lock-ms
+    :eoq-backoff-ms   eoq-backoff-ms}))
 
 (comment
-  ;; Delete all queue keys
-  (when-let [queues (seq (wcar {} (car/keys (qkey "*"))))]
-    (wcar {} (apply car/del queues)))
+  (clear-queues {} "myq")
+  (queue-status {} "myq")
+  (let [mid (wcar {} (enqueue "myq" "msg"))]
+    (message-status {} "myq" mid))
 
-  (def my-worker (make-dequeue-worker {} "myq"))
-  (wcar {} (doall (map #(enqueue "myq" (str %)) (range 10))))
+  (wcar {} (dequeue "myq")))
 
-  (wcar {} (dequeue-1 "myq"))
-  (wcar {} (car/lrange (qkey "myq" "id-circle") 0 -1))
+;;;; Workers
 
-  (def my-buggy-worker
-    (make-dequeue-worker {}
-     :handler-fn (fn [msg] (throw (Exception. "Oh noes")))
-     :handler-ttl-msecs 10000))
+(defprotocol IWorker (stop [this]) (start [this]))
 
-  (stop my-worker))
+(defrecord Worker [conn qname running? opts]
+  IWorker
+  (stop  [_] (let [stopped? @running?] (reset! running? false) stopped?))
+  (start [_]
+    (when-not @running?
+      (reset! running? true)
+      (future
+        (let [{:keys [handler throttle-ms eoq-backoff-ms]} opts
+              qk    (partial qkey qname)
+              done  (fn [mid] (wcar conn (car/sadd (qk "recently-done") mid)))
+              retry (fn [mid & [backoff-ms]]
+                      (wcar conn
+                        (when backoff-ms
+                          (car/hset (qk "backoffs") mid (int backoff-ms)))
+                        (car/hdel (qk "locks") mid)))
+              error (fn [mid poll-reply & [throwable]]
+                      (timbre/error
+                       (if throwable throwable (Exception. ":error handler response"))
+                       (str "Error handling queue message: " qname "\n" poll-reply))
+                      (done mid))]
+
+          (while @running?
+            (try
+              (when-let [[mid mcontent attempt :as poll-reply]
+                         (wcar conn (dequeue qname opts))]
+                (if (= poll-reply "eoq-backoff")
+                  (when eoq-backoff-ms (Thread/sleep eoq-backoff-ms))
+                  (let [r (try (handler mcontent attempt)
+                               (catch Throwable t t))]
+                    (cond (or (= r :retry) (and (vector? r) (= (first r) :retry)))
+                          (retry mid (when (vector? r) (second r)))
+
+                          (or (= r :error) (instance? Throwable r))
+                          (error mid poll-reply (when (instance? Throwable r) r))
+
+                          :else (done mid)))))
+              (catch Throwable t
+                (timbre/error t "FATAL worker error!")
+                (throw t)))
+            (when throttle-ms (Thread/sleep throttle-ms)))))
+      true))
+
+  java.io.Closeable
+  (close [this] (stop this)))
+
+(defn worker
+  "Returns a threaded worker to poll for and handle messages `enqueue`'d to
+  named queue. Options:
+   :handler        - (fn [message-content attempt-count]) that throws an exception
+                     or returns e/o #{:success :error :retry [:retry <backoff-ms>]}.
+   :lock-ms        - Max time handler may keep a message before handler
+                     considered fatally stalled and message re-queued. Must be
+                     sufficiently high to prevent double handling.
+   :eoq-backoff-ms - Thread sleep period each time end of queue is reached.
+                     Synchronized between all queue workers.
+   :throttle-ms    - Thread sleep period between each poll."
+  [conn qname & [{:keys [handler lock-ms eoq-backoff-ms throttle-ms auto-start?]
+                  :or   {handler (fn [msg attempt] (timbre/info qname msg attempt))
+                         throttle-ms    200
+                         eoq-backoff-ms 2000
+                         lock-ms (* 60 60 1000)
+                         auto-start? true}}]]
+  (let [w (Worker. conn qname (atom false) {:handler        handler
+                                            :lock-ms        lock-ms
+                                            :throttle-ms    throttle-ms
+                                            :eoq-backoff-ms eoq-backoff-ms
+                                            :auto-start?    auto-start?})]
+    (when auto-start? (start w))
+    w))
+
+(comment
+  (def w1 (worker {} "myq"))
+  (wcar {} (enqueue "myq" "msg"))
+  (stop w1)
+  (queue-status {} "myq"))
+
+;;;; Public utils
+
+(defn exp-backoff "Exponential backoff msecs. Useful for retries."
+  [attempt & [{:keys [factor min max]
+               :or   {factor 2000}}]]
+  (let [binary-exp (Math/pow 2 (dec attempt))
+        time (* (+ binary-exp (rand binary-exp)) 0.5 factor)]
+    (long (let [time (if min (clojure.core/max min time) time)
+                time (if max (clojure.core/min max time) time)]
+            time))))
+
+(comment (map #(exp-backoff % {}) (range 10)))
+
+;;;; Renamed/deprecated
+
+(defn make-dequeue-worker "DEPRECATED: Use `worker` instead."
+  [pool spec & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
+                       auto-start?]}]
+  (worker {:pool pool :spec spec}
+    (merge (when-let [hf handler-fn]        {:handler (fn [msg _] (hf msg))})
+           (when-let [ms handler-ttl-msecs] {:lock-ms        ms})
+           (when-let [ms backoff-msecs]     {:eoq-backoff-ms ms})
+           (when-let [ms throttle-msecs]    {:throttle-ms    ms})
+           {:auto-start? auto-start?})))

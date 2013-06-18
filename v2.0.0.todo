@@ -6,8 +6,8 @@
 [X] Drop `wcar`? Would need to rename `wconn` to allow unambiguous :refer.
 [S] Switch to fast io-streams.
 
-[ ] Refactor message queue ns (consider breaking changes).
-[ ] Message queue message-backoff facility.
+[X] Refactor message queue ns (consider breaking changes).
+[X] Message queue message-backoff facility.
 
 [ ] `(redis-call [:set-config "arg1" "arg2"] [:set "foo" "bar"])`, etc.
 

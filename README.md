@@ -5,9 +5,11 @@ Current [semantic](http://semver.org/) version:
 [com.taoensso/carmine "2.0.0-alpha1"] ; Development (notes below)
 ```
 
-v2 adds an improved API, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. **PLEASE REPORT ANY PROBLEMS!**
+v2 adds an improved API, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore.
 
-TODO Backwards compatibility?
+v2 **is backwards compatible EXCEPT FOR** the distributed locks API. Also, please note that the old `with-conn` macro has been **deprecated** in favor of `wcar`. See the `wcar` docstring for details.
+
+**PLEASE REPORT ANY PROBLEMS!**
 
 # Carmine, a Clojure Redis client & message queue
 
@@ -99,7 +101,7 @@ But what if we're pipelining?
 
 ### Serialization
 
-The only value type known to Redis internally is the [byte string](http://redis.io/topics/data-types). But Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich data types](http://clojure.org/datatypes), letting you use them with Redis painlessly:
+The only value type known to Redis internally is the [byte string](http://redis.io/topics/data-types). But Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich datatypes](http://clojure.org/datatypes), letting you use them with Redis painlessly:
 
 ```clojure
 (wcar* (car/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
@@ -275,18 +277,16 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 
 ### Message queue
 
-**Redis 2.6+ only, currently ALPHA QUALITY**
-
 Redis makes a great [message queue server](http://antirez.com/post/250):
 
 ```clojure
 (:require [taoensso.carmine.message-queue :as mq]) ; Add to `ns` macro
 
 (def my-worker
-  (mq/make-dequeue-worker {:pool {<opts>} :spec {<opts>}} < "my-queue"
-   :handler-fn (fn [msg] (println "Received" msg))))
+  (mq/worker {:pool {<opts>} :spec {<opts>}} "my-queue"
+   {:handler (fn [msg attempt-count] (println "Received" msg))}))
 
-(mq/enqueue "my-queue" "my message!")
+(wcar* (mq/enqueue "my-queue" "my message!"))
 %> Received my message!
 
 (mq/stop my-worker)
@@ -311,7 +311,7 @@ Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmin
 
 ###### Alpha - work in progress
 
-Redis is great. [DynamoDB](http://aws.amazon.com/dynamodb/) is great. Together they're _amazing_. Tundra is a **semi-automatic datastore layer for Carmine** that marries the best of Redis **(simplicity, read+write performance, structured data types, low operational cost)** with the best of an additional datastore like DynamoDB **(scalability, reliability incl. off-site backups, and big-data storage)**. All with a secure, dead-simple, high-performance API.
+Redis is great. [DynamoDB](http://aws.amazon.com/dynamodb/) is great. Together they're _amazing_. Tundra is a **semi-automatic datastore layer for Carmine** that marries the best of Redis **(simplicity, read+write performance, structured datatypes, low operational cost)** with the best of an additional datastore like DynamoDB **(scalability, reliability incl. off-site backups, and big-data storage)**. All with a secure, dead-simple, high-performance API.
 
 Tundra allows you to live and work in Redis, with all Redis' usual API goodness and performance guarantees. But it eliminates one of Redis' biggest limitations: its hard dependence on memory capacity.
 
