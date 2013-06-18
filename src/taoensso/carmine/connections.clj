@@ -46,7 +46,9 @@
   (get-conn     [this spec] (.borrowObject pool spec))
   (release-conn [this conn] (.returnObject pool (get-spec conn) conn))
   (release-conn [this conn exception] (.invalidateObject pool (get-spec conn)
-                                                         conn)))
+                                                         conn))
+  java.io.Closeable
+  (close [this] (.close ^ConnectionPool pool)))
 
 (defn make-new-connection
   "Actually creates and returns a new socket connection."
