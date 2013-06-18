@@ -24,6 +24,16 @@
   (let [[name [expr]] (macro/name-with-attributes name sigs)]
     `(clojure.core/defonce ~name ~expr)))
 
+(defmacro defalias
+  "Defines an alias for a var, preserving metadata. Adapted from
+  clojure.contrib/def.clj, Ref. http://goo.gl/xpjeH"
+  [name target & [doc]]
+  `(let [^clojure.lang.Var v# (var ~target)]
+     (alter-meta! (def ~name (.getRawRoot v#))
+                  #(merge % (apply dissoc (meta v#) [:column :line :file :test :name])
+                            (when-let [doc# ~doc] {:doc doc#})))
+     (var ~name)))
+
 (defmacro time-ns "Returns number of nanoseconds it takes to execute body."
   [& body] `(let [t0# (System/nanoTime)] ~@body (- (System/nanoTime) t0#)))
 

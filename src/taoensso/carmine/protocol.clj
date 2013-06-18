@@ -6,7 +6,7 @@
   {:author "Peter Taoussanis"}
   (:require [clojure.string         :as str]
             [taoensso.carmine.utils :as utils]
-            [taoensso.nippy         :as nippy])
+            [taoensso.nippy.tools   :as nippy-tools])
   (:import  [java.io DataInputStream BufferedOutputStream]))
 
 ;; Hack to allow cleaner separation of namespaces
@@ -25,9 +25,10 @@
 (def ^:const bytes-class (Class/forName "[B"))
 (defn bytes? [x] (instance? bytes-class x))
 
-;;; Wrapper types to box values for which we'd like specific coercion behaviour
-(deftype Frozen [value])
-(deftype Raw    [value])
+(defrecord WrappedRaw [ba])
+(defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
+  [x] (if (bytes? x) (WrappedRaw. x)
+          (throw (Exception. "Raw arg must be byte[]"))))
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
@@ -68,7 +69,7 @@
                        (instance? Integer arg)
                        (instance? Float   arg)) :simple-num
                    (instance? bytes-class arg)  :bytes
-                   (instance? Raw         arg)  :raw
+                   (instance? WrappedRaw  arg)  :raw
                    :else                        :frozen)
 
         ^bytes ba (case type
@@ -76,11 +77,8 @@
                     :keyword    (bytestring (name arg))
                     :simple-num (bytestring (str arg))
                     :bytes      arg
-                    :raw        (.value ^Raw arg)
-                    :frozen     (nippy/freeze-to-bytes
-                                 (if (instance? Frozen arg)
-                                   (.value ^Frozen arg)
-                                   arg)))
+                    :raw        (:ba arg)
+                    :frozen     (nippy-tools/freeze arg))
 
         payload-size (alength ba)
         marked-type? (case type (:bytes :frozen) true false)
@@ -163,7 +161,7 @@
                (try
                  (case type
                    :str (String. payload 0 payload-size charset)
-                   :clj (nippy/thaw-from-bytes payload)
+                   :clj (nippy-tools/thaw payload)
                    :bin [payload payload-size]
                    :raw payload)
                  (catch Exception e

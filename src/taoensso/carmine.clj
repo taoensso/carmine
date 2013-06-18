@@ -7,8 +7,8 @@
              (protocol    :as protocol)
              (connections :as conns)
              (commands    :as commands)]
-            [taoensso.timbre :as timbre])
-  (:import  [taoensso.carmine.protocol Frozen Raw]))
+            [taoensso.timbre      :as timbre]
+            [taoensso.nippy.tools :as nippy-tools]))
 
 ;;;; Connections
 
@@ -62,6 +62,8 @@
 (defmacro parse-double  [& body] `(with-parser as-double ~@body))
 (defmacro parse-bool    [& body] `(with-parser as-bool   ~@body))
 (defmacro parse-keyword [& body] `(with-parser keyword   ~@body))
+(defmacro parse-raw "Alpha - subject to change."
+  [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
 
 (defn kname
   "Joins keywords, integers, and strings to form an idiomatic compound Redis key
@@ -76,17 +78,11 @@
 
 (comment (kname :foo/bar :baz "qux" nil 10))
 
-(defn freeze
+(utils/defalias raw            protocol/raw)
+(utils/defalias with-thaw-opts nippy-tools/with-thaw-opts)
+(utils/defalias freeze         nippy-tools/wrap-for-freezing
   "Forces argument of any type (including simple number and binary types) to be
-  subject to automatic de/serialization."
-  [x] (protocol/Frozen. x))
-
-(defn raw "Alpha - subject to change."
-  [x] (if (protocol/bytes? x) (protocol/Raw. x)
-          (throw (Exception. "Raw value must be byte[]"))))
-
-(defmacro parse-raw "Alpha - subject to change."
-  [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
+  subject to automatic de/serialization with Nippy.")
 
 (defn return
   "Alpha - subject to change.
