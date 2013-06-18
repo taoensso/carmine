@@ -29,8 +29,8 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Full support for **Lua scripting**, **Pub/Sub**, etc.
   * Full support for custom **reply parsing**.
   * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
-  * Simple, high-performance **message queue** (Redis 2.6+).
-  * Simple, high-performance **distributed lock** (Redis 2.6+).
+  * Simple, high-performance **message queue** (Redis 2.6+, stable v2+).
+  * Simple, high-performance **distributed lock** (Redis 2.6+, stable v2+).
   * **Ring session-store**.
   * Pluggable **compression** and **encryption** support. (v2+)
   * Includes _Tundra_, an API for **archiving cold data to an additional datastore**. (v2+)
