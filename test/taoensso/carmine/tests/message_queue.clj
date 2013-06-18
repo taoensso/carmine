@@ -57,7 +57,8 @@
 
 (defn create-worker [q resp]
   (let [prm (promise)]
-    (mq/worker {} q {:handler (fn [x _] (deliver prm x) resp)})
+    (mq/worker {} q {:handler (fn [{:keys [message]}] (deliver prm message)
+                                resp)})
     prm))
 
 (defn assert-unlocked [q _]  (empty? (:locks (mq/queue-status {} q))))

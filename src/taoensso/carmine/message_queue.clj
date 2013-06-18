@@ -192,7 +192,7 @@
                          (wcar conn (dequeue qname opts))]
                 (if (= poll-reply "eoq-backoff")
                   (when eoq-backoff-ms (Thread/sleep eoq-backoff-ms))
-                  (let [r (try (handler mcontent attempt)
+                  (let [r (try (handler {:message mcontent :attempt attempt})
                                (catch Throwable t t))]
                     (cond (or (= r :retry) (and (vector? r) (= (first r) :retry)))
                           (retry mid (when (vector? r) (second r)))
@@ -213,7 +213,7 @@
 (defn worker
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
   named queue. Options:
-   :handler        - (fn [message-content attempt-count]) that throws an exception
+   :handler        - (fn [{:keys [message attempt]}]) that throws an exception
                      or returns e/o #{:success :error :retry [:retry <backoff-ms>]}.
    :lock-ms        - Max time handler may keep a message before handler
                      considered fatally stalled and message re-queued. Must be
@@ -222,7 +222,8 @@
                      Synchronized between all queue workers.
    :throttle-ms    - Thread sleep period between each poll."
   [conn qname & [{:keys [handler lock-ms eoq-backoff-ms throttle-ms auto-start?]
-                  :or   {handler (fn [msg attempt] (timbre/info qname msg attempt))
+                  :or   {handler (fn [{:keys [message attempt]}]
+                                   (timbre/info qname message attempt))
                          throttle-ms    200
                          eoq-backoff-ms 2000
                          lock-ms (* 60 60 1000)
@@ -260,8 +261,9 @@
   [pool spec & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
                        auto-start?]}]
   (worker {:pool pool :spec spec}
-    (merge (when-let [hf handler-fn]        {:handler (fn [msg _] (hf msg))})
-           (when-let [ms handler-ttl-msecs] {:lock-ms        ms})
+    (merge (when-let [ms handler-ttl-msecs] {:lock-ms        ms})
            (when-let [ms backoff-msecs]     {:eoq-backoff-ms ms})
            (when-let [ms throttle-msecs]    {:throttle-ms    ms})
+           (when-let [hf handler-fn]        {:handler (fn [{:keys [message]}]
+                                                        (hf message))})
            {:auto-start? auto-start?})))

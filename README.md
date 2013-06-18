@@ -284,7 +284,7 @@ Redis makes a great [message queue server](http://antirez.com/post/250):
 
 (def my-worker
   (mq/worker {:pool {<opts>} :spec {<opts>}} "my-queue"
-   {:handler (fn [msg attempt-count] (println "Received" msg))}))
+   {:handler (fn [{:keys [message attempt]}] (println "Received" message))}))
 
 (wcar* (mq/enqueue "my-queue" "my message!"))
 %> Received my message!
