@@ -5,7 +5,9 @@ Current [semantic](http://semver.org/) version:
 [com.taoensso/carmine "2.0.0-alpha1"] ; Development (notes below)
 ```
 
-TODO Release notes **PLEASE REPORT ANY PROBLEMS!**
+v2 adds an improved API, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. **PLEASE REPORT ANY PROBLEMS!**
+
+TODO Backwards compatibility?
 
 # Carmine, a Clojure Redis client & message queue
 
@@ -30,6 +32,8 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Simple, high-performance **message queue** (Redis 2.6+).
   * Simple, high-performance **distributed lock** (Redis 2.6+).
   * **Ring session-store**.
+  * Pluggable **compression** and **encryption** support. (v2+)
+  * Includes _Tundra_, an API for **archiving cold data to an additional datastore**. (v2+)
 
 ## Getting started
 
@@ -302,6 +306,35 @@ Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See t
 ```
 
 Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.locks` namespace for details.
+
+## Tundra
+
+###### Alpha - work in progress
+
+Redis is great. [DynamoDB](http://aws.amazon.com/dynamodb/) is great. Together they're _amazing_. Tundra is a **semi-automatic datastore layer for Carmine** that marries the best of Redis **(simplicity, read+write performance, structured data types, low operational cost)** with the best of an additional datastore like DynamoDB **(scalability, reliability incl. off-site backups, and big-data storage)**. All with a secure, dead-simple, high-performance API.
+
+Tundra allows you to live and work in Redis, with all Redis' usual API goodness and performance guarantees. But it eliminates one of Redis' biggest limitations: its hard dependence on memory capacity.
+
+How? By doing three simple things:
+  1. Tundra (semi-)automatically **snapshots your Redis data out to your datastore** (encryption supported). 
+  2. Tundra **prunes cold data from Redis**, freeing memory.
+  3. If requested again, Tundra (semi-)automatically **restores pruned data to Redis from your datastore**.
+
+Any K/V-capable datastore can be used, but DynamoDB makes a particularly good fit and an implementation is provided out-the-box for the [Faraday DynamoDB client](https://github.com/ptaoussanis/faraday).
+
+#### Getting started with Tundra
+
+The API couldn't be simpler - there's a little once-off setup, and then only 2 fns you'll be using to make the magic happen:
+
+```clojure
+(:require [taoensso.tundra  :as tundra]) ; Add to ns
+
+(tundra/ensure-table my-creds {:read 1 :write 1}) ; Create the Tundra data store
+
+;; TODO Setup worker
+```
+
+TODO Continue
 
 ## Performance
 
