@@ -99,7 +99,7 @@
 (def ^:private make-conn-pool*
   (memoize
    (fn [opts]
-     (if (nil? opts) (NonPooledConnectionPool.)
+     (if (= opts :none) (NonPooledConnectionPool.)
        (let [defaults {:test-while-idle?              true
                        :num-tests-per-eviction-run    -1
                        :min-evictable-idle-time-ms    60000
@@ -113,7 +113,7 @@
   [opts] (if (instance? ConnectionPool opts) opts
              (make-conn-pool* opts)))
 
-(comment (make-conn-pool nil) (make-conn-pool {}))
+(comment (make-conn-pool :none) (make-conn-pool {}))
 
 (defn- parse-uri [uri]
   (when uri
