@@ -226,7 +226,7 @@
                         (do (done mid)
                             (timbre/warn (str "Invalid handler status:" status))))))))
               (catch Throwable t
-                (timbre/error t "FATAL worker error!")
+                (timbre/fatal t "Worker error!!")
                 (throw t)))
             (when throttle-ms (Thread/sleep throttle-ms)))))
       true))
