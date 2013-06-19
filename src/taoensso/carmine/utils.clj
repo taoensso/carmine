@@ -76,6 +76,13 @@
          (time (dotimes [_ 10000] (name :foo)))
          (time (dotimes [_ 10000] (keyname :foo))))
 
+(defn fq-name "Like `name` but includes namespace in string when present."
+  [x] (if (string? x) x
+          (let [n (name x)]
+            (if-let [ns (namespace x)] (str ns "/" n) n))))
+
+(comment (map fq-name ["foo" :foo :foo.bar/baz]))
+
 (defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {} (or m {})))
 
 (defn repeatedly* "Like `repeatedly` but faster and returns a vector."

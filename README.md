@@ -8,6 +8,7 @@ Current [semantic](http://semver.org/) version:
 v2 adds an improved API, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore.
 
   * **BREAKING**: Distributed locks API, return type of raw binary data (no longer wrapped in a vector).
+  * **POTENTIALLY BREAKING**: Keyword args are now converted to strings rather than being automatically serialized.
   * **DEPRECATED**: `with-conn`->`wcar`, `make-dequeue-worker`->`worker`.
 
 # Carmine, a Clojure Redis client & message queue
@@ -118,6 +119,7 @@ The only value type known to Redis internally is the [byte string](http://redis.
 
 Types are handled as follows:
  * Clojure strings become Redis strings.
+ * Keywords become Redis strings. (v2+)
  * Simple Clojure numbers (integers, longs, floats, doubles) become Redis strings.
  * Everything else gets automatically de/serialized.
 

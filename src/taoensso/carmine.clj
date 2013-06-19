@@ -81,8 +81,8 @@
 (utils/defalias raw            protocol/raw)
 (utils/defalias with-thaw-opts nippy-tools/with-thaw-opts)
 (utils/defalias freeze         nippy-tools/wrap-for-freezing
-  "Forces argument of any type (including simple number and binary types) to be
-  subject to automatic de/serialization with Nippy.")
+  "Forces argument of any type (incl. keywords, simple numbers, and binary types)
+  to be subject to automatic de/serialization with Nippy.")
 
 (defn return
   "Alpha - subject to change.
