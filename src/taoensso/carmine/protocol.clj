@@ -59,8 +59,8 @@
     * Everything else gets serialized."
   [^BufferedOutputStream out arg]
   (let [type (cond (string?      arg) :string ; Most common 1st!
+                   (keyword?     arg) :keyword
                    (utils/bytes? arg) :bytes
-                   ;;(keyword? arg) :keyword
                    (or (instance? Long    arg)
                        (instance? Double  arg)
                        (instance? Integer arg)
@@ -70,7 +70,7 @@
 
         ^bytes ba (case type
                     :string     (bytestring arg)
-                    :keyword    (bytestring (name arg))
+                    :keyword    (bytestring (utils/fq-name arg))
                     :simple-num (bytestring (str arg))
                     :bytes      arg
                     :raw        (:ba arg)
@@ -82,10 +82,10 @@
 
     ;; To support various special goodies like serialization, we reserve
     ;; strings that begin with a null terminator
-    (when (and (= type :string) (.startsWith ^String arg "\u0000"))
-      (throw (Exception.
-              (str "String arguments cannot begin with the null terminator: "
-                   arg))))
+    (when-let [s (case type :string arg :keyword (name arg) nil)]
+      (when (.startsWith ^String s "\u0000")
+        (throw (Exception. (str "String args can't start with the null terminator: "
+                                arg)))))
 
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (when marked-type?
