@@ -71,9 +71,8 @@
              result @prm]
          (Thread/sleep 500) ; Allow time for post-handler msg cleanup
          (and (= result i) (assertion q id)))
-       (testq "default") nil                1 assert-done ; DEPRECATED
-       (testq "success") {:status :success} 2 assert-done
-       (testq "retry")   {:status :retry}   3 assert-unlocked
-       (testq "error")   {:status :error}   4 assert-done))
+       (testq "success") {:status :success} 1 assert-done
+       (testq "retry")   {:status :retry}   2 assert-unlocked
+       (testq "error")   {:status :error}   3 assert-done))
 
 (clean-up)

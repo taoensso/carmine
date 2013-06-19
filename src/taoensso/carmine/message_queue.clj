@@ -177,14 +177,13 @@
               done  (fn [mid] (wcar conn (car/sadd (qk "recently-done") mid)))
               retry (fn [mid & [backoff-ms]]
                       (wcar conn
-                        (when backoff-ms
-                          (car/hset (qk "backoffs") mid (int backoff-ms)))
+                        (when backoff-ms (car/hset (qk "backoffs") mid backoff-ms))
                         (car/hdel (qk "locks") mid)))
               error (fn [mid poll-reply & [throwable]]
+                      (done mid)
                       (timbre/error
                        (if throwable throwable (Exception. ":error handler response"))
-                       (str "Error handling queue message: " qname "\n" poll-reply))
-                      (done mid))]
+                       (str "Error handling queue message: " qname "\n" poll-reply)))]
 
           (while @running?
             (try
@@ -192,18 +191,16 @@
                          (wcar conn (dequeue qname opts))]
                 (if (= poll-reply "eoq-backoff")
                   (when eoq-backoff-ms (Thread/sleep eoq-backoff-ms))
-                  (let [r (try (handler {:message mcontent :attempt attempt})
-                               (catch Throwable t {:status :error
-                                                   :throwable t}))]
-                    (if-not (map? r)
-                      (done mid) ; TODO DEPRECATED
-                      (let [{:keys [status throwable backoff-ms]} r]
-                        (case status
-                          :success (done mid)
-                          :retry   (retry mid backoff-ms)
-                          :error   (error mid poll-reply throwable)
-                          (do (timbre/warn (str "Invalid handler status:" status))
-                              (done mid))))))))
+                  (let [{:keys [status throwable backoff-ms]}
+                        (try (handler {:message mcontent :attempt attempt})
+                             (catch Throwable t {:status :error
+                                                 :throwable t}))]
+                    (case status
+                      :success (done mid)
+                      :retry   (retry mid backoff-ms)
+                      :error   (error mid poll-reply throwable)
+                      (do (done mid)
+                          (timbre/warn (str "Invalid handler status:" status)))))))
               (catch Throwable t
                 (timbre/error t "FATAL worker error!")
                 (throw t)))
@@ -228,7 +225,9 @@
    :throttle-ms    - Thread sleep period between each poll."
   [conn qname & [{:keys [handler lock-ms eoq-backoff-ms throttle-ms auto-start?]
                   :or   {handler (fn [{:keys [message attempt]}]
-                                   (timbre/info qname message attempt))
+                                   (timbre/info qname message attempt)
+                                   {:status :success})
+                         lock-ms        (* 60 60 1000)
                          throttle-ms    200
                          eoq-backoff-ms 2000
                          lock-ms (* 60 60 1000)
@@ -269,6 +268,8 @@
     (merge (when-let [ms handler-ttl-msecs] {:lock-ms        ms})
            (when-let [ms backoff-msecs]     {:eoq-backoff-ms ms})
            (when-let [ms throttle-msecs]    {:throttle-ms    ms})
-           (when-let [hf handler-fn]        {:handler (fn [{:keys [message]}]
-                                                        (hf message))})
+           (when-let [hf handler-fn]
+             {:handler (fn [{:keys [message]}]
+                         {:status (or (#{:success :error :retry} (hf message))
+                                      :success)})})
            {:auto-start? auto-start?})))
