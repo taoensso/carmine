@@ -5,11 +5,9 @@ Current [semantic](http://semver.org/) version:
 [com.taoensso/carmine "2.0.0-alpha1"] ; Development (notes below)
 ```
 
-v2 adds an improved API, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore.
+v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore.
 
-  * **BREAKING**: Distributed locks API, return type of raw binary data (no longer wrapped in a vector).
-  * **POTENTIALLY BREAKING**: Keyword args are now converted to strings rather than being automatically serialized.
-  * **DEPRECATED**: `with-conn`->`wcar`, `make-dequeue-worker`->`worker`.
+This is a **mostly** backwards-compatible release. See the [Carmine v2 migration guide](https://github.com/ptaoussanis/carmine/blob/master/MIGRATION-v2.md) for details.
 
 # Carmine, a Clojure Redis client & message queue
 
