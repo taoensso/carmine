@@ -109,9 +109,9 @@
   [& [s1 & sn :as sigs]]
   (let [as-pipeline? (= s1 :as-pipeline)
         body (if as-pipeline? sn sigs)]
-    `(let [stashed-replies# (protocol/get-replies! true)]
+    `(let [stashed-replies# (protocol/get-replies true)]
        (try (with-parser nil ~@body) ; Herewith dragons; tread lightly
-            (protocol/get-replies! ~as-pipeline?)
+            (protocol/get-replies ~as-pipeline?)
             (finally
              ;; doseq here broken with Clojure <1.5, Ref. http://goo.gl/5DvRt
              (with-parser nil (dorun (map return stashed-replies#))))))))
@@ -134,7 +134,7 @@
   [& requests]
   (doseq [[cmd & args] requests]
     (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))]
-      (apply protocol/send-request! (into (vec cmd-parts) args)))))
+      (apply protocol/send-request (into (vec cmd-parts) args)))))
 
 (comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
                               [:config-get "*max-*-entries*"])))
@@ -327,7 +327,7 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply! in#)]
+          (let [reply# (protocol/get-basic-reply in#)]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#

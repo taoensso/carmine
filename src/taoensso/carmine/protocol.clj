@@ -98,7 +98,7 @@
         :frozen (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
-(defn send-request!
+(defn send-request
   "Sends a command to Redis server using its byte string protocol:
       *<no. of args>     crlf
       [$<size of arg N>  crlf
@@ -118,7 +118,7 @@
 
 (defn =ba? [^bytes x ^bytes y] (java.util.Arrays/equals x y))
 
-(defn get-basic-reply!
+(defn get-basic-reply
   "BLOCKS to receive a single reply from Redis server. Applies basic parsing
   and returns the result.
 
@@ -168,20 +168,20 @@
                    (Exception. (str "Bad reply data: " (.getMessage e)) e))))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count #(get-basic-reply! in raw?)))
+           (utils/repeatedly* bulk-count #(get-basic-reply in raw?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
-(defn- get-parsed-reply! [^DataInputStream in parser]
+(defn- get-parsed-reply [^DataInputStream in parser]
   (if-not parser
-    (get-basic-reply! in)
+    (get-basic-reply in)
     (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
-      (let [reply (when-not dummy-reply? (get-basic-reply! in raw?))]
+      (let [reply (when-not dummy-reply? (get-basic-reply in raw?))]
         (try (parser reply)
              (catch Exception e
                (Exception. (str "Parser error: " (.getMessage e)) e)))))))
 
-(defn get-replies!
+(defn get-replies
   "Implementation detail - don't use this.
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
@@ -197,8 +197,8 @@
       (reset! (:parser-queue *context*) [])
 
       (if (or (> reply-count 1) as-pipeline?)
-        (mapv #(get-parsed-reply! in %) parsers)
-        (let [reply (get-parsed-reply! in (nth parsers 0))]
+        (mapv #(get-parsed-reply in %) parsers)
+        (let [reply (get-parsed-reply in (nth parsers 0))]
           (if (instance? Exception reply) (throw reply) reply))))))
 
 (defmacro with-context
@@ -213,4 +213,4 @@
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (when-not listener?# (get-replies!)))))
+       (when-not listener?# (get-replies)))))
