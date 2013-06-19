@@ -103,7 +103,7 @@
       *<no. of args>     crlf
       [$<size of arg N>  crlf
         <arg data>       crlf ...]"
-  [& args]
+  [args]
   (let [^BufferedOutputStream out (or (:out-stream *context*)
                                       (throw no-context-error))]
 

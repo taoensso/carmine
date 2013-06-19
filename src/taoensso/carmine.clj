@@ -134,7 +134,7 @@
   [& requests]
   (doseq [[cmd & args] requests]
     (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))]
-      (apply protocol/send-request (into (vec cmd-parts) args)))))
+      (protocol/send-request (into (vec cmd-parts) args)))))
 
 (comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
                               [:config-get "*max-*-entries*"])))
