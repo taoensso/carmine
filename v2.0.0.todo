@@ -9,9 +9,9 @@
 [X] Refactor message queue ns (consider breaking changes).
 [X] Message queue message-backoff facility.
 
-[ ] `(redis-call [:set-config "arg1" "arg2"] [:set "foo" "bar"])`, etc.
+[X] `(redis-call [:set-config "arg1" "arg2"] [:set "foo" "bar"])`, etc.
 
-[ ] Update README (esp. release notes).
+[X] Update README (esp. release notes).
 [ ] Merge initial Tundra implementation, incl. docs.
 
 [ ] Update docs.
