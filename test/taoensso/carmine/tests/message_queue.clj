@@ -50,10 +50,12 @@
     (mq/clear-queues {} (testq))
     (is (= (mq/queue-status {} (testq))
            {:messages {} :locks {} :backoffs {} :retry-counts {}
-            :recently-done #{} :eoq-backoff? nil :mid-circle []}))
+            :recently-done #{} :eoq-backoff? nil :dry-runs nil
+            :mid-circle []}))
     (is (= (mq/queue-status {} (testq "untouched")) ; cleanup is isolated
            {:messages {u-id 1} :locks {} :backoffs {} :retry-counts {}
-            :recently-done #{} :eoq-backoff? nil :mid-circle [u-id "end-of-circle"]}))))
+            :recently-done #{} :eoq-backoff? nil :dry-runs nil
+            :mid-circle [u-id "end-of-circle"]}))))
 
 (defn create-worker [q resp]
   (let [prm (promise)]
