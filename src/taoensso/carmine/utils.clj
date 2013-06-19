@@ -85,4 +85,6 @@
       (persistent! v)
       (recur (conj! v (f)) (inc idx)))))
 
+(def ^:const bytes-class (Class/forName "[B"))
+(defn bytes? [x] (instance? bytes-class x))
 (defn ba= [^bytes x ^bytes y] (java.util.Arrays/equals x y))

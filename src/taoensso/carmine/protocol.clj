@@ -21,19 +21,15 @@
   (Exception. (str "Redis commands must be called within the context of a"
                    " connection to Redis server. See `wcar`.")))
 
-(def ^:const charset     "UTF-8")
-(def ^:const bytes-class (Class/forName "[B"))
-(defn bytes? [x] (instance? bytes-class x))
-
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
-  [x] (if (bytes? x) (WrappedRaw. x)
+  [x] (if (utils/bytes? x) (WrappedRaw. x)
           (throw (Exception. "Raw arg must be byte[]"))))
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
-  ^bytes [^String s] (.getBytes s charset))
+  ^bytes [^String s] (.getBytes s "UTF-8"))
 
 ;;; Request delimiters
 (def ^bytes   bs-crlf (bytestring "\r\n"))
@@ -62,13 +58,13 @@
     * Binary (byte array) args go through un-munged.
     * Everything else gets serialized."
   [^BufferedOutputStream out arg]
-  (let [type (cond (string? arg) :string ; Most common 1st!
+  (let [type (cond (string?      arg) :string ; Most common 1st!
+                   (utils/bytes? arg) :bytes
                    ;;(keyword? arg) :keyword
                    (or (instance? Long    arg)
                        (instance? Double  arg)
                        (instance? Integer arg)
                        (instance? Float   arg)) :simple-num
-                   (instance? bytes-class arg)  :bytes
                    (instance? WrappedRaw  arg)  :raw
                    :else                        :frozen)
 
@@ -158,7 +154,7 @@
 
                (try
                  (case type
-                   :str (String. payload 0 payload-size charset)
+                   :str (String. payload 0 payload-size "UTF-8")
                    :clj (nippy-tools/thaw payload)
                    (:bin :raw) payload)
                  (catch Exception e

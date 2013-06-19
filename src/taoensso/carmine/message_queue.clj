@@ -3,14 +3,14 @@
   Simple implementation. Very simple API. Reliable. Fast.
 
   Redis keys:
-    * carmine:mq:<qname>:messages      -> hash, {mid mcontent}
-    * carmine:mq:<qname>:locks         -> hash, {mid lock-expiry-time}
-    * carmine:mq:<qname>:backoffs      -> hash, {mid backoff-expiry-time}
-    * carmine:mq:<qname>:retry-counts  -> hash, {mid count}
-    * carmine:mq:<qname>:mid-circle    -> list, rotating list of mids
-    * carmine:mq:<qname>:recently-done -> set, for efficient mid removal from circle
+    * carmine:mq:<qname>:messages      -> hash, {mid mcontent}.
+    * carmine:mq:<qname>:locks         -> hash, {mid lock-expiry-time}.
+    * carmine:mq:<qname>:backoffs      -> hash, {mid backoff-expiry-time}.
+    * carmine:mq:<qname>:retry-counts  -> hash, {mid count}.
+    * carmine:mq:<qname>:mid-circle    -> list, rotating list of mids.
+    * carmine:mq:<qname>:recently-done -> set, for efficient mid removal from circle.
     * carmine:mq:<qname>:eoq-backoff?  -> ttl flag, used for queue-wide (every-worker)
-                                          polling backoff
+                                          polling backoff.
 
   Ref. http://antirez.com/post/250 for basic implementation details."
   {:author "Peter Taoussanis"}
@@ -163,7 +163,7 @@
 
 ;;;; Workers
 
-(defprotocol IWorker (stop [this]) (start [this]))
+(defprotocol IWorker (start [this]) (stop [this]))
 
 (defrecord Worker [conn qname running? opts]
   IWorker

@@ -4,7 +4,7 @@
   and Josiah Carlson.
 
   Redis keys:
-    * carmine:lock:<lock-name> -> ttl str, lock owner's UUID
+    * carmine:lock:<lock-name> -> ttl str, lock owner's UUID.
 
   Ref. http://goo.gl/5UalQ for implementation details."
   (:require [taoensso.carmine       :as car :refer (wcar)]
