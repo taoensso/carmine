@@ -62,6 +62,8 @@
   (try (>= (version-compare version-str min-version-str) 0)
        (catch Exception _ false)))
 
+(defn coll?* [x] (and (coll? x) (not (map? x ))))
+
 (defn keyname
   "Like `name` but supports integers and includes namespace in string when
   present."

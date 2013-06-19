@@ -1,7 +1,7 @@
 (ns taoensso.carmine.locks
   "Alpha - subject to change.
   Distributed lock implementation for Carmine based on work by Ronen Narkis
-  and Josiah Carlson.
+  and Josiah Carlson. Redis 2.6+.
 
   Redis keys:
     * carmine:lock:<lock-name> -> ttl str, lock owner's UUID.
