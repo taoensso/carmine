@@ -18,6 +18,19 @@
             [taoensso.carmine :as car :refer (wcar)]
             [taoensso.timbre  :as timbre]))
 
+;;;; Public utils
+
+(defn exp-backoff "Returns binary exponential backoff value."
+  [attempt & [{:keys [factor min max]
+               :or   {factor 2000}}]]
+  (let [binary-exp (Math/pow 2 (dec attempt))
+        time (* (+ binary-exp (rand binary-exp)) 0.5 factor)]
+    (long (let [time (if min (clojure.core/max min time) time)
+                time (if max (clojure.core/min max time) time)]
+            time))))
+
+(comment (map #(exp-backoff % {}) (range 10)))
+
 ;;;; Implementation
 
 (def qkey "Prefixed queue key" (memoize (partial car/kname "carmine" "mq")))
@@ -165,12 +178,13 @@
 
 (defprotocol IWorker (start [this]) (stop [this]))
 
-(defrecord Worker [conn qname running? opts]
+(defrecord Worker [conn qname running? dry-runs opts]
   IWorker
   (stop  [_] (let [stopped? @running?] (reset! running? false) stopped?))
   (start [_]
     (when-not @running?
       (reset! running? true)
+      (reset! dry-runs 0)
       (future
         (let [{:keys [handler throttle-ms eoq-backoff-ms]} opts
               qk    (partial qkey qname)
@@ -187,20 +201,25 @@
 
           (while @running?
             (try
-              (when-let [[mid mcontent attempt :as poll-reply]
-                         (wcar conn (dequeue qname opts))]
-                (if (= poll-reply "eoq-backoff")
-                  (when eoq-backoff-ms (Thread/sleep eoq-backoff-ms))
-                  (let [{:keys [status throwable backoff-ms]}
-                        (try (handler {:message mcontent :attempt attempt})
-                             (catch Throwable t {:status :error
-                                                 :throwable t}))]
-                    (case status
-                      :success (done mid)
-                      :retry   (retry mid backoff-ms)
-                      :error   (error mid poll-reply throwable)
-                      (do (done mid)
-                          (timbre/warn (str "Invalid handler status:" status)))))))
+              (let [eoq-backoff-ms* (if (fn? eoq-backoff-ms)
+                                      (eoq-backoff-ms (swap! dry-runs inc))
+                                      eoq-backoff-ms)
+                    opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)]
+                (when-let [[mid mcontent attempt :as poll-reply]
+                           (wcar conn (dequeue qname opts*))]
+                  (if (= poll-reply "eoq-backoff")
+                    (when eoq-backoff-ms* (Thread/sleep eoq-backoff-ms*))
+                    (let [{:keys [status throwable backoff-ms]}
+                          (try (handler {:message mcontent :attempt attempt})
+                               (catch Throwable t {:status :error
+                                                   :throwable t}))]
+                      (reset! dry-runs 0)
+                      (case status
+                        :success (done mid)
+                        :retry   (retry mid backoff-ms)
+                        :error   (error mid poll-reply throwable)
+                        (do (done mid)
+                            (timbre/warn (str "Invalid handler status:" status))))))))
               (catch Throwable t
                 (timbre/error t "FATAL worker error!")
                 (throw t)))
@@ -221,7 +240,8 @@
                      considered fatally stalled and message re-queued. Must be
                      sufficiently high to prevent double handling.
    :eoq-backoff-ms - Thread sleep period each time end of queue is reached.
-                     Synchronized between all queue workers.
+                     Can be a (fn [dry-run-count]) => ms. Sleep synchronized
+                     between all queue workers.
    :throttle-ms    - Thread sleep period between each poll."
   [conn qname & [{:keys [handler lock-ms eoq-backoff-ms throttle-ms auto-start?]
                   :or   {handler (fn [{:keys [message attempt]}]
@@ -229,35 +249,21 @@
                                    {:status :success})
                          lock-ms        (* 60 60 1000)
                          throttle-ms    200
-                         eoq-backoff-ms 2000
-                         lock-ms (* 60 60 1000)
-                         auto-start? true}}]]
-  (let [w (Worker. conn qname (atom false) {:handler        handler
-                                            :lock-ms        lock-ms
-                                            :throttle-ms    throttle-ms
-                                            :eoq-backoff-ms eoq-backoff-ms
-                                            :auto-start?    auto-start?})]
-    (when auto-start? (start w))
-    w))
+                         eoq-backoff-ms (fn [dry-runs] (exp-backoff dry-runs
+                                                        {:max 10000}))
+                         auto-start?    true}}]]
+  (let [w (Worker. conn qname (atom false) (atom 0)
+                   {:handler        handler
+                    :lock-ms        lock-ms
+                    :throttle-ms    throttle-ms
+                    :eoq-backoff-ms eoq-backoff-ms})]
+    (when auto-start? (start w)) w))
 
 (comment
   (def w1 (worker {} "myq"))
   (wcar {} (enqueue "myq" "msg"))
   (stop w1)
   (queue-status {} "myq"))
-
-;;;; Public utils
-
-(defn exp-backoff "Exponential backoff msecs. Useful for retries."
-  [attempt & [{:keys [factor min max]
-               :or   {factor 2000}}]]
-  (let [binary-exp (Math/pow 2 (dec attempt))
-        time (* (+ binary-exp (rand binary-exp)) 0.5 factor)]
-    (long (let [time (if min (clojure.core/max min time) time)
-                time (if max (clojure.core/min max time) time)]
-            time))))
-
-(comment (map #(exp-backoff % {}) (range 10)))
 
 ;;;; Renamed/deprecated
 
