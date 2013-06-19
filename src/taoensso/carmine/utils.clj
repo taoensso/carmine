@@ -84,3 +84,5 @@
     (if (>= idx n)
       (persistent! v)
       (recur (conj! v (f)) (inc idx)))))
+
+(defn ba= [^bytes x ^bytes y] (java.util.Arrays/equals x y))

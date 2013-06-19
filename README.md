@@ -272,7 +272,7 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 ```clojure
 (wcar* (car/set "bin-key" (byte-array 50))
        (car/get "bin-key"))
-=> ["OK" [#<byte[] [B@7c3ab3b4> 50]]
+=> ["OK" #<byte[] [B@7c3ab3b4>]
 ```
 
 ### Message queue

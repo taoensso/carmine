@@ -116,8 +116,6 @@
 
     (when-let [pq (:parser-queue *context*)] (swap! pq conj *parser*))))
 
-(defn =ba? [^bytes x ^bytes y] (java.util.Arrays/equals x y))
-
 (defn get-basic-reply
   "BLOCKS to receive a single reply from Redis server. Applies basic parsing
   and returns the result.
@@ -144,7 +142,7 @@
                               (.mark in 2)
                               (let [h (byte-array 2)]
                                 (.readFully in h 0 2)
-                                (condp =ba? h
+                                (condp utils/ba= h
                                   bs-clj :clj
                                   bs-bin :bin
                                   nil)))
@@ -162,8 +160,7 @@
                  (case type
                    :str (String. payload 0 payload-size charset)
                    :clj (nippy-tools/thaw payload)
-                   :bin [payload payload-size]
-                   :raw payload)
+                   (:bin :raw) payload)
                  (catch Exception e
                    (Exception. (str "Bad reply data: " (.getMessage e)) e))))))
 

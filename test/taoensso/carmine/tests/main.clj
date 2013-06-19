@@ -266,7 +266,7 @@
   (let [k (test-key "binary-safety")
         ba (byte-array [(byte 3) (byte 1) (byte 4)])]
     (wcar* (car/set k ba))
-    (is (= [ba 3]) (wcar* (car/get k)))))
+    (is (utils/ba= ba (wcar* (car/get k))))))
 
 (deftest test-nulls
   (let [k (test-key "nulls")]
@@ -277,9 +277,9 @@
     (wcar* (car/set k " "))
     (is (= " " (wcar* (car/get k))))
     (wcar* (car/set k (byte-array 0)))
-    (is (= 0 (second (wcar* (car/get k)))))
+    (is (= 0 (count (wcar* (car/get k)))))
     (wcar* (car/set k (.getBytes "\u0000" "UTF-8")))
-    (is (= 1 (second (wcar* (car/get k)))))
+    (is (= 1 (count (wcar* (car/get k)))))
     (wcar* (car/set k "Foobar\u0000"))
     (is (= "Foobar\u0000" (wcar* (car/get k))))
     (is (thrown? Exception (wcar* (car/set k "\u0000Foobar"))))))
