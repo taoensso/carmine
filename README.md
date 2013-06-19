@@ -7,9 +7,8 @@ Current [semantic](http://semver.org/) version:
 
 v2 adds an improved API, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore.
 
-v2 **is backwards compatible EXCEPT FOR** the distributed locks API. Also, please note that the old `with-conn` macro has been **deprecated** in favor of `wcar`. See the `wcar` docstring for details.
-
-**PLEASE REPORT ANY PROBLEMS!**
+  * **BREAKING**: Distributed locks API, return type of raw binary data (no longer wrapped in a vector).
+  * **DEPRECATED**: `with-conn`->`wcar`, `make-dequeue-worker`->`worker`.
 
 # Carmine, a Clojure Redis client & message queue
 
