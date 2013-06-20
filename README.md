@@ -5,7 +5,7 @@ Current [semantic](http://semver.org/) version:
 [com.taoensso/carmine "2.0.0-alpha1"] ; Development (notes below)
 ```
 
-v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore.
+v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. (A [Faraday DynamoDB](https://github.com/ptaoussanis/faraday) implementation is included).
 
 This is a **mostly** backwards-compatible release. See the [Carmine v2 migration guide](https://github.com/ptaoussanis/carmine/blob/master/MIGRATION-v2.md) for details.
 
