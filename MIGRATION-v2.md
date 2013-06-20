@@ -26,7 +26,7 @@ Carmine v2 is **mostly** backwards compatible with Carmine v1. You may or may no
 
 **CHANGES** `(wcar* (car/set "foo" :bar) (car/get "foo"))` previously returned `:bar` but now returns `"bar"`.
 
-**MIGRATING** If you want the same behavior as before, wrap your single-arg keywords with `freeze` when writing: `(wcar* (car/set "foo" (freeze :bar)))`.
+**MIGRATING** If you want the same behavior as before, wrap your single-arg keywords with `freeze` when writing: `(wcar* (car/set "foo" (car/freeze :bar)))`.
 
 The more idiomatic usage would be to write your keywords as unserialized strings, then to use `keyword` or `parse-keyword` to keywordize them on reading. So something like: `(wcar* (car/set "foo" :bar) (car/parse-keyword (car/get "foo")))` to return `:bar`. This is similar to how one would use `as-long`/`parse-long`, `as-double`/`parse-double`, `as-bool`/`parse-bool`, etc.
 
