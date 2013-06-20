@@ -6,7 +6,7 @@
   {:author "Peter Taoussanis"}
   (:require [clojure.string         :as str]
             [taoensso.carmine.utils :as utils]
-            [taoensso.nippy         :as nippy])
+            [taoensso.nippy.tools   :as nippy-tools])
   (:import  [java.io DataInputStream BufferedOutputStream]))
 
 ;; Hack to allow cleaner separation of namespaces
@@ -17,21 +17,19 @@
 (defrecord Context [in-stream out-stream parser-queue])
 (def ^:dynamic *context* nil)
 (def ^:dynamic *parser*  nil)
-(def no-context-error
+(def ^:private no-context-error
   (Exception. (str "Redis commands must be called within the context of a"
-                   " connection to Redis server. See `with-conn`.")))
+                   " connection to Redis server. See `wcar`.")))
 
-(def ^:private ^:const charset     "UTF-8")
-(def ^:private ^:const bytes-class (Class/forName "[B"))
-
-;;; Wrapper types to box values for which we'd like specific coercion behaviour
-(deftype Frozen [value])
-(deftype Raw    [value])
+(defrecord WrappedRaw [ba])
+(defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
+  [x] (if (utils/bytes? x) (WrappedRaw. x)
+          (throw (Exception. "Raw arg must be byte[]"))))
 
 (defn bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
-  ^bytes [^String s] (.getBytes s charset))
+  ^bytes [^String s] (.getBytes s "UTF-8"))
 
 ;;; Request delimiters
 (def ^bytes   bs-crlf (bytestring "\r\n"))
@@ -60,26 +58,23 @@
     * Binary (byte array) args go through un-munged.
     * Everything else gets serialized."
   [^BufferedOutputStream out arg]
-  (let [type (cond (string? arg) :string ; Most common 1st!
-                   ;;(keyword? arg) :keyword
+  (let [type (cond (string?      arg) :string ; Most common 1st!
+                   (keyword?     arg) :keyword
+                   (utils/bytes? arg) :bytes
                    (or (instance? Long    arg)
                        (instance? Double  arg)
                        (instance? Integer arg)
-                       (instance? Float   arg)) :simple-number
-                   (instance? bytes-class arg)  :bytes
-                   (instance? Raw         arg)  :raw
+                       (instance? Float   arg)) :simple-num
+                   (instance? WrappedRaw  arg)  :raw
                    :else                        :frozen)
 
         ^bytes ba (case type
-                    :string        (bytestring arg)
-                    :keyword       (bytestring (name arg))
-                    :simple-number (bytestring (str arg))
-                    :bytes         arg
-                    :raw           (.value ^Raw arg)
-                    :frozen        (nippy/freeze-to-bytes
-                                    (if (instance? Frozen arg)
-                                      (.value ^Frozen arg)
-                                      arg)))
+                    :string     (bytestring arg)
+                    :keyword    (bytestring (utils/fq-name arg))
+                    :simple-num (bytestring (str arg))
+                    :bytes      arg
+                    :raw        (:ba arg)
+                    :frozen     (nippy-tools/freeze arg))
 
         payload-size (alength ba)
         marked-type? (case type (:bytes :frozen) true false)
@@ -87,10 +82,10 @@
 
     ;; To support various special goodies like serialization, we reserve
     ;; strings that begin with a null terminator
-    (when (and (= type :string) (.startsWith ^String arg "\u0000"))
-      (throw (Exception.
-              (str "String arguments cannot begin with the null terminator: "
-                   arg))))
+    (when-let [s (case type :string arg :keyword (name arg) nil)]
+      (when (.startsWith ^String s "\u0000")
+        (throw (Exception. (str "String args can't start with the null terminator: "
+                                arg)))))
 
     (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
     (when marked-type?
@@ -99,12 +94,12 @@
         :frozen (send-clj out)))
     (.write out ba 0 payload-size) (send-crlf out)))
 
-(defn send-request!
+(defn send-request
   "Sends a command to Redis server using its byte string protocol:
       *<no. of args>     crlf
       [$<size of arg N>  crlf
         <arg data>       crlf ...]"
-  [& args]
+  [args]
   (let [^BufferedOutputStream out (or (:out-stream *context*)
                                       (throw no-context-error))]
 
@@ -117,9 +112,7 @@
 
     (when-let [pq (:parser-queue *context*)] (swap! pq conj *parser*))))
 
-(defn =ba? [^bytes x ^bytes y] (java.util.Arrays/equals x y))
-
-(defn get-basic-reply!
+(defn get-basic-reply
   "BLOCKS to receive a single reply from Redis server. Applies basic parsing
   and returns the result.
 
@@ -145,7 +138,7 @@
                               (.mark in 2)
                               (let [h (byte-array 2)]
                                 (.readFully in h 0 2)
-                                (condp =ba? h
+                                (condp utils/ba= h
                                   bs-clj :clj
                                   bs-bin :bin
                                   nil)))
@@ -159,27 +152,29 @@
                (.readFully in payload 0 payload-size)
                (.readFully in (byte-array 2) 0 2) ; Discard final crlf
 
-               (case type
-                 :str (String. payload 0 payload-size charset)
-                 :clj (nippy/thaw-from-bytes payload)
-                 :bin [payload payload-size]
-                 :raw payload))))
+               (try
+                 (case type
+                   :str (String. payload 0 payload-size "UTF-8")
+                   :clj (nippy-tools/thaw payload)
+                   (:bin :raw) payload)
+                 (catch Exception e
+                   (Exception. (str "Bad reply data: " (.getMessage e)) e))))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count #(get-basic-reply! in raw?)))
+           (utils/repeatedly* bulk-count #(get-basic-reply in raw?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
-(defn- get-parsed-reply! [^DataInputStream in parser]
+(defn- get-parsed-reply [^DataInputStream in parser]
   (if-not parser
-    (get-basic-reply! in)
+    (get-basic-reply in)
     (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
-      (let [reply (when-not dummy-reply? (get-basic-reply! in raw?))]
+      (let [reply (when-not dummy-reply? (get-basic-reply in raw?))]
         (try (parser reply)
              (catch Exception e
                (Exception. (str "Parser error: " (.getMessage e)) e)))))))
 
-(defn get-replies!
+(defn get-replies
   "Implementation detail - don't use this.
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
@@ -195,8 +190,8 @@
       (reset! (:parser-queue *context*) [])
 
       (if (or (> reply-count 1) as-pipeline?)
-        (utils/mapv* #(get-parsed-reply! in %) parsers)
-        (let [reply (get-parsed-reply! in (nth parsers 0))]
+        (mapv #(get-parsed-reply in %) parsers)
+        (let [reply (get-parsed-reply in (nth parsers 0))]
           (if (instance? Exception reply) (throw reply) reply))))))
 
 (defmacro with-context
@@ -211,4 +206,4 @@
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (when-not listener?# (get-replies!)))))
+       (when-not listener?# (get-replies)))))

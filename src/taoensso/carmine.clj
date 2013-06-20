@@ -1,5 +1,4 @@
-(ns taoensso.carmine
-  "Clojure Redis client & message queue."
+(ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set keys type sync sort eval])
   (:require [clojure.string :as str]
@@ -8,55 +7,28 @@
              (protocol    :as protocol)
              (connections :as conns)
              (commands    :as commands)]
-            [taoensso.timbre :as timbre])
-  (:import [org.apache.commons.pool.impl GenericKeyedObjectPool]
-           [taoensso.carmine.connections ConnectionPool]
-           [taoensso.carmine.protocol    Frozen Raw]
-           java.net.URI))
+            [taoensso.timbre      :as timbre]
+            [taoensso.nippy.tools :as nippy-tools]))
 
 ;;;; Connections
 
-(defn make-conn-pool
-  "For option documentation see http://goo.gl/EiTbn"
-  [& options]
-  (let [;; Defaults adapted from Jedis
-        defaults {:test-while-idle?              true
-                  :num-tests-per-eviction-run    -1
-                  :min-evictable-idle-time-ms    60000
-                  :time-between-eviction-runs-ms 30000}]
-    (ConnectionPool.
-     (reduce conns/set-pool-option
-             (GenericKeyedObjectPool. (conns/make-connection-factory))
-             (merge defaults (apply hash-map options))))))
-
-(defn- parse-uri [uri]
-  (when uri
-    (let [^URI uri (if (instance? URI uri) uri (URI. uri))
-          [user password] (.split (str (.getUserInfo uri)) ":")
-          port (.getPort uri)]
-      (-> {:host (.getHost uri)}
-          (#(if (pos? port) (assoc % :port     port)     %))
-          (#(if password    (assoc % :password password) %))))))
-
-(comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/"))
-
-(defn make-conn-spec
-  [& {:keys [uri host port password timeout-ms db] :as opts}]
-  (let [defaults {:host "127.0.0.1" :port 6379}
-        opts     (if-let [timeout (:timeout opts)] ; Support deprecated opt
-                   (assoc opts :timeout-ms timeout)
-                   opts)]
-    (merge defaults opts (parse-uri uri))))
-
-(defmacro with-conn
-  "Evaluates body in the context of a thread-bound pooled connection to a Redis
+(defmacro wcar
+  "Evaluates body in the context of a thread-bound pooled connection to Redis
   server. Sends Redis commands to server as pipeline and returns the server's
   response. Releases connection back to pool when done.
 
-  Use `make-conn-pool` and `make-conn-spec` to generate the required arguments."
-  [connection-pool connection-spec & body]
-  `(let [pool# (or ~connection-pool conns/non-pooled-connection-pool)
-         spec# (or ~connection-spec (make-conn-spec))
+  `conn` arg is a map with connection pool and spec options:
+    {:pool {} :spec {:host \"127.0.0.1\" :port 6379}} ; Default
+    {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}}
+    {:pool {} :spec {:host \"127.0.0.1\" :port 6379
+                     :password \"secret\"
+                     :timeout-ms 6000
+                     :db 3}}
+
+  For pool options, Ref. http://goo.gl/EiTbn."
+  [{:keys [pool spec] :as conn} & body]
+  `(let [[pool# spec#] [(conns/make-conn-pool ~pool)
+                        (conns/make-conn-spec ~spec)]
          conn# (try (conns/get-conn pool# spec#)
                     (catch Exception e#
                       (throw (Exception. "Carmine connection error" e#))))]
@@ -65,10 +37,11 @@
          (conns/release-conn pool# conn#) response#)
        (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
 
+(comment (wcar {} (ping) "not-a-Redis-command" (ping)))
+
 ;;;; Misc
 
-;;; Note (number? x) checks for backwards compatibility with pre-v0.11 Carmine
-;;; versions that auto-serialized simple number types
+;;; (number? x) for Carmine < v0.11.x backwards compatiblility
 (defn as-long   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
 (defn as-double [x] (when x (if (number? x) (double x) (Double/parseDouble x))))
 (defn as-bool   [x] (when x
@@ -89,6 +62,8 @@
 (defmacro parse-double  [& body] `(with-parser as-double ~@body))
 (defmacro parse-bool    [& body] `(with-parser as-bool   ~@body))
 (defmacro parse-keyword [& body] `(with-parser keyword   ~@body))
+(defmacro parse-raw "Alpha - subject to change."
+  [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
 
 (defn kname
   "Joins keywords, integers, and strings to form an idiomatic compound Redis key
@@ -103,32 +78,29 @@
 
 (comment (kname :foo/bar :baz "qux" nil 10))
 
-(defn freeze
-  "Forces argument of any type (including simple number and binary types) to be
-  subject to automatic de/serialization."
-  [x] (protocol/Frozen. x))
-
-(defn raw "Alpha - subject to change." [x] (protocol/Raw. x))
-(defmacro parse-raw "Alpha - subject to change."
-  [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
+(utils/defalias raw            protocol/raw)
+(utils/defalias with-thaw-opts nippy-tools/with-thaw-opts)
+(utils/defalias freeze         nippy-tools/wrap-for-freezing
+  "Forces argument of any type (incl. keywords, simple numbers, and binary types)
+  to be subject to automatic de/serialization with Nippy.")
 
 (defn return
   "Alpha - subject to change.
   Special command that takes any value and returns it unchanged as part of
-  an enclosing `with-conn` pipeline response."
+  an enclosing `wcar` pipeline response."
   [value]
   (let [vfn (constantly value)]
     (swap! (:parser-queue protocol/*context*) conj
            (with-meta (if-let [p protocol/*parser*] (comp p vfn) vfn)
              {:dummy-reply? true}))))
 
-(comment (wc (return :foo) (ping) (return :bar))
-         (wc (with-parser name (return :foo)) (ping) (return :bar)))
+(comment (wcar {} (return :foo) (ping) (return :bar))
+         (wcar {} (with-parser name (return :foo)) (ping) (return :bar)))
 
 (defmacro with-replies
   "Alpha - subject to change!!
   Evaluates body, immediately returning the server's response to any contained
-  Redis commands (i.e. before enclosing `with-conn` ends). Ignores any parser
+  Redis commands (i.e. before enclosing `wcar` ends). Ignores any parser
   in enclosing (not _enclosed_) context.
 
   As an implementation detail, stashes and then `return`s any replies already
@@ -137,21 +109,35 @@
   [& [s1 & sn :as sigs]]
   (let [as-pipeline? (= s1 :as-pipeline)
         body (if as-pipeline? sn sigs)]
-    `(let [stashed-replies# (protocol/get-replies! true)]
+    `(let [stashed-replies# (protocol/get-replies true)]
        (try (with-parser nil ~@body) ; Herewith dragons; tread lightly
-            (protocol/get-replies! ~as-pipeline?)
+            (protocol/get-replies ~as-pipeline?)
             (finally
              ;; doseq here broken with Clojure <1.5, Ref. http://goo.gl/5DvRt
              (with-parser nil (dorun (map return stashed-replies#))))))))
 
-(comment (wc (echo 1) (println (with-replies (ping))) (echo 2))
-         (wc (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
+(comment (wcar {} (echo 1) (println (with-replies (ping))) (echo 2))
+         (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
 
 ;;;; Standard commands
 
 (commands/defcommands) ; This kicks ass - big thanks to Andreas Bielk!
 
 ;;;; Helper commands
+
+(defn redis-call
+  "Sends low-level requests to Redis. Useful for DSLs, certain kinds of command
+  composition, and for executing commands that haven't yet been added to the
+  official `commands.json` spec.
+
+  (redis-call [:set \"foo\" \"bar\"] [:get \"foo\"])"
+  [& requests]
+  (doseq [[cmd & args] requests]
+    (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))]
+      (protocol/send-request (into (vec cmd-parts) args)))))
+
+(comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
+                              [:config-get "*max-*-entries*"])))
 
 (def hash-script
   (memoize
@@ -215,10 +201,10 @@
          (into (vec (vals key-vars-map)) (vals arg-vars-map))))
 
 (comment
-  (wc (lua-script "redis.call('set', _:my-key, _:my-val)
-                   return redis.call('get', 'foo')"
-                  {:my-key "foo"}
-                  {:my-val "bar"})))
+  (wcar {} (lua-script "redis.call('set', _:my-key, _:my-val)
+                        return redis.call('get', 'foo')"
+                       {:my-key "foo"}
+                       {:my-val "bar"})))
 
 (defn hgetall*
   "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
@@ -341,7 +327,7 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply! in#)]
+          (let [reply# (protocol/get-basic-reply in#)]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#
@@ -374,8 +360,9 @@
 
   Returns the Listener to allow manual closing and adjustments to
   message-handlers."
-  [connection-spec message-handlers & subscription-commands]
-  `(with-new-listener (assoc ~connection-spec :pubsub-listener? true)
+  [conn-spec message-handlers & subscription-commands]
+  `(with-new-listener (assoc (conns/make-conn-spec ~conn-spec)
+                        :pubsub-listener? true)
 
      ;; Message handler (fn [message state])
      (fn [[_# source-channel# :as incoming-message#] msg-handlers#]
@@ -387,32 +374,29 @@
 
 ;;;; Renamed/deprecated
 
-(def serialize "DEPRECATED. Please use `freeze`." freeze)
-(def preserve  "DEPRECATED. Please use `freeze`." freeze)
-(def remember  "DEPRECATED. Please use `return`."    return)
-(def ^:macro skip-replies "DEPRECATED. Please use `with-replies`." #'with-replies)
-(def ^:macro with-reply   "DEPRECATED. Please use `with-replies`." #'with-replies)
+(def serialize "DEPRECATED: Use `freeze` instead." freeze)
+(def preserve  "DEPRECATED: Use `freeze` instead." freeze)
+(def remember  "DEPRECATED: Use `return` instead." return)
+(def ^:macro skip-replies "DEPRECATED: Use `with-replies` instead." #'with-replies)
+(def ^:macro with-reply   "DEPRECATED: Use `with-replies` instead." #'with-replies)
 
-(defn make-keyfn "DEPRECATED. Please use `kname`."
+(defn make-keyfn "DEPRECATED: Use `kname` instead."
   [& prefix-parts]
   (let [prefix (when (seq prefix-parts) (str (apply kname prefix-parts) ":"))]
     (fn [& parts] (str prefix (apply kname parts)))))
 
-;;;; Dev/tests
+(defn make-conn-pool "DEPRECATED: Use `wcar` instead."
+  [& opts] (conns/make-conn-pool (apply hash-map opts)))
 
-(comment
-  (do (def pool (make-conn-pool))
-      (def spec (make-conn-spec))
-      (def conn (conns/get-conn pool spec))
-      (defmacro wc [& body] `(with-conn pool spec ~@body)))
+(defn make-conn-spec "DEPRECATED: Use `wcar` instead."
+  [& opts] (conns/make-conn-spec (apply hash-map opts)))
 
-  ;;; Basic connections
-  (conns/conn-alive? conn)
-  (conns/release-conn pool conn) ; Return connection to pool (don't close)
-  (conns/close-conn conn)        ; Actually close connection
+(defmacro with-conn "DEPRECATED: Use `wcar` instead."
+  [connection-pool connection-spec & body]
+  `(wcar {:pool ~connection-pool :spec ~connection-spec} ~@body))
 
-  ;;; Basic requests
-  (with-conn nil nil (ping)) ; Degenerate pool, default spec
-  (with-conn (make-conn-pool) (make-conn-spec) (ping))
-  (with-conn pool spec (ping))
-  (with-conn pool spec "invalid" (ping) (ping)))
+(defn conn-shim ; 1.x backwards compatiblity
+  [f] (fn [& [s1 s2 & sn :as sigs]]
+        (if (instance? taoensso.carmine.connections.ConnectionPool s1)
+          (apply f {:pool s1 :spec s2} sn)
+          (apply f sigs))))

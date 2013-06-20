@@ -1,0 +1,19 @@
+[X] Add Expectations for testing (no need to migrate old tests).
+[X] `with-conn` -> `wconn` API.
+[X] `with-conn` backwards compatibility.
+[X] Rebase Sentinel branch.
+[X] Fix MQ tests so rapid reruns work.
+[X] Drop `wcar`? Would need to rename `wconn` to allow unambiguous :refer.
+[S] Switch to fast io-streams.
+
+[X] Refactor message queue ns (consider breaking changes).
+[X] Message queue message-backoff facility.
+
+[X] `(redis-call [:set-config "arg1" "arg2"] [:set "foo" "bar"])`, etc.
+
+[X] Update README (esp. release notes).
+[ ] Merge initial Tundra implementation, incl. docs.
+
+[ ] Update docs.
+[ ] Wait+depend on [com.taoensso/nippy "2.0.0"].
+[ ] Merge with master as development release.

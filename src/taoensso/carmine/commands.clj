@@ -55,17 +55,19 @@
                           "\n\n" (:summary refspec) ".\n\n"
                           "Available since: " (:since refspec) ".\n\n"
                           "Time complexity: " (:complexity refspec))
-
         fn-params      (args->params-vec args)
         request-params (into (str/split command-name #" ")
                              fn-params)
-        apply-params   (let [[p varp] (split-with #(not= '& %) request-params)]
-                         (conj (vec p) (last varp)))]
+        [ps [_ varps]] (split-with #(not= '& %) request-params)
+        ps             (vec ps)]
     (if debug-mode?
       `(println ~fn-name ":" \" ~(args->params-docstring args) \"
                 "->" ~(str fn-params))
-      `(defn ~(symbol fn-name) ~fn-docstring ~fn-params
-         (apply protocol/send-request! ~@apply-params)))))
+      (if-not varps
+        `(defn ~(symbol fn-name) ~fn-docstring ~fn-params
+           (protocol/send-request ~ps))
+        `(defn ~(symbol fn-name) ~fn-docstring ~fn-params
+           (protocol/send-request (into ~ps ~varps)))))))
 
 (defn- get-command-reference
   "Returns parsed JSON official command reference.
