@@ -307,7 +307,7 @@ Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmin
 
 ## Tundra
 
-###### Alpha - work in progress
+### Alpha - work in progress: THIS MIGHT EAT ALL YOUR DATA, HIDE THE KITTENS!
 
 Redis is great. [DynamoDB](http://aws.amazon.com/dynamodb/) is great. Together they're _amazing_. Tundra is a **semi-automatic datastore layer for Carmine** that marries the best of Redis **(simplicity, read+write performance, structured datatypes, low operational cost)** with the best of an additional datastore like DynamoDB **(scalability, reliability incl. off-site backups, and big-data storage)**. All with a secure, dead-simple, high-performance API.
 
