@@ -147,12 +147,7 @@
         (when-not (empty? missing-ks)
           (timbre/trace "Fetching missing keys: " missing-ks)
           (let [fetch-data ; {<redis-key> <data> ...}
-                (->> (far/batch-get-item creds
-                       {ttable {:prim-kvs {:worker    (name worker)
-                                           :redis-key missing-ks}
-                                :attrs [:redis-key :data]}})
-                     (ttable) ; [{:worker _ :redis-key _} ...]
-                     (far/items-by-attrs :redis-key))
+                nil ; TODO
 
                 ;; Restore what we can even if some fetches failed
                 restore-replies ; {<redis-key> <restore-reply> ...}
@@ -223,10 +218,3 @@
                      0 ; ms ttl
                      (car/raw (wc (car/parse-raw (car/dump "fookey")))))
         (car/get "fookey*3")))
-
-;;;; README
-
-(comment
-  (def mc {:access-key "" :secret-key ""})
-
-  )

@@ -9,40 +9,59 @@
 (def ttable :faraday.tundra.datastore)
 
 (defn ensure-table
-  "Creates the Faraday Tundra table iff it doesn't already exist."
+  "Creates the Faraday Tundra table iff it doesn't already exist.
+
+  You'll probably want the minimum write throughput here (1 units) since
+  writes will usually occur in tight groups while freezing, and a
+  :peak-write-config DataStore option is provided for these periods."
   [creds & [{:keys [throughput block?]}]]
-  (far/ensure-table creds
-    {:name         ttable
-     :throughput   throughput
-     :hash-keydef  {:name :worker    :type :s}
-     :range-keydef {:name :redis-key :type :s}
+  (far/ensure-table creds ttable [:worker :s]
+    {:throughput   throughput
+     :range-keydef [:redis-key :s]
      :block?       block?}))
 
-(defrecord FaradayDataStore [creds]
+(defrecord FaradayDataStore [creds opts]
   IDataStore
-  ;; TODO Logic to break jobs into multiple requests as necessary.
+  (put-keys [store content]
+    (let [{:keys [peak-write-config]} opts]
 
-  ;; Important DynamoDB limits apply, Ref. http://goo.gl/wA06O
-  ;;   * Max item size: 64KB (incl. key size).
-  ;;   * Batch GET: <= 100 items, <= 1MB total.
-  ;;   * Batch PUT: <= 25 items,  <= 1MB total.
+      ;;; TODO
+      ;; * content is frozen and ready-to-go
+      ;; * No point in doing write throttling this table.
+      ;; * Check {<max-ks> <write-units> ...} map for auto write scaling.
+      ;; * partition-all as 15-groups for stitching because (< (* 15 64) 1024),
+      ;;   an easy way of ensuring we'll be under 1MB limit even if every key
+      ;;   is max possible size.
+      ;; * Return {<k> <success?> ...}
 
-  ;; (/ 1024 64) => we'll be safe on both GETs & PUTS if we limit item
-  ;; size to, say, 60KB and 16 items per request
+      ))
 
-  (put-keys   [store content]
-    ;; TODO
-    )
   (fetch-keys [store ks]
-    ;; Doesn't need to be a consistent read since there's presumably been at
-    ;; least HOURS since last write :-)
 
-    ;; TODO
+    ;;; TODO
+    ;; * partition-all as 100-groups for stitching.
+    ;; * No need for consistent reads: there's presumably been at least _hours_
+    ;;   since last write.
+    ;; * Return {<k> <frozen-content> ...}.
+
+    ;; fetch-data ; {<redis-key> <data> ...}
+    ;; (->> (far/batch-get-item creds
+    ;;        {ttable {:prim-kvs {:worker    (name worker)
+    ;;                            :redis-key missing-ks}
+    ;;                 :attrs [:redis-key :data]}})
+    ;;      (ttable) ; [{:worker _ :redis-key _} ...]
+    ;;      (far/items-by-attrs :redis-key))
+
     ))
+
+(defn faraday-datastore
+  ""
+  [creds & [{:keys [peek-write-config]}]])
 
 (comment ; TODO
   (def creds {:access-key "" :secret-key ""})
-  (ensure-table creds {:read 1 :write 1})
+
+  (ensure-table creds {:throughput {:read 1 :write 1}})
   (far/describe-table creds ttable)
 
   (let [ttable  ttable
