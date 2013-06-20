@@ -12,7 +12,8 @@
 [X] `(redis-call [:set-config "arg1" "arg2"] [:set "foo" "bar"])`, etc.
 
 [X] Update README (esp. release notes).
-[ ] Merge initial Tundra implementation, incl. docs.
+[X] Merge initial Tundra implementation, incl. docs.
+[ ] Finish initial, working Tundra implementation.
 
 [ ] Update docs.
 [ ] Wait+depend on [com.taoensso/nippy "2.0.0"].
