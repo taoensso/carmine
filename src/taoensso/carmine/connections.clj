@@ -96,24 +96,28 @@
     (throw (Exception. (str "Unknown pool option: " opt))))
   pool)
 
-(def ^:private make-conn-pool*
-  (memoize
-   (fn [opts]
-     (if (= opts :none) (NonPooledConnectionPool.)
-       (let [defaults {:test-while-idle?              true
-                       :num-tests-per-eviction-run    -1
-                       :min-evictable-idle-time-ms    60000
-                       :time-between-eviction-runs-ms 30000}]
-         (ConnectionPool.
-          (reduce set-pool-option
-                  (GenericKeyedObjectPool. (make-connection-factory))
-                  (merge defaults opts))))))))
+(def ^:private pool-cache (atom {}))
 
-(defn make-conn-pool ; 1.x backwards compatiblity
-  [opts] (if (instance? ConnectionPool opts) opts
-             (make-conn-pool* opts)))
+(defn conn-pool
+  [opts & [cached?]]
+  (if (instance? ConnectionPool opts)
+    opts ; 1.x backwards compatiblity, testing
+    (if-let [dp (and cached? (@pool-cache opts))]
+      @dp
+      (let [dp (delay
+                (if (= opts :none) (NonPooledConnectionPool.)
+                    (let [defaults {:test-while-idle?              true
+                                    :num-tests-per-eviction-run    -1
+                                    :min-evictable-idle-time-ms    60000
+                                    :time-between-eviction-runs-ms 30000}]
+                      (ConnectionPool.
+                       (reduce set-pool-option
+                               (GenericKeyedObjectPool. (make-connection-factory))
+                               (merge defaults opts))))))]
+        (swap! pool-cache assoc opts dp)
+        @dp))))
 
-(comment (make-conn-pool :none) (make-conn-pool {}))
+(comment (conn-pool :none) (conn-pool {}))
 
 (defn- parse-uri [uri]
   (when uri
@@ -126,7 +130,7 @@
 
 (comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/"))
 
-(def make-conn-spec
+(def conn-spec
   (memoize
    (fn [{:keys [uri host port password timeout-ms db] :as opts}]
      (let [defaults {:host "127.0.0.1" :port 6379}
@@ -134,3 +138,14 @@
                       (assoc opts :timeout-ms timeout)
                       opts)]
        (merge defaults opts (parse-uri uri))))))
+
+(defn pooled-conn "Returns [<open-pool> <pooled-connection>]."
+  [pool-opts spec-opts]
+  (let [spec (conn-spec spec-opts)]
+    (let [pool (conn-pool pool-opts true)]
+      (try (try [pool (get-conn pool spec)]
+                (catch IllegalStateException e
+                  (let [pool (conn-pool pool-opts)]
+                    [pool (get-conn pool spec)])))
+        (catch Exception e
+          (throw (Exception. "Carmine connection error" e)))))))

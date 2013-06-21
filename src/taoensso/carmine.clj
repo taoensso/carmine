@@ -27,17 +27,14 @@
 
   For pool options, Ref. http://goo.gl/EiTbn."
   [{:keys [pool spec] :as conn} & body]
-  `(let [[pool# spec#] [(conns/make-conn-pool ~pool)
-                        (conns/make-conn-spec ~spec)]
-         conn# (try (conns/get-conn pool# spec#)
-                    (catch Exception e#
-                      (throw (Exception. "Carmine connection error" e#))))]
-     (try
-       (let [response# (protocol/with-context conn# ~@body)]
-         (conns/release-conn pool# conn#) response#)
+  `(let [[pool# conn#] (conns/pooled-conn ~pool ~spec)]
+     (try (let [response# (protocol/with-context conn# ~@body)]
+            (conns/release-conn pool# conn#) response#)
        (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
 
-(comment (wcar {} (ping) "not-a-Redis-command" (ping)))
+(comment (wcar {} (ping) "not-a-Redis-command" (ping))
+         (with-open [p (conns/conn-pool {})]
+           (wcar {:pool p} (ping) (ping))))
 
 ;;;; Misc
 
@@ -361,7 +358,7 @@
   Returns the Listener to allow manual closing and adjustments to
   message-handlers."
   [conn-spec message-handlers & subscription-commands]
-  `(with-new-listener (assoc (conns/make-conn-spec ~conn-spec)
+  `(with-new-listener (assoc (conns/conn-spec ~conn-spec)
                         :pubsub-listener? true)
 
      ;; Message handler (fn [message state])
@@ -386,10 +383,10 @@
     (fn [& parts] (str prefix (apply kname parts)))))
 
 (defn make-conn-pool "DEPRECATED: Use `wcar` instead."
-  [& opts] (conns/make-conn-pool (apply hash-map opts)))
+  [& opts] (conns/conn-pool (apply hash-map opts)))
 
 (defn make-conn-spec "DEPRECATED: Use `wcar` instead."
-  [& opts] (conns/make-conn-spec (apply hash-map opts)))
+  [& opts] (conns/conn-spec (apply hash-map opts)))
 
 (defmacro with-conn "DEPRECATED: Use `wcar` instead."
   [connection-pool connection-spec & body]
