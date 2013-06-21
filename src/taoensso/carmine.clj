@@ -26,9 +26,8 @@
                      :db 3}}
 
   For pool options, Ref. http://goo.gl/EiTbn."
-  [{:keys [pool spec] :as conn} & body]
-  `(let [[pool# spec#] [(conns/make-conn-pool ~pool)
-                        (conns/make-conn-spec ~spec)]
+  [conn & body]
+  `(let [{pool# :pool spec# :spec} (conns/make-memoized-specification ~conn)
          conn# (try (conns/get-conn pool# spec#)
                     (catch Exception e#
                       (throw (Exception. "Carmine connection error" e#))))]
