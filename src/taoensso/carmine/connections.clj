@@ -48,7 +48,7 @@
   (release-conn [this conn exception] (.invalidateObject pool (get-spec conn)
                                                          conn))
   java.io.Closeable
-  (close [this] (.close ^ConnectionPool pool)))
+  (close [this] (.close pool)))
 
 (defn make-new-connection
   "Actually creates and returns a new socket connection."
