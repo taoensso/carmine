@@ -48,7 +48,11 @@
   (release-conn [this conn exception] (.invalidateObject pool (get-spec conn)
                                                          conn))
   java.io.Closeable
-  (close [this] (.close ^ConnectionPool pool)))
+  (close [this] (.close pool)))
+
+(defrecord Specification [^java.io.Closeable pool spec]
+  java.io.Closeable
+  (close [this] (.close pool)))
 
 (defn make-new-connection
   "Actually creates and returns a new socket connection."
@@ -69,6 +73,11 @@
   (get-conn     [this spec] (make-new-connection spec))
   (release-conn [this conn] (close-conn conn))
   (release-conn [this conn exception] (close-conn conn)))
+
+(def non-pool
+  "The (global) NonPooledConnectionPool.  This gives a pool-like
+  interface for non-pooled connections."
+  (->NonPooledConnectionPool))
 
 (defn make-connection-factory []
   (reify KeyedPoolableObjectFactory
@@ -96,24 +105,32 @@
     (throw (Exception. (str "Unknown pool option: " opt))))
   pool)
 
-(def ^:private make-conn-pool*
-  (memoize
-   (fn [opts]
-     (if (= opts :none) (NonPooledConnectionPool.)
-       (let [defaults {:test-while-idle?              true
-                       :num-tests-per-eviction-run    -1
-                       :min-evictable-idle-time-ms    60000
-                       :time-between-eviction-runs-ms 30000}]
-         (ConnectionPool.
-          (reduce set-pool-option
-                  (GenericKeyedObjectPool. (make-connection-factory))
-                  (merge defaults opts))))))))
+(defn make-pool
+  "Returns a ConnectionPool from options."
+  (^taoensso.carmine.connections.ConnectionPool []
+     (make-pool {}))
+  (^taoensso.carmine.connections.ConnectionPool [options]
+     (-> (->> options
+              (merge {:test-while-idle? true
+                      :num-tests-per-eviction-run -1
+                      :min-evictable-idle-time-ms 60000
+                      :time-between-eviction-runs-ms 30000})
+              (reduce set-pool-option
+                      (GenericKeyedObjectPool. (make-connection-factory)))
+              ->ConnectionPool))))
+
+(def ^:private make-memoized-pool (memoize make-pool))
 
 (defn make-conn-pool ; 1.x backwards compatiblity
-  [opts] (if (instance? ConnectionPool opts) opts
-             (make-conn-pool* opts)))
+  "Returns a (memoized) connection pool from options."
+  [opts]
+  (cond
+    (or (instance? ConnectionPool opts)
+        (instance? NonPooledConnectionPool opts)) opts
+    (= :none opts) non-pool
+    :else (make-memoized-pool opts)))
 
-(comment (make-conn-pool :none) (make-conn-pool {}))
+(comment (make-conn-pool {}))
 
 (defn- parse-uri [uri]
   (when uri
@@ -134,3 +151,15 @@
                       (assoc opts :timeout-ms timeout)
                       opts)]
        (merge defaults opts (parse-uri uri))))))
+
+(defn make-memoized-specification
+  "Returns a memoized specification from optional :pool and :spec."
+  ^taoensso.carmine.connections.Specification
+  [{:keys [pool spec]}]
+  (->Specification (make-conn-pool pool) (make-conn-spec spec)))
+
+(defn make-specification
+  "Returns a specification from optional :pool and :spec."
+  ^taoensso.carmine.connections.Specification
+  [{:keys [pool spec]}]
+  (->Specification (make-pool pool) (make-conn-spec spec)))
