@@ -391,9 +391,3 @@
 (defmacro with-conn "DEPRECATED: Use `wcar` instead."
   [connection-pool connection-spec & body]
   `(wcar {:pool ~connection-pool :spec ~connection-spec} ~@body))
-
-(defn conn-shim ; 1.x backwards compatiblity
-  [f] (fn [& [s1 s2 & sn :as sigs]]
-        (if (instance? taoensso.carmine.connections.ConnectionPool s1)
-          (apply f {:pool s1 :spec s2} sn)
-          (apply f sigs))))

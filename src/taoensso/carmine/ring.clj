@@ -27,14 +27,16 @@
   "Creates and returns a Carmine-backed Ring SessionStore. Use `expiration-secs`
   to specify how long session data will survive after last write. When nil,
   sessions will never expire."
-  [conn & {:keys [key-prefix expiration-secs]
-           :or   {key-prefix       "carmine:session"
-                  expiration-secs  (str (* 60 60 24 30))}}]
+  [conn & [{:keys [key-prefix expiration-secs]
+            :or   {key-prefix       "carmine:session"
+                   expiration-secs  (str (* 60 60 24 30))}}]]
   (CarmineSessionStore. (atom conn) key-prefix (str expiration-secs)))
 
-;; 1.x backwards compatiblity
-(def ^{:doc (-> make-carmine-store* var meta :doc)
-       :arglists (-> make-carmine-store* var meta :arglists
-                     (conj '[& deprecated-args]))}
-  make-carmine-store
-  (car/conn-shim make-carmine-store*))
+(defn make-carmine-store ; 1.x backwards compatiblity
+  {:doc      (-> make-carmine-store* var meta :doc)
+   :arglists (-> make-carmine-store* var meta :arglists
+                 (conj '[& deprecated-args]))}
+  [& [s1 s2 & sn :as sigs]]
+  (if (instance? taoensso.carmine.connections.ConnectionPool s1)
+    (apply make-carmine-store* {:pool s1 :spec s2} sn)
+    (apply make-carmine-store* sigs)))
