@@ -1,4 +1,4 @@
-Current [semantic](http://semver.org/) version:
+**[API docs](http://ptaoussanis.github.io/carmine/)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
 [com.taoensso/carmine "1.12.0"]       ; Stable, needs Clojure 1.4+ as of 1.9.0
@@ -347,22 +347,17 @@ In principle it should be possible to get close to the theoretical maximum perfo
 
 Likewise, I'll happily trade a little less throughput for simpler code.
 
-## Project links
+## This project supports the CDS and ClojureWerkz goals
 
-  * [API documentation](http://ptaoussanis.github.io/carmine/).
-  * My other [Clojure libraries](https://www.taoensso.com/clojure-libraries) (Redis & DynamoDB clients, logging+profiling, i18n+L10n, serialization, A/B testing).
+  * [CDS](http://clojure-doc.org/), the **Clojure Documentation Site**, is a **contributer-friendly** community project aimed at producing top-notch, **beginner-friendly** Clojure tutorials and documentation. Awesome resource.
 
-##### This project supports the **CDS and ClojureWerkz project goals**:
-
-  * [CDS](http://clojure-doc.org/), the **Clojure Documentation Site**, is a contributer-friendly community project aimed at producing top-notch Clojure tutorials and documentation.
-
-  * [ClojureWerkz](http://clojurewerkz.org/) is a growing collection of open-source, batteries-included **Clojure libraries** that emphasise modern targets, great documentation, and thorough testing.
+  * [ClojureWerkz](http://clojurewerkz.org/) is a growing collection of open-source, **batteries-included Clojure libraries** that emphasise modern targets, great documentation, and thorough testing. They've got a ton of great stuff, check 'em out!
 
 ##### YourKit
 
 Carmine was developed with the help of the [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp). YourKit, LLC kindly supports open source projects by offering an open source license. They also make the [YourKit .NET Profiler](http://www.yourkit.com/.net/profiler/index.jsp).
 
-## Contact & contribution
+## Contact & contributing
 
 Please use the [project's GitHub issues page](https://github.com/ptaoussanis/carmine/issues) for project questions/comments/suggestions/whatever **(pull requests welcome!)**. Am very open to ideas if you have any!
 
