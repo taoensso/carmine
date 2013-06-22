@@ -26,11 +26,12 @@
                      :db 3}}
 
   For pool options, Ref. http://goo.gl/EiTbn."
-  [{:keys [pool spec] :as conn} & body]
-  `(let [[pool# conn#] (conns/pooled-conn ~pool ~spec)]
+  [conn & body]
+  `(let [{pool-opts# :pool spec-opts# :spec} ~conn
+         [pool# conn#] (conns/pooled-conn pool-opts# spec-opts#)]
      (try (let [response# (protocol/with-context conn# ~@body)]
             (conns/release-conn pool# conn#) response#)
-       (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
+          (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
 
 (comment (wcar {} (ping) "not-a-Redis-command" (ping))
          (with-open [p (conns/conn-pool {})]
