@@ -27,8 +27,8 @@
   (thaw   [freezer x] "Returns Redis-ready key content."))
 
 (defprotocol IDataStore ; Main extension point
-  (put-keys   [store content] "{<k> <frozen-content> ...} -> {<k> <success?> ...}.")
-  (fetch-keys [store ks]      "[<k> ...] -> {<k> <frozen-content>}."))
+  (put-keys   [store keyed-content] "{<k> <frozen-cnt> ...} -> {<k> <success?> ...}.")
+  (fetch-keys [store ks] "[<k> ...] -> {<k> <frozen-content>}."))
 
 (defprotocol IWorker
   (start [this] "Returns true iff worker successfully started.")
@@ -82,7 +82,7 @@
 
 (defrecord DiskDataStore [path] ; TODO Implementation (PRs welcome!)
   IDataStore
-  (put-keys   [store content])
+  (put-keys   [store keyed-content])
   (fetch-keys [store ks]))
 
 ;; taoensso.carmine.tundra.faraday/FaradayDataStore
@@ -206,6 +206,13 @@
   ;; In particular, catch people from using 0 to mean nil!
   (assert (or (not cache-ttl-ms) (>= cache-ttl-ms (* 1000 60 60 60)))
           (str "Bad TTL (< 1 hour): " cache-ttl-ms)))
+
+(comment
+  (require '[taoensso.carmine.tundra.faraday :as tfar])
+  (put-keys (tfar/faraday-datastore creds)
+            {"k1" "key1 content"
+             "k2" "key2 content"})
+  (fetch-keys (tfar/faraday-datastore creds) ["k1" "k2"]))
 
 (comment ; TODO
   (wc (car/del "k1" "k2" "k3" "k4"))
