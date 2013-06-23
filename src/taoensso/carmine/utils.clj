@@ -64,6 +64,11 @@
 
 (defn coll?* [x] (and (coll? x) (not (map? x ))))
 
+(defn map-kvs [kf vf m]
+  (persistent! (reduce-kv (fn [m k v] (assoc! m (if kf (kf k) k)
+                                             (if vf (vf v) v)))
+                          (transient {}) (or m {}))))
+
 (defn keyname
   "Like `name` but supports integers and includes namespace in string when
   present."
