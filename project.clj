@@ -13,11 +13,10 @@
                  [com.taoensso/nippy          "2.0.0-beta1"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.1"]]}
-             :dev   {:dependencies [[ring/ring-core "1.1.0"]]}
-             :test  {:dependencies [[ring/ring-core "1.1.0"]]}
-             :bench {:dependencies [[org.clojars.tavisrudd/redis-clojure "1.3.1"]
-                                    [clj-redis "0.0.12"]
-                                    [accession "0.1.1"]]}}
+             :dev   {:dependencies []}
+             :test  {:dependencies []}
+             :bench {:dependencies []
+                     :jvm-opts ["-server" "-XX:+UseCompressedOops"]}}
   :aliases {"test-all"    ["with-profile" "test,1.4:test,1.5" "do" "test,"
                            "expectations"]
             "test-auto"   ["with-profile" "test" "autoexpect"]
