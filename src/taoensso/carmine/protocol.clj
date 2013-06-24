@@ -7,7 +7,8 @@
   (:require [clojure.string         :as str]
             [taoensso.carmine.utils :as utils]
             [taoensso.nippy.tools   :as nippy-tools])
-  (:import  [java.io DataInputStream BufferedOutputStream]))
+  (:import  [java.io DataInputStream BufferedOutputStream]
+            [clojure.lang Keyword]))
 
 ;; Hack to allow cleaner separation of namespaces
 (utils/declare-remote taoensso.carmine.connections/get-spec
@@ -41,6 +42,23 @@
 (def ^bytes bs-bin     (bytestring "\u0000<")) ; Binary data marker
 (def ^bytes bs-clj     (bytestring "\u0000>")) ; Frozen data marker
 
+(defprotocol IRedisArg (coerce-bs [x] "x -> [<ba> <meta>]"))
+(extend-protocol IRedisArg
+  String  (coerce-bs [x] [(bytestring ^String x) nil])
+  Keyword (coerce-bs [x] [(bytestring ^String (utils/fq-name x)) nil])
+
+  ;;; Simple number types (Redis understands these)
+  Long    (coerce-bs [x] [(bytestring (str x)) nil])
+  Double  (coerce-bs [x] [(bytestring (str x)) nil])
+  Float   (coerce-bs [x] [(bytestring (str x)) nil])
+  Integer (coerce-bs [x] [(bytestring (str x)) nil]))
+
+(extend utils/bytes-class IRedisArg {:coerce-bs (fn [x] [x :mark-bytes])})
+(extend-protocol          IRedisArg
+  WrappedRaw (coerce-bs [x] [(:ba x) :raw])
+  nil        (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen])
+  Object     (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen]))
+
 ;;; Macros to actually send data to stream buffer
 (defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
 (defmacro ^:private send-bin  [out] `(.write ~out bs-bin  0 2))
@@ -57,34 +75,22 @@
     * Simple numbers (integers, longs, floats, doubles) become byte strings.
     * Binary (byte array) args go through un-munged.
     * Everything else gets serialized."
-  [^BufferedOutputStream out arg] ; TODO Try as protocol
-  `(let [out# ~out
-         arg# ~arg
-         [type# ^bytes ba# marked-type#]
-         (cond (string? arg#) [:string  (bytestring ^String arg#) nil]
-               (keyword arg#) [:keyword (bytestring ^String (utils/fq-name arg#)) nil]
-               (or (instance? Long    arg#)
-                   (instance? Double  arg#)
-                   (instance? Integer arg#)
-                   (instance? Float   arg#))
-               [:simple-num (bytestring (str arg#)) nil]
-               (utils/bytes? arg#)         [:bytes arg# :bytes]
-               (instance? WrappedRaw arg#) [:raw (:ba arg#) nil]
-               :else [:frozen (nippy-tools/freeze arg#) :frozen])
-
+  [^BufferedOutputStream out arg]
+  `(let [out#          ~out
+         [ba# meta#]   (coerce-bs ~arg)
          ba#           (bytes   ba#)
          payload-size# (alength ba#)
-         data-size#    (if marked-type# (+ payload-size# 2) payload-size#)]
+         data-size#    (case meta# (:mark-bytes :mark-frozen) (+ payload-size# 2)
+                             payload-size#)]
 
-     ;; To support various special goodies like serialization, we reserve
-     ;; strings that begin with a null terminator
-     (when (and (not marked-type#) (zero? (aget ba# 0)) (not= type# :raw))
-       (throw (Exception. (str "Args can't begin with the null terminator: " arg#))))
+     ;; Reserve null first-byte for marked reply identification
+     (when (and (nil? meta#) (> payload-size# 0) (zero? (aget ba# 0)))
+       (throw (Exception. (str "Args can't begin with null terminator: " ~arg))))
 
      (send-$ out#) (.write out# (bytestring (str data-size#))) (send-crlf out#)
-     (case marked-type# :bytes  (send-bin out#)
-                        :frozen (send-clj out#)
-                        nil)
+     (case meta# :mark-bytes  (send-bin out#)
+                 :mark-frozen (send-clj out#)
+                 nil)
      (.write out# ba# 0 payload-size#)
      (send-crlf out#)))
 
