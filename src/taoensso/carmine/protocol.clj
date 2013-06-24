@@ -26,10 +26,10 @@
   [x] (if (utils/bytes? x) (WrappedRaw. x)
           (throw (Exception. "Raw arg must be byte[]"))))
 
-(defn bytestring
+(defmacro ^:private bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
-  ^bytes [^String s] (.getBytes s "UTF-8"))
+  [s] `(.getBytes ~s "UTF-8"))
 
 ;;; Request delimiters
 (def ^bytes   bs-crlf (bytestring "\r\n"))
@@ -41,13 +41,13 @@
 (def ^bytes bs-bin     (bytestring "\u0000<")) ; Binary data marker
 (def ^bytes bs-clj     (bytestring "\u0000>")) ; Frozen data marker
 
-;;; Fns to actually send data to stream buffer
-(defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
-(defn send-bin  [^BufferedOutputStream out] (.write out bs-bin  0 2))
-(defn send-clj  [^BufferedOutputStream out] (.write out bs-clj  0 2))
-(defn send-*    [^BufferedOutputStream out] (.write out bs-*))
-(defn send-$    [^BufferedOutputStream out] (.write out bs-$))
-(defn send-arg
+;;; Macros to actually send data to stream buffer
+(defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
+(defmacro ^:private send-bin  [out] `(.write ~out bs-bin  0 2))
+(defmacro ^:private send-clj  [out] `(.write ~out bs-clj  0 2))
+(defmacro ^:private send-*    [out] `(.write ~out bs-*))
+(defmacro ^:private send-$    [out] `(.write ~out bs-$))
+(defmacro ^:private send-arg
   "Send arbitrary argument along with information about its size:
   $<size of arg> crlf
   <arg data>     crlf
@@ -57,42 +57,36 @@
     * Simple numbers (integers, longs, floats, doubles) become byte strings.
     * Binary (byte array) args go through un-munged.
     * Everything else gets serialized."
-  [^BufferedOutputStream out arg]
-  (let [type (cond (string?      arg) :string ; Most common 1st!
-                   (keyword?     arg) :keyword
-                   (utils/bytes? arg) :bytes
-                   (or (instance? Long    arg)
-                       (instance? Double  arg)
-                       (instance? Integer arg)
-                       (instance? Float   arg)) :simple-num
-                   (instance? WrappedRaw  arg)  :raw
-                   :else                        :frozen)
+  [^BufferedOutputStream out arg] ; TODO Try as protocol
+  `(let [out# ~out
+         arg# ~arg
+         [type# ^bytes ba# marked-type#]
+         (cond (string? arg#) [:string  (bytestring ^String arg#) nil]
+               (keyword arg#) [:keyword (bytestring ^String (utils/fq-name arg#)) nil]
+               (or (instance? Long    arg#)
+                   (instance? Double  arg#)
+                   (instance? Integer arg#)
+                   (instance? Float   arg#))
+               [:simple-num (bytestring (str arg#)) nil]
+               (utils/bytes? arg#)         [:bytes arg# :bytes]
+               (instance? WrappedRaw arg#) [:raw (:ba arg#) nil]
+               :else [:frozen (nippy-tools/freeze arg#) :frozen])
 
-        ^bytes ba (case type
-                    :string     (bytestring arg)
-                    :keyword    (bytestring (utils/fq-name arg))
-                    :simple-num (bytestring (str arg))
-                    :bytes      arg
-                    :raw        (:ba arg)
-                    :frozen     (nippy-tools/freeze arg))
+         ba#           (bytes   ba#)
+         payload-size# (alength ba#)
+         data-size#    (if marked-type# (+ payload-size# 2) payload-size#)]
 
-        payload-size (alength ba)
-        marked-type? (case type (:bytes :frozen) true false)
-        data-size    (if marked-type? (+ payload-size 2) payload-size)]
+     ;; To support various special goodies like serialization, we reserve
+     ;; strings that begin with a null terminator
+     (when (and (not marked-type#) (zero? (aget ba# 0)) (not= type# :raw))
+       (throw (Exception. (str "Args can't begin with the null terminator: " arg#))))
 
-    ;; To support various special goodies like serialization, we reserve
-    ;; strings that begin with a null terminator
-    (when-let [s (case type :string arg :keyword (name arg) nil)]
-      (when (.startsWith ^String s "\u0000")
-        (throw (Exception. (str "String args can't start with the null terminator: "
-                                arg)))))
-
-    (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
-    (when marked-type?
-      (case type
-        :bytes  (send-bin out)
-        :frozen (send-clj out)))
-    (.write out ba 0 payload-size) (send-crlf out)))
+     (send-$ out#) (.write out# (bytestring (str data-size#))) (send-crlf out#)
+     (case marked-type# :bytes  (send-bin out#)
+                        :frozen (send-clj out#)
+                        nil)
+     (.write out# ba# 0 payload-size#)
+     (send-crlf out#)))
 
 (defn send-request
   "Sends a command to Redis server using its byte string protocol:
@@ -123,7 +117,7 @@
       * `:` for integer reply.
       * `$` for bulk reply.
       * `*` for multi bulk reply."
-  [^DataInputStream in & [raw?]]
+  [^DataInputStream in raw?]
   (let [reply-type (char (.readByte in))]
     (case reply-type
       \+ (.readLine in)
@@ -167,7 +161,7 @@
 
 (defn- get-parsed-reply [^DataInputStream in parser]
   (if-not parser
-    (get-basic-reply in)
+    (get-basic-reply in false) ; Common case
     (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
       (let [reply (when-not dummy-reply? (get-basic-reply in raw?))]
         (try (parser reply)
@@ -179,7 +173,7 @@
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [& [as-pipeline?]]
+  [as-pipeline?]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -206,4 +200,4 @@
                          (when-not listener?# (atom [])))
                *parser* nil]
        ~@body
-       (when-not listener?# (get-replies)))))
+       (when-not listener?# (get-replies false)))))

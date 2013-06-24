@@ -327,7 +327,7 @@
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply in#)]
+          (let [reply# (protocol/get-basic-reply in# false)]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#

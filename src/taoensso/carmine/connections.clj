@@ -24,6 +24,7 @@
 (defrecord Connection [^Socket socket spec]
   IConnection
   (get-spec    [this] spec)
+  ;; TODO Could in- & out- stream not be a pre-computed field?
   (in-stream   [this] (-> (.getInputStream socket)
                           (BufferedInputStream.)
                           (DataInputStream.)))
