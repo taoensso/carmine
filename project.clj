@@ -16,7 +16,8 @@
              :dev   {:dependencies []}
              :test  {:dependencies []}
              :bench {:dependencies []
-                     :jvm-opts ["-server" "-XX:+UseCompressedOops"]}}
+                     :jvm-opts ^:replace ["-server" "-XX:+UseCompressedOops"
+                                          "-XX:-TieredCompilation"]}}
   :aliases {"test-all"    ["with-profile" "test,1.4:test,1.5" "do" "test,"
                            "expectations"]
             "test-auto"   ["with-profile" "test" "autoexpect"]
