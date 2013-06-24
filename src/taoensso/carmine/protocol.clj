@@ -10,11 +10,6 @@
   (:import  [java.io DataInputStream BufferedOutputStream]
             [clojure.lang Keyword]))
 
-;; Hack to allow cleaner separation of namespaces
-(utils/declare-remote taoensso.carmine.connections/get-spec
-                      taoensso.carmine.connections/in-stream
-                      taoensso.carmine.connections/out-stream)
-
 (defrecord Context [in-stream out-stream parser-queue])
 (def ^:dynamic *context* nil)
 (def ^:dynamic *parser*  nil)
@@ -198,12 +193,10 @@
   "Evaluates body in the context of a thread-bound connection to a Redis server.
   For non-listener connections, returns server's response."
   [connection & body]
-  `(let [listener?# (:listener? (taoensso.carmine.connections/get-spec
-                                 ~connection))]
-     (binding [*context*
-               (Context. (taoensso.carmine.connections/in-stream  ~connection)
-                         (taoensso.carmine.connections/out-stream ~connection)
-                         (when-not listener?# (atom [])))
-               *parser* nil]
+  `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~connection
+         listener?# (:listener? spec#)]
+     (binding [*parser*  nil
+               *context* (Context. in-stream# out-stream# (when-not listener?#
+                                                            (atom [])))]
        ~@body
        (when-not listener?# (get-replies false)))))

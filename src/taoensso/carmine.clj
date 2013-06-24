@@ -322,7 +322,7 @@
          state-atom#   (atom ~initial-state)
          conn# (conns/make-new-connection (assoc ~connection-spec
                                             :listener? true))
-         in#   (conns/in-stream conn#)]
+         in#   (:in-stream conn#)]
 
      (future-call ; Thread to long-poll for messages
       (bound-fn []
