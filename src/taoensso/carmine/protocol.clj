@@ -7,12 +7,8 @@
   (:require [clojure.string         :as str]
             [taoensso.carmine.utils :as utils]
             [taoensso.nippy.tools   :as nippy-tools])
-  (:import  [java.io DataInputStream BufferedOutputStream]))
-
-;; Hack to allow cleaner separation of namespaces
-(utils/declare-remote taoensso.carmine.connections/get-spec
-                      taoensso.carmine.connections/in-stream
-                      taoensso.carmine.connections/out-stream)
+  (:import  [java.io DataInputStream BufferedOutputStream]
+            [clojure.lang Keyword]))
 
 (defrecord Context [in-stream out-stream parser-queue])
 (def ^:dynamic *context* nil)
@@ -26,10 +22,10 @@
   [x] (if (utils/bytes? x) (WrappedRaw. x)
           (throw (Exception. "Raw arg must be byte[]"))))
 
-(defn bytestring
+(defmacro ^:private bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
-  ^bytes [^String s] (.getBytes s "UTF-8"))
+  [s] `(.getBytes ~s "UTF-8"))
 
 ;;; Request delimiters
 (def ^bytes   bs-crlf (bytestring "\r\n"))
@@ -41,13 +37,30 @@
 (def ^bytes bs-bin     (bytestring "\u0000<")) ; Binary data marker
 (def ^bytes bs-clj     (bytestring "\u0000>")) ; Frozen data marker
 
-;;; Fns to actually send data to stream buffer
-(defn send-crlf [^BufferedOutputStream out] (.write out bs-crlf 0 2))
-(defn send-bin  [^BufferedOutputStream out] (.write out bs-bin  0 2))
-(defn send-clj  [^BufferedOutputStream out] (.write out bs-clj  0 2))
-(defn send-*    [^BufferedOutputStream out] (.write out bs-*))
-(defn send-$    [^BufferedOutputStream out] (.write out bs-$))
-(defn send-arg
+(defprotocol IRedisArg (coerce-bs [x] "x -> [<ba> <meta>]"))
+(extend-protocol IRedisArg
+  String  (coerce-bs [x] [(bytestring ^String x) nil])
+  Keyword (coerce-bs [x] [(bytestring ^String (utils/fq-name x)) nil])
+
+  ;;; Simple number types (Redis understands these)
+  Long    (coerce-bs [x] [(bytestring (str x)) nil])
+  Double  (coerce-bs [x] [(bytestring (str x)) nil])
+  Float   (coerce-bs [x] [(bytestring (str x)) nil])
+  Integer (coerce-bs [x] [(bytestring (str x)) nil]))
+
+(extend utils/bytes-class IRedisArg {:coerce-bs (fn [x] [x :mark-bytes])})
+(extend-protocol          IRedisArg
+  WrappedRaw (coerce-bs [x] [(:ba x) :raw])
+  nil        (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen])
+  Object     (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen]))
+
+;;; Macros to actually send data to stream buffer
+(defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
+(defmacro ^:private send-bin  [out] `(.write ~out bs-bin  0 2))
+(defmacro ^:private send-clj  [out] `(.write ~out bs-clj  0 2))
+(defmacro ^:private send-*    [out] `(.write ~out bs-*))
+(defmacro ^:private send-$    [out] `(.write ~out bs-$))
+(defmacro ^:private send-arg
   "Send arbitrary argument along with information about its size:
   $<size of arg> crlf
   <arg data>     crlf
@@ -58,41 +71,23 @@
     * Binary (byte array) args go through un-munged.
     * Everything else gets serialized."
   [^BufferedOutputStream out arg]
-  (let [type (cond (string?      arg) :string ; Most common 1st!
-                   (keyword?     arg) :keyword
-                   (utils/bytes? arg) :bytes
-                   (or (instance? Long    arg)
-                       (instance? Double  arg)
-                       (instance? Integer arg)
-                       (instance? Float   arg)) :simple-num
-                   (instance? WrappedRaw  arg)  :raw
-                   :else                        :frozen)
+  `(let [out#          ~out
+         [ba# meta#]   (coerce-bs ~arg)
+         ba#           (bytes   ba#)
+         payload-size# (alength ba#)
+         data-size#    (case meta# (:mark-bytes :mark-frozen) (+ payload-size# 2)
+                             payload-size#)]
 
-        ^bytes ba (case type
-                    :string     (bytestring arg)
-                    :keyword    (bytestring (utils/fq-name arg))
-                    :simple-num (bytestring (str arg))
-                    :bytes      arg
-                    :raw        (:ba arg)
-                    :frozen     (nippy-tools/freeze arg))
+     ;; Reserve null first-byte for marked reply identification
+     (when (and (nil? meta#) (> payload-size# 0) (zero? (aget ba# 0)))
+       (throw (Exception. (str "Args can't begin with null terminator: " ~arg))))
 
-        payload-size (alength ba)
-        marked-type? (case type (:bytes :frozen) true false)
-        data-size    (if marked-type? (+ payload-size 2) payload-size)]
-
-    ;; To support various special goodies like serialization, we reserve
-    ;; strings that begin with a null terminator
-    (when-let [s (case type :string arg :keyword (name arg) nil)]
-      (when (.startsWith ^String s "\u0000")
-        (throw (Exception. (str "String args can't start with the null terminator: "
-                                arg)))))
-
-    (send-$ out) (.write out (bytestring (str data-size))) (send-crlf out)
-    (when marked-type?
-      (case type
-        :bytes  (send-bin out)
-        :frozen (send-clj out)))
-    (.write out ba 0 payload-size) (send-crlf out)))
+     (send-$ out#) (.write out# (bytestring (str data-size#))) (send-crlf out#)
+     (case meta# :mark-bytes  (send-bin out#)
+                 :mark-frozen (send-clj out#)
+                 nil)
+     (.write out# ba# 0 payload-size#)
+     (send-crlf out#)))
 
 (defn send-request
   "Sends a command to Redis server using its byte string protocol:
@@ -123,7 +118,7 @@
       * `:` for integer reply.
       * `$` for bulk reply.
       * `*` for multi bulk reply."
-  [^DataInputStream in & [raw?]]
+  [^DataInputStream in raw?]
   (let [reply-type (char (.readByte in))]
     (case reply-type
       \+ (.readLine in)
@@ -167,7 +162,7 @@
 
 (defn- get-parsed-reply [^DataInputStream in parser]
   (if-not parser
-    (get-basic-reply in)
+    (get-basic-reply in false) ; Common case
     (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
       (let [reply (when-not dummy-reply? (get-basic-reply in raw?))]
         (try (parser reply)
@@ -179,7 +174,7 @@
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [& [as-pipeline?]]
+  [as-pipeline?]
   (let [^DataInputStream in (or (:in-stream *context*)
                                 (throw no-context-error))
         parsers     @(:parser-queue *context*)
@@ -198,12 +193,10 @@
   "Evaluates body in the context of a thread-bound connection to a Redis server.
   For non-listener connections, returns server's response."
   [connection & body]
-  `(let [listener?# (:listener? (taoensso.carmine.connections/get-spec
-                                 ~connection))]
-     (binding [*context*
-               (Context. (taoensso.carmine.connections/in-stream  ~connection)
-                         (taoensso.carmine.connections/out-stream ~connection)
-                         (when-not listener?# (atom [])))
-               *parser* nil]
+  `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~connection
+         listener?# (:listener? spec#)]
+     (binding [*parser*  nil
+               *context* (Context. in-stream# out-stream# (when-not listener?#
+                                                            (atom [])))]
        ~@body
-       (when-not listener?# (get-replies)))))
+       (when-not listener?# (get-replies false)))))

@@ -150,7 +150,9 @@
 (defn eval*
   "Optimistically tries to send `evalsha` command for given script. In the event
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
-  reply."
+  reply.
+
+  Redis Cluster note: keys need to all be on same shard."
   [script numkeys key & args]
   (let [[r & _] (->> (apply evalsha* script numkeys key args)
                      (with-replies :as-pipeline))]
@@ -191,7 +193,7 @@
   to use \"_:my-var\"-style named keys and args.
 
   Keys are given separately from other args as an implementation detail for
-  clustering purposes."
+  clustering purposes (keys need to all be on same shard)."
   [script key-vars-map arg-vars-map]
   (apply eval* (interpolate-script script (clojure.core/keys key-vars-map)
                                           (clojure.core/keys arg-vars-map))
@@ -320,12 +322,12 @@
          state-atom#   (atom ~initial-state)
          conn# (conns/make-new-connection (assoc ~connection-spec
                                             :listener? true))
-         in#   (conns/in-stream conn#)]
+         in#   (:in-stream conn#)]
 
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply in#)]
+          (let [reply# (protocol/get-basic-reply in# false)]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#

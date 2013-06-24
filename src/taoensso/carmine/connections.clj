@@ -13,51 +13,43 @@
                       taoensso.carmine/auth
                       taoensso.carmine/select)
 
-;; Interface for socket connections to Redis server
 (defprotocol IConnection
-  (get-spec    [conn])
-  (in-stream   [conn])
-  (out-stream  [conn])
-  (conn-alive? [conn])
-  (close-conn  [conn]))
+  (conn-alive? [this])
+  (close-conn  [this]))
 
-(defrecord Connection [^Socket socket spec]
+(defrecord Connection [^Socket socket spec in-stream out-stream]
   IConnection
-  (get-spec    [this] spec)
-  (in-stream   [this] (-> (.getInputStream socket)
-                          (BufferedInputStream.)
-                          (DataInputStream.)))
-  (out-stream  [this] (-> (.getOutputStream socket)
-                          (BufferedOutputStream.)))
   (conn-alive? [this]
     (if (:listener? spec)
       true ; TODO Waiting on Redis update, Ref. http://goo.gl/LPhIO
       (= "PONG" (try (protocol/with-context this (taoensso.carmine/ping))
                      (catch Exception _)))))
-  (close-conn  [this] (.close socket)))
+  (close-conn [_] (.close socket)))
 
-;; Interface for a pool of socket connections
 (defprotocol IConnectionPool
-  (get-conn     [pool spec])
-  (release-conn [pool conn] [pool conn exception]))
+  (get-conn     [this spec])
+  (release-conn [this conn] [this conn exception]))
 
 (defrecord ConnectionPool [^GenericKeyedObjectPool pool]
   IConnectionPool
-  (get-conn     [this spec] (.borrowObject pool spec))
-  (release-conn [this conn] (.returnObject pool (get-spec conn) conn))
-  (release-conn [this conn exception] (.invalidateObject pool (get-spec conn)
+  (get-conn     [_ spec] (.borrowObject pool spec))
+  (release-conn [_ conn] (.returnObject pool (:spec conn) conn))
+  (release-conn [_ conn exception] (.invalidateObject pool (:spec conn)
                                                          conn))
   java.io.Closeable
-  (close [this] (.close pool)))
+  (close [_] (.close pool)))
 
-(defn make-new-connection
-  "Actually creates and returns a new socket connection."
+(defn make-new-connection "Actually creates and returns a new socket connection."
   [{:keys [host port password timeout-ms db] :as spec}]
   (let [socket (doto (Socket. ^String host ^Integer port)
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer (or timeout-ms 0)))
-        conn (Connection. socket spec)]
+        conn (Connection. socket spec (-> (.getInputStream socket)
+                                          (BufferedInputStream.)
+                                          (DataInputStream.))
+                                      (-> (.getOutputStream socket)
+                                          (BufferedOutputStream.)))]
     (when password (protocol/with-context conn (taoensso.carmine/auth password)))
     (when (and db (not (zero? db))) (protocol/with-context conn
                                       (taoensso.carmine/select (str db))))
@@ -66,17 +58,17 @@
 ;; A degenerate connection pool: gives pool-like interface for non-pooled conns
 (defrecord NonPooledConnectionPool []
   IConnectionPool
-  (get-conn     [this spec] (make-new-connection spec))
-  (release-conn [this conn] (close-conn conn))
-  (release-conn [this conn exception] (close-conn conn)))
+  (get-conn     [_ spec] (make-new-connection spec))
+  (release-conn [_ conn] (close-conn conn))
+  (release-conn [_ conn exception] (close-conn conn)))
 
 (defn make-connection-factory []
   (reify KeyedPoolableObjectFactory
-    (makeObject      [this spec] (make-new-connection spec))
-    (activateObject  [this spec conn])
-    (validateObject  [this spec conn] (conn-alive? conn))
-    (passivateObject [this spec conn])
-    (destroyObject   [this spec conn] (close-conn conn))))
+    (makeObject      [_ spec] (make-new-connection spec))
+    (activateObject  [_ spec conn])
+    (validateObject  [_ spec conn] (conn-alive? conn))
+    (passivateObject [_ spec conn])
+    (destroyObject   [_ spec conn] (close-conn conn))))
 
 (defn set-pool-option [^GenericKeyedObjectPool pool [opt v]]
   (case opt
