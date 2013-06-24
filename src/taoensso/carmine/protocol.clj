@@ -154,7 +154,7 @@
                    (Exception. (str "Bad reply data: " (.getMessage e)) e))))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count #(get-basic-reply in raw?)))
+           (utils/repeatedly* bulk-count (get-basic-reply in raw?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
@@ -172,7 +172,7 @@
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
-  [as-pipeline? end-of-context?]
+  [as-pipeline?]
   (let [^DataInputStream in (or (:in-stream *context*) (throw no-context-error))
         pq          (:parser-queue *context*)
         parsers     @pq

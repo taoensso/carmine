@@ -92,12 +92,13 @@
 
 (defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {} (or m {})))
 
-(defn repeatedly* "Like `repeatedly` but faster and returns a vector."
-  [n f]
-  (loop [v (transient []) idx 0]
-    (if (>= idx n)
-      (persistent! v)
-      (recur (conj! v (f)) (inc idx)))))
+(defmacro repeatedly* "Like `repeatedly` but faster and returns a vector."
+  [n & body]
+  `(let [n# ~n]
+     (loop [v# (transient []) idx# 0]
+       (if (>= idx# n#)
+         (persistent! v#)
+         (recur (conj! v# (do ~@body)) (inc idx#))))))
 
 (def ^:const bytes-class (Class/forName "[B"))
 (defn bytes? [x] (instance? bytes-class x))
