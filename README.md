@@ -339,7 +339,7 @@ TODO Continue
 
 Redis is probably most famous for being [fast](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently performs well:
 
-![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks/chart.png)
+![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks.png)
 
 Accession could not complete the requests. [Detailed benchmark information](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs. Note that these numbers are for _unpipelined_ requests: you could do a _lot_ more with pipelining.
 
