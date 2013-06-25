@@ -315,10 +315,10 @@ Redis is great. [DynamoDB](http://aws.amazon.com/dynamodb/) is great. Together t
 Tundra allows you to live and work in Redis, with all Redis' usual API goodness and performance guarantees. But it eliminates one of Redis' biggest limitations: its hard dependence on memory capacity.
 
 It works like this:
-  1. **Use `dirty` any time you modify/create evictable keys**.
+  1. **Use** `dirty` **any time you modify/create evictable keys**.
   2. Use `worker` to create a threaded worker that'll automatically copy batched dirty keys to your datastore.
   3. When a dirty key hasn't been used in a specified TTL, it will be automatically evicted from Redis.
-  4. **Use `ensure` any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
+  4. **Use** `ensure` **any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
 
 Because a key will be dirtied at _most_ once for any number of local edits since last freezing, we get **full local write performance** along with a **knob to balance local/datastore consistency** with any costs that may be involved (e.g. performance or data transfer costs).
 
@@ -355,17 +355,17 @@ Tundra can be easily extended to **any K/V-capable datastore**, but DynamoDB mak
 
 ;; Let's create some new evictable keys:
 (wcar* (car/mset :k1 0 :k2 0 :k3 0)
-       (dirty tstore [:k1 :k2 :k3]))
+       (dirty tstore :k1 :k2 :k3))
 
 ;; Now imagine time passes and some keys get evicted:
 (wcar* (car/del :k1 :k3))
 
 ;; And now we want to use our evictable keys:
 (wcar*
- (ensure-ks tstore [:k1 :k2 :k3]) ; Ensures previously-created keys are available
- (car/mget :k1 :k2 :k3)           ; Gets their current value
- (mapv car/incr [:k1 :k3])        ; Modifies them
- (dirty tstore [:k1 :k3])         ; Marks them for later refreezing by worker
+ (ensure-ks tstore :k1 :k2 :k3) ; Ensures previously-created keys are available
+ (car/mget :k1 :k2 :k3)         ; Gets their current value
+ (mapv car/incr [:k1 :k3])      ; Modifies them
+ (dirty tstore :k1 :k3)         ; Marks them for later refreezing by worker
  )
 ```
 

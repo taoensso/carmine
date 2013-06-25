@@ -85,24 +85,9 @@
   (stop  [this] "Returns true iff worker successfully stopped."))
 
 (defprotocol ITundraStore
-  (ensure-ks [store ks]
-    "Alpha - subject to change.
-    BLOCKS to ensure given keys (previously created) are available in Redis,
-    fetching them from datastore as necessary. Throws an exception if any keys
-    couldn't be made available. Acts as a Redis command: call within a `wcar`
-    context.")
-
-  (dirty [store ks]
-    "Alpha - subject to change.
-    **MARKS GIVEN KEYS FOR EXPIRY** and adds them to dirty set for freezing to
-    datastore on worker's next scheduled freeze. Throws an exception if any keys
-    don't exist. Acts as a Redis command: call within a `wcar` context.
-
-    ****************************************************************************
-    ** Worker MUST be running AND FUNCTIONING CORRECTLY or DATA WILL BE LOST! **
-    ****************************************************************************")
-
-  (worker [store conn opts]
+  (ensure-ks* [store ks])
+  (dirty*     [store ks])
+  (worker     [store conn opts]
     "Alpha - subject to change.
     Returns a threaded worker to routinely freeze Redis keys marked as dirty
     to datastore and mark successfully frozen keys as clean. Logs any errors.
@@ -110,6 +95,25 @@
     mechanism is HIGHLY RECOMMENDED.
 
     Options: :frequency-ms - Interval between each freezing."))
+
+(defn ensure-ks
+  "Alpha - subject to change.
+  BLOCKS to ensure given keys (previously created) are available in Redis,
+  fetching them from datastore as necessary. Throws an exception if any keys
+  couldn't be made available. Acts as a Redis command: call within a `wcar`
+  context."
+  [store & ks] (ensure-ks* store ks))
+
+(defn dirty
+  "Alpha - subject to change.
+  **MARKS GIVEN KEYS FOR EXPIRY** and adds them to dirty set for freezing to
+  datastore on worker's next scheduled freeze. Throws an exception if any keys
+  don't exist. Acts as a Redis command: call within a `wcar` context.
+
+  ****************************************************************************
+  ** Worker MUST be running AND FUNCTIONING CORRECTLY or DATA WILL BE LOST! **
+  ****************************************************************************"
+  [store & ks] (dirty* store ks))
 
 ;;;; Default implementations
 
@@ -148,7 +152,7 @@
 
 (defrecord TundraStore [datastore freezer opts]
   ITundraStore
-  (ensure-ks [store ks]
+  (ensure-ks* [store ks]
     (let [ks (prep-ks ks)
           {:keys [redis-ttl-ms]} opts
           existance-replies (->> (extend-exists redis-ttl-ms ks)
@@ -189,7 +193,7 @@
               (timbre/error ex) (throw ex)))
           nil))))
 
-  (dirty [store ks]
+  (dirty* [store ks]
     (let [ks (prep-ks ks)
           {:keys [redis-ttl-ms]} opts
           existance-replies (->> (pexpire-dirty-exists redis-ttl-ms ks)
@@ -318,10 +322,10 @@
 
 ;; And now we want to use our evictable keys:
 (wcar*
- (ensure-ks tstore [:k1 :k2 :k3]) ; Ensures previously-created keys are available
- (car/mget :k1 :k2 :k3)           ; Gets their current value
- (mapv car/incr [:k1 :k3])        ; Modifies them
- (dirty tstore [:k1 :k3])         ; Marks them for later refreezing by worker
+ (ensure-ks tstore :k1 :k2 :k3) ; Ensures previously-created keys are available
+ (car/mget :k1 :k2 :k3)         ; Gets their current value
+ (mapv car/incr [:k1 :k3])      ; Modifies them
+ (dirty tstore :k1 :k3)         ; Marks them for later refreezing by worker
  )
 
 )
