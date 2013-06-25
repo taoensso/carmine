@@ -308,32 +308,68 @@ Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmin
 
 ## Tundra
 
-### Alpha - work in progress: THIS MIGHT EAT ALL YOUR DATA, HIDE THE KITTENS!
+### Early alpha - work in progress: THIS MIGHT EAT ALL YOUR DATA
 
 Redis is great. [DynamoDB](http://aws.amazon.com/dynamodb/) is great. Together they're _amazing_. Tundra is a **semi-automatic datastore layer for Carmine** that marries the best of Redis **(simplicity, read+write performance, structured datatypes, low operational cost)** with the best of an additional datastore like DynamoDB **(scalability, reliability incl. off-site backups, and big-data storage)**. All with a secure, dead-simple, high-performance API.
 
 Tundra allows you to live and work in Redis, with all Redis' usual API goodness and performance guarantees. But it eliminates one of Redis' biggest limitations: its hard dependence on memory capacity.
 
-How? By doing three simple things:
-  1. Tundra (semi-)automatically **snapshots your Redis data out to your datastore** (encryption supported). 
-  2. Tundra **prunes cold data from Redis**, freeing memory.
-  3. If requested again, Tundra (semi-)automatically **restores pruned data to Redis from your datastore**.
+It works like this:
+  1. **Use `dirty` any time you modify/create evictable keys**.
+  2. Use `worker` to create a threaded worker that'll automatically copy batched dirty keys to your datastore.
+  3. When a dirty key hasn't been used in a specified TTL, it will be automatically evicted from Redis.
+  4. **Use `ensure` any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
 
-Any K/V-capable datastore can be used, but DynamoDB makes a particularly good fit and an implementation is provided out-the-box for the [Faraday DynamoDB client](https://github.com/ptaoussanis/faraday).
+Because a key will be dirtied at _most_ once for any number of local edits since last freezing, we get **full local write performance** along with a **knob to balance local/datastore consistency** with any costs that may be involved (e.g. performance or data transfer costs).
 
-#### Getting started with Tundra
+Tundra can be easily extended to **any K/V-capable datastore**, but DynamoDB makes a particularly good fit and an implementation is provided out-the-box for the [Faraday DynamoDB client](https://github.com/ptaoussanis/faraday).
 
-The API couldn't be simpler - there's a little once-off setup, and then only 2 fns you'll be using to make the magic happen:
+#### An example: Tundra & Faraday
 
 ```clojure
-(:require [taoensso.tundra  :as tundra]) ; Add to ns
+(:require [taoensso.carmine.tundra :as tundra :refer (ensure-ks dirty)]
+          [taoensso.carmine.tundra.faraday :as tfar]) ; Add to ns
 
-(tundra/ensure-table my-creds {:read 1 :write 1}) ; Create the Tundra data store
+(def creds {:access-key "<AWS_DYNAMODB_ACCESS_KEY>"
+            :secret-key "<AWS_DYNAMODB_SECRET_KEY>"}) ; AWS IAM credentials
 
-;; TODO Setup worker
+;; Create a DynamoDB table for key data storage (this can take ~2m):
+(tfar/ensure-table creds {:throughput {:read 1 :write 1} :block? true})
+
+;; Create a TundraStore backed by the above table:
+(def tstore
+  (tundra/tundra-store
+   (tfar/faraday-datastore creds
+     {:key-ns :my-app.production             ; For multiple apps/envs per table
+      :auto-write-units {0 1, 100 2, 200, 4} ; For automatic write-throughput scaling
+      })
+
+   {:freezer      nippy-freezer ; Use Nippy for compression/encryption
+    :redis-ttl-ms (* 1000 60 60 24 31) ; Evict cold keys after one month
+    }))
+
+;; Create a threaded worker to freeze dirty keys every hour:
+(def tundra-worker
+  (tundra/worker tstore {:pool {} :spec {}} ; Redis connection
+    {:frequency-ms (* 1000 60 60)}))
+
+;; Let's create some new evictable keys:
+(wcar* (car/mset :k1 0 :k2 0 :k3 0)
+       (dirty tstore [:k1 :k2 :k3]))
+
+;; Now imagine time passes and some keys get evicted:
+(wcar* (car/del :k1 :k3))
+
+;; And now we want to use our evictable keys:
+(wcar*
+ (ensure-ks tstore [:k1 :k2 :k3]) ; Ensures previously-created keys are available
+ (car/mget :k1 :k2 :k3)           ; Gets their current value
+ (mapv car/incr [:k1 :k3])        ; Modifies them
+ (dirty tstore [:k1 :k3])         ; Marks them for later refreezing by worker
+ )
 ```
 
-TODO Continue
+So the entire API consists of 3 fns: `worker`, `ensure`, and `dirty`. See their docstrings for more info.
 
 ## Performance
 

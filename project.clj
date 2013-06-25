@@ -15,7 +15,7 @@
              :1.5   {:dependencies [[org.clojure/clojure "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure "1.6.0-master-SNAPSHOT"]]}
              :dev   {:dependencies []}
-             :test  {:dependencies []}
+             :test  {:dependencies [[com.taoensso/faraday "0.10.0"]]}
              :bench {:dependencies [] :jvm-opts ["-server"]}}
   :aliases {"test-all"    ["with-profile" "test,1.4:test,1.5:test,1.6"
                            "do" "test," "expectations"]
