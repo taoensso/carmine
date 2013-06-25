@@ -8,14 +8,14 @@
                  [commons-pool/commons-pool   "1.6"]
                  [commons-codec/commons-codec "1.6"]
                  [org.clojure/data.json       "0.2.1"]
-                 [expectations                "1.4.43"]
+                 [expectations                "1.4.48"]
                  [com.taoensso/timbre         "2.1.2"]
                  [com.taoensso/nippy          "2.0.0-RC1"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure "1.6.0-master-SNAPSHOT"]]}
              :dev   {:dependencies []}
-             :test  {:dependencies [[com.taoensso/faraday "0.10.0"]]}
+             :test  {:dependencies [[com.taoensso/faraday "0.10.1"]]}
              :bench {:dependencies [] :jvm-opts ["-server"]}}
   :aliases {"test-all"    ["with-profile" "test,1.4:test,1.5:test,1.6"
                            "do" "test," "expectations"]
