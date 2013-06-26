@@ -318,7 +318,7 @@ It works like this:
   1. **Use** `dirty` **any time you modify/create evictable keys**.
   2. Use `worker` to create a threaded worker that'll automatically copy batched dirty keys to your datastore.
   3. When a dirty key hasn't been used in a specified TTL, it will be automatically evicted from Redis.
-  4. **Use** `ensure` **any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
+  4. **Use** `ensure-ks` **any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
 
 Because a key will be dirtied at _most_ once for any number of local edits since last freezing, we get **full local write performance** along with a **knob to balance local/datastore consistency** with any costs that may be involved (e.g. performance or data transfer costs).
 
@@ -369,7 +369,7 @@ Tundra can be easily extended to **any K/V-capable datastore**, but DynamoDB mak
  )
 ```
 
-So the entire API consists of 3 fns: `worker`, `ensure`, and `dirty`. See their docstrings for more info.
+So the entire API consists of 3 fns: `worker`, `ensure-ks`, and `dirty`. See their docstrings for more info.
 
 ## Performance
 
