@@ -1,8 +1,8 @@
 **[API docs](http://ptaoussanis.github.io/carmine/)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "1.12.0"]       ; Stable, needs Clojure 1.4+ as of 1.9.0
-[com.taoensso/carmine "2.0.0-alpha5"] ; Early alpha (notes below)
+[com.taoensso/carmine "1.12.0"]      ; Stable, needs Clojure 1.4+ as of 1.9.0
+[com.taoensso/carmine "2.0.0-beta1"] ; Development (notes below)
 ```
 
 v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. (A [Faraday DynamoDB](https://github.com/ptaoussanis/faraday) implementation is included).
@@ -322,7 +322,7 @@ It works like this:
 
 Because a key will be dirtied at _most_ once for any number of local edits since last freezing, we get **full local write performance** along with a **knob to balance local/datastore consistency** with any costs that may be involved (e.g. performance or data transfer costs).
 
-Tundra can be easily extended to **any K/V-capable datastore**, but DynamoDB makes a particularly good fit and an implementation is provided out-the-box for the [Faraday DynamoDB client](https://github.com/ptaoussanis/faraday).
+Tundra can be easily extended to **any K/V-capable datastore**, but DynamoDB makes a particularly good fit and an implementation is provided out-the-box for the [Faraday DynamoDB client](https://github.com/ptaoussanis/faraday) (requires Clojure 1.5+).
 
 #### An example: Tundra & Faraday
 
