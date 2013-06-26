@@ -53,7 +53,7 @@
        (car/hgetall*      (qk "backoffs"))
        (car/hgetall*      (qk "retry-counts"))
        (car/lrange        (qk "mid-circle") 0 -1)
-       (->> (car/smembers (qk "recently-done")) (car/with-parser set))
+       (->> (car/smembers (qk "recently-done")) (car/parse set))
        (->> (car/get      (qk "eoq-backoff?"))  (car/parse-bool))
        (car/get           (qk "dry-runs"))))))
 

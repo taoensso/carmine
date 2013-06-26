@@ -28,14 +28,14 @@
   [s] `(.getBytes ~s "UTF-8"))
 
 ;;; Request delimiters
-(def ^bytes   bs-crlf (bytestring "\r\n"))
-(def ^Integer bs-*    (int (first (bytestring "*"))))
-(def ^Integer bs-$    (int (first (bytestring "$"))))
+(def ^bytes bs-crlf (bytestring "\r\n"))
+(def ^:const ^Integer bs-* (int (first (bytestring "*"))))
+(def ^:const ^Integer bs-$ (int (first (bytestring "$"))))
 
 ;; Carmine-only markers that'll be used _within_ bulk data to indicate that
 ;; the data requires special reply handling
-(def ^bytes bs-bin     (bytestring "\u0000<")) ; Binary data marker
-(def ^bytes bs-clj     (bytestring "\u0000>")) ; Frozen data marker
+(def ^bytes bs-bin (bytestring "\u0000<")) ; Binary data marker
+(def ^bytes bs-clj (bytestring "\u0000>")) ; Frozen data marker
 
 (defprotocol IRedisArg (coerce-bs [x] "x -> [<ba> <meta>]"))
 (extend-protocol IRedisArg
@@ -70,9 +70,10 @@
     * Simple numbers (integers, longs, floats, doubles) become byte strings.
     * Binary (byte array) args go through un-munged.
     * Everything else gets serialized."
-  [^BufferedOutputStream out arg]
+  [out arg]
   `(let [out#          ~out
-         [ba# meta#]   (coerce-bs ~arg)
+         arg#          ~arg
+         [ba# meta#]   (coerce-bs arg#)
          ba#           (bytes   ba#)
          payload-size# (alength ba#)
          data-size#    (case meta# (:mark-bytes :mark-frozen) (+ payload-size# 2)
@@ -80,7 +81,7 @@
 
      ;; Reserve null first-byte for marked reply identification
      (when (and (nil? meta#) (> payload-size# 0) (zero? (aget ba# 0)))
-       (throw (Exception. (str "Args can't begin with null terminator: " ~arg))))
+       (throw (Exception. (str "Args can't begin with null terminator: " arg#))))
 
      (send-$ out#) (.write out# (bytestring (str data-size#))) (send-crlf out#)
      (case meta# :mark-bytes  (send-bin out#)
@@ -98,10 +99,7 @@
   (let [^BufferedOutputStream out (or (:out-stream *context*)
                                       (throw no-context-error))]
 
-    (send-* out)
-    (.write out (bytestring (str (count args))))
-    (send-crlf out)
-
+    (send-* out) (.write out (bytestring (str (count args)))) (send-crlf out)
     (doseq [arg args] (send-arg out arg))
     (.flush out)
 
@@ -156,7 +154,7 @@
                    (Exception. (str "Bad reply data: " (.getMessage e)) e))))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
-           (utils/repeatedly* bulk-count #(get-basic-reply in raw?)))
+           (utils/repeatedly* bulk-count (get-basic-reply in raw?)))
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
@@ -175,15 +173,13 @@
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
   [as-pipeline?]
-  (let [^DataInputStream in (or (:in-stream *context*)
-                                (throw no-context-error))
-        parsers     @(:parser-queue *context*)
+  (let [^DataInputStream in (or (:in-stream *context*) (throw no-context-error))
+        pq          (:parser-queue *context*)
+        parsers     @pq
         reply-count (count parsers)]
 
     (when (pos? reply-count)
-      ;; (swap! (:parser-queue *context*) #(subvec % reply-count))
-      (reset! (:parser-queue *context*) [])
-
+      (reset! pq [])
       (if (or (> reply-count 1) as-pipeline?)
         (mapv #(get-parsed-reply in %) parsers)
         (let [reply (get-parsed-reply in (nth parsers 0))]

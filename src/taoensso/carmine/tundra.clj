@@ -1,26 +1,20 @@
 (ns taoensso.carmine.tundra
   "Alpha - subject to change (hide the kittens!).
-  Semi-automatic datastore layer for Carmine. It's like the magix. Redis 2.6+.
+  Semi-automatic datastore layer for Carmine. It's like the magix.
 
-  Redis keys:
-    * carmine:tundra:<worker>:dirty    -> set, dirty Redis keys.
-    * carmine:tundra:<worker>:cleaning -> set, Redis keys currently being frozen
-                                          to datastore. Used for crash protection."
+  Redis (2.6+) keys:
+    * carmine:tundra:dirty    -> set, dirty Redis keys.
+    * carmine:tundra:cleaning -> set, Redis keys currently being frozen
+                                 to datastore. Used for crash protection.
+
+  Use multiple Redis instances (recommended) or Redis databases for local key
+  namespacing."
   {:author "Peter Taoussanis"}
-  (:refer-clojure :exclude [ensure])
   (:require [taoensso.carmine       :as car :refer (wcar)]
             [taoensso.carmine.utils :as utils]
             [taoensso.nippy         :as nippy]
             [taoensso.nippy.tools   :as nippy-tools]
             [taoensso.timbre        :as timbre]))
-
-;;;; TODO
-;; * TStore opts should include a (mandatory) datastore key prefix for
-;;   dev-modes, multiple apps, etc.
-;; * README docs.
-;; * Tests.
-;; * Worker option to keep snapshot of previous n atomic vals? Would need to
-;;   add a pair of IDataStore fns to move/snapshot & to manually fetch ks.
 
 ;;;; Private Redis commands
 
@@ -31,7 +25,7 @@
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
   [ttl-ms keys]
   (apply car/eval*
-         "local result = {}
+    "local result = {}
      local ttl = tonumber(ARGV[1])
      for i,k in pairs(KEYS) do
        if ttl > 0 and redis.call('ttl', k) > 0 then
@@ -44,13 +38,13 @@
     (count keys)
     (conj (vec keys) (or ttl-ms 0))))
 
-(comment (wcar {} (car/ping) (extend-exists nil ["k1" "k2" "k2"]) (car/ping)))
+(comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
 
 (defn- pexpire-dirty-exists
   "Returns 0/1 for each key that doesn't/exist, setting (/extending) TTLs and
   marking keys as dirty."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
-  [worker ttl-ms keys]
+  [ttl-ms keys]
   (apply car/eval*
     "local dirty_set = table.remove(KEYS) -- Last script key is set key
      local ttl = tonumber(ARGV[1])
@@ -72,62 +66,54 @@
      end
      return result"
     (inc (count keys))
-    (conj (vec keys) (tkey worker :dirty) (or ttl-ms 0))))
+    (conj (vec keys) (tkey :dirty) (or ttl-ms 0))))
 
-(comment (wcar {} (pexpire-dirty-exists "worker" nil ["k1" "k2" "k3"])))
+(comment (wcar {} (pexpire-dirty-exists nil ["k1" "k2" "k3"])))
 
 ;;;; Public interfaces
 
-(defprotocol IFreezer
-  (freeze [freezer x] "Returns datastore-ready key content.")
-  (thaw   [freezer x] "Returns Redis-ready key content."))
-
 (defprotocol IDataStore ; Main extension point
-  (put-keys   [store keyed-content] "{<k> <frozen-cnt> ...} -> {<k> <success?> ...}.")
-  (fetch-keys [store ks] "[<k> ...] -> {<k> <frozen-cnt>}."))
+  (put-keys   [store keyed-data] "{<k> <frozen-data> ...} -> {<k> <success?> ...}.")
+  (fetch-keys [store ks] "[<k> ...] -> {<k> <frozen-data>}."))
+
+(defprotocol IFreezer
+  (freeze [freezer x] "Returns datastore-ready key data.")
+  (thaw   [freezer x] "Returns Redis-ready key data."))
 
 (defprotocol IWorker
   (start [this] "Returns true iff worker successfully started.")
   (stop  [this] "Returns true iff worker successfully stopped."))
 
 (defprotocol ITundraStore
-  (ensure [store ks]
-    "Alpha - subject to change.
-    BLOCKS to ensure given keys (previously created) are available in Redis,
-    fetching them from datastore as necessary. Throws an exception if any keys
-    couldn't be made available.
-
-    Acts as a Redis command: call within a `wcar` context.")
-
-  (dirty [store ks] [store worker ks]
-    "Alpha - subject to change.
-    **MARKS GIVEN KEYS FOR EXPIRY** and adds them to a named worker's dirty
-    set for freezing to datastore on worker's next scheduled freeze. Throws an
-    exception if any keys don't exist.
-
-    ****************************************************************************
-    Named worker MUST be running AND FUNCTIONING CORRECTLY or DATA WILL BE LOST!
-    ****************************************************************************
-
-    Acts as a Redis command: call within a `wcar` context.")
-
-  (worker [store conn opts]
+  (ensure-ks* [store ks])
+  (dirty*     [store ks])
+  (worker     [store conn opts]
     "Alpha - subject to change.
     Returns a threaded worker to routinely freeze Redis keys marked as dirty
-    to datastore.
+    to datastore and mark successfully frozen keys as clean. Logs any errors.
+    THESE ERRORS ARE IMPORTANT: an email or other appropriate notification
+    mechanism is HIGHLY RECOMMENDED.
 
-    Because a key will be dirtied at _most_ once for any number of local edits
-    since last freezing, we get full local write performance along with a knob
-    that allows us to balance local/datastore consistency with any costs that
-    may be involved (e.g. performance or tangible data transfer costs).
+    Options: :frequency-ms - Interval between each freezing."))
 
-    Marks successfully frozen keys as clean. Logs any errors - THESE ARE
-    IMPORTANT: an email or other appropriate notification mechanism is HIGHLY
-    RECOMMENDED.
+(defn ensure-ks
+  "Alpha - subject to change.
+  BLOCKS to ensure given keys (previously created) are available in Redis,
+  fetching them from datastore as necessary. Throws an exception if any keys
+  couldn't be made available. Acts as a Redis command: call within a `wcar`
+  context."
+  [store & ks] (ensure-ks* store ks))
 
-    Options:
-      :name         - Allows multiple workers & dirty key sets.
-      :frequency-ms - Interval between each freezing."))
+(defn dirty
+  "Alpha - subject to change.
+  **MARKS GIVEN KEYS FOR EXPIRY** and adds them to dirty set for freezing to
+  datastore on worker's next scheduled freeze. Throws an exception if any keys
+  don't exist. Acts as a Redis command: call within a `wcar` context.
+
+  ****************************************************************************
+  ** Worker MUST be running AND FUNCTIONING CORRECTLY or DATA WILL BE LOST! **
+  ****************************************************************************"
+  [store & ks] (dirty* store ks))
 
 ;;;; Default implementations
 
@@ -140,10 +126,10 @@
 
 (defrecord DiskDataStore [path]
   IDataStore
-  (put-keys   [store keyed-content])
+  (put-keys   [store keyed-data])
   (fetch-keys [store ks]))
 
-(defrecord Worker [conn wname work-fn running? opts]
+(defrecord Worker [conn work-fn running? opts]
   IWorker
   (stop  [_] (let [stopped? @running?] (reset! running? false) stopped?))
   (start [_]
@@ -164,9 +150,9 @@
 (comment (prep-ks [nil]) ; ex
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
-(defrecord TundraStore [freezer datastore opts]
+(defrecord TundraStore [datastore freezer opts]
   ITundraStore
-  (ensure [store ks]
+  (ensure-ks* [store ks]
     (let [ks (prep-ks ks)
           {:keys [redis-ttl-ms]} opts
           existance-replies (->> (extend-exists redis-ttl-ms ks)
@@ -175,66 +161,60 @@
                                  (filterv identity))]
 
       (when-not (empty? missing-ks)
-        (timbre/trace "Fetching missing keys: " missing-ks)
-        (let [keyed-content ; {<redis-key> <thawed-content> ...}
-              (let [frozen-cnt (fetch-keys datastore missing-ks)]
-                (if-not freezer frozen-cnt
-                        (utils/map-kvs nil (partial thaw freezer) frozen-cnt)))
+        (timbre/trace "Fetching missing keys:" missing-ks)
+        (let [keyed-data ; {<redis-key> <thawed-data> ...}
+              (let [frozen-data (fetch-keys datastore missing-ks)]
+                (if-not freezer frozen-data
+                        (utils/map-kvs nil (partial thaw freezer) frozen-data)))
 
               ;; Restore what we can even if some fetches failed
               restore-replies ; {<redis-key> <restore-reply> ...}
-              (->> (doseq [[k cnt] keyed-content]
-                     (if-not (utils/bytes? cnt)
-                       (car/return (Exception. "Malformed fetch content"))
-                       (car/restore k (or redis-ttl-ms 0) (car/raw cnt))))
+              (->> (doseq [[k data] keyed-data]
+                     (if-not (utils/bytes? data)
+                       (car/return (Exception. "Malformed fetch data"))
+                       (car/restore k (or redis-ttl-ms 0) (car/raw data))))
                    (car/with-replies :as-pipeline) ; ["OK" "OK" ...]
-                   (zipmap (keys keyed-content)))
+                   (zipmap (keys keyed-data)))
 
               errors ; {<redis-key> <error> ...}
               (reduce
                (fn [m k]
-                 (if-not (contains? keyed-content k)
+                 (if-not (contains? keyed-data k)
                    (assoc m k "Fetch failed")
                    (let [^Exception rr (restore-replies k)]
                      (if (or (not (instance? Exception rr))
                              ;; Already restored:
                              (= (.getMessage rr) "ERR Target key name is busy."))
                        m (assoc m k (.getMessage rr))))))
-               (sorted-map) ks)]
+               (sorted-map) missing-ks)]
 
           (when-not (empty? errors)
             (let [ex (ex-info "Failed to ensure some key(s)" errors)]
               (timbre/error ex) (throw ex)))
           nil))))
 
-  (dirty [store ks] (dirty store :default ks))
-  (dirty [store worker ks]
+  (dirty* [store ks]
     (let [ks (prep-ks ks)
           {:keys [redis-ttl-ms]} opts
-          existance-replies (->> (pexpire-dirty-exists worker redis-ttl-ms ks)
+          existance-replies (->> (pexpire-dirty-exists redis-ttl-ms ks)
                                  (car/with-replies)) ; Throws on errors
           missing-ks        (->> (mapv #(when (zero? %2) %1) ks existance-replies)
                                  (filterv identity))]
       (when-not (empty? missing-ks)
-        (let [ex (ex-info "Some key(s) were missing" missing-ks)]
+        (let [ex (ex-info "Some key(s) were missing" {:missing-ks missing-ks})]
           (timbre/error ex) (throw ex)))
       nil))
 
   (worker [store conn wopts]
-    (let [{:keys []} opts
-          {:keys [wname frequency-ms auto-start?]
-           :or   {wname        :default
-                  frequency-ms (* 1000 60 60) ; once/hr
+    (let [{:keys [frequency-ms auto-start?]
+           :or   {frequency-ms (* 1000 60 60) ; Once/hr
                   auto-start?  true}} wopts
-
-          merged-wopts {:wname        wname
-                        :frequency-ms frequency-ms
-                        :auto-start?  auto-start?}
 
           work-fn
           (fn []
-            (let [kdset (tkey wname :dirty)
-                  kcset (tkey wname :cleaning)
+            (timbre/trace "Worker job running:" wopts)
+            (let [kdset (tkey :dirty)
+                  kcset (tkey :cleaning)
                   [ks-dirty ks-cleaning] (wcar {} (car/smembers kdset)
                                                   (car/smembers kcset))
 
@@ -243,86 +223,109 @@
                   ks-to-freeze (vec (into (set ks-dirty) ks-cleaning))]
 
               (when-not (empty? ks-to-freeze)
-                (let [;; Atomically move all dirty ks to cleaning set
-                      _ (wcar {} (mapv (partial car/smove kdset kcset) kdset))
+                (timbre/trace "Freezing keys:" ks-to-freeze)
+                (wcar {} (mapv (partial car/smove kdset kcset) ks-to-freeze))
+                (let [dumps ; [<raw-data-or-nil> ...]
+                      (wcar {} (car/parse-raw (mapv car/dump ks-to-freeze)))
 
-                      ;; [<raw-cnt-or-nil> ...]
-                      dumps (wcar {} (car/parse-raw (mapv car/dump) ks-to-freeze))
-
-                      keyed-content ; {<existing-redis-key> <frozen-cnt> ...}
-                      (let [thawed-cnt
+                      keyed-data ; {<existing-redis-key> <frozen-data> ...}
+                      (let [thawed-data
                             (->> (mapv vector ks-to-freeze dumps)
                                  (reduce (fn [m [k dump]]
                                            (if-not dump m (assoc m k dump))) {}))
-                            thawed-cnt
-                            (if-not freezer thawed-cnt
+                            thawed-data
+                            (if-not freezer thawed-data
                                     (utils/map-kvs nil (partial freeze freezer)
-                                                   thawed-cnt))])]
+                                                   thawed-data))]
+                        thawed-data)]
 
-                  (when-not (empty? keyed-content)
+                  (when-not (empty? keyed-data)
                     (let [put-replies ; {<redis-key> <success?> ...}
-                          (try (put-keys datastore keyed-content)
+                          (try (put-keys datastore keyed-data)
                                (catch Exception _ nil))
 
                           ks-succeeded (->> (keys put-replies)
                                             (filterv put-replies))
-                          ks-failed    (vec (disj (set ks-to-freeze)
-                                                  (set ks-succeeded)))]
+                          ks-failed    (vec (reduce disj (set ks-to-freeze)
+                                                    ks-succeeded))]
 
                       (wcar {} (mapv (partial car/srem kcset) ks-succeeded))
-
                       (when-not (empty? ks-failed) ; Don't rethrow!
-                        (let [ex (ex-info "Failed to freeze some key(s)" ks-failed)]
+                        (let [ex (ex-info "Failed to freeze some key(s)"
+                                          {:failed-ks ks-failed})]
                           (timbre/error ex)))))))))
 
-          w (Worker. conn wname (atom false) merged-wopts work-fn)]
+          w (Worker. conn work-fn (atom false) {:frequency-ms frequency-ms})]
       (when auto-start? (start w)) w)))
 
 (defn tundra-store
   "Alpha - subject to change.
   Returns a TundraStore with options:
+    datastore     - Storage for frozen key data.
+                    See `taoensso.carmine.tundra.faraday/faraday-datastore` for
+                    Faraday (DynamoDB) datastore.
     :redis-ttl-ms - Optional. Time after which frozen, inactive keys will be
                     EVICTED FROM REDIS. Defaults to ~31 days, minimum 10 hours.
-    :freezer      - Optional. Preps key content to/from datastore. May provide
+    :freezer      - Optional. Preps key data to/from datastore. May provide
                     services like compression and encryption, etc. Defaults to
                     Nippy with default options (Snappy compression and no
                     encryption).
-    :datastore    - Storage for frozen key content.
-                    See `taoensso.carmine.tundra.faraday/faraday-datastore` for
-                    Faraday (DynamoDB) datastore.
 
-  ;; Creates TundraStore and a threaded worker to routinely freeze dirty keys to
-  ;; to underlying datastore (DynamoDB, etc.):
-  (def tstore        (tundra-store <opts>))
-  (def tundra-worker (worker tsore <conn> <opts>))
-
-  (wcar <conn>
-    (mset :k1 0 :k2 0 :3 0)  ; Creates some new keys
-    (dirty tstore [:k1 :k3]) ; Marks keys for later freezing by worker
-   )
-
-  ;; Some time later... keys may have been evicted if cold
-
-  (wcar <conn>
-    (ensure tstore [:k1 :k2 :k3]) ; Ensures previously-created keys are available
-    (mget :k1 :k2 :3)        ; Gets their current value
-    (mapv incr [:k1 :k3])    ; Modifies them
-    (dirty tstore [:k1 :k3]) ; Marks them for later refreezing by worker
-   )"
-  [& [{:keys [redis-ttl-ms freezer datastore]
-       :or   {redis-ttl-ms (* 1000 60 60 60) ; Expire ~once/month
-              freezer nippy-freezer}}]]
+  See `ensure-ks`, `dirty`, `worker` for TundraStore API."
+  [datastore & [{:keys [redis-ttl-ms freezer]
+                 :or   {redis-ttl-ms (* 1000 60 60 24 31) ; Expire ~once/month
+                        freezer nippy-freezer}}]]
 
   (assert (or (nil? freezer) (satisfies? IFreezer freezer)))
   (assert (satisfies? IDataStore datastore))
-  (assert (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 60)))
-          (str "Bad TTL (< 1 hour): " redis-ttl-ms))
+  (assert (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))
+          (str "Bad TTL (< 10 hours): " redis-ttl-ms))
 
-  (TundraStore. freezer datastore {:redis-ttl-ms redis-ttl-ms}))
+  (TundraStore. datastore freezer {:redis-ttl-ms redis-ttl-ms}))
 
-(comment
-  (require '[taoensso.carmine.tundra.faraday :as tfar])
-  (put-keys (tfar/faraday-datastore creds)
-            {"k1" "key1 content"
-             "k2" "key2 content"})
-  (fetch-keys (tfar/faraday-datastore creds) ["k1" "k2"]))
+(comment ; README
+
+(require '[taoensso.carmine.tundra :as tundra :refer (ensure-ks dirty)])
+(require '[taoensso.carmine.tundra.faraday :as tfar])
+(defmacro wcar* [& body] `(wcar {} ~@body))
+(timbre/set-level! :trace)
+
+(def creds {:access-key "<AWS_DYNAMODB_ACCESS_KEY>"
+            :secret-key "<AWS_DYNAMODB_SECRET_KEY>"}) ; AWS IAM credentials
+
+;; Create a DynamoDB table for key data storage (this can take ~2m):
+(tfar/ensure-table creds {:throughput {:read 1 :write 1} :block? true})
+
+;; Create a TundraStore backed by the above table:
+(def tstore
+  (tundra-store
+   (tfar/faraday-datastore creds
+     {:key-ns :my-app.production             ; For multiple apps/envs per table
+      :auto-write-units {0 1, 100 2, 200, 4} ; For automatic write-throughput scaling
+      })
+
+   {:freezer      nippy-freezer ; Use Nippy for compression/encryption
+    :redis-ttl-ms (* 1000 60 60 24 31) ; Evict cold keys after one month
+    }))
+
+;; Create a threaded worker to freeze dirty keys every hour:
+(def tundra-worker
+  (worker tstore {:pool {} :spec {}} ; Redis connection
+    {:frequency-ms (* 1000 60 60)}))
+
+;; Let's create some new evictable keys:
+(wcar* (car/mset :k1 0 :k2 0 :k3 0)
+       (dirty tstore [:k1 :k2 :k3]))
+
+;; Now imagine time passes and some keys get evicted:
+(wcar* (car/del :k1 :k3))
+
+;; And now we want to use our evictable keys:
+(wcar*
+ (ensure-ks tstore :k1 :k2 :k3) ; Ensures previously-created keys are available
+ (car/mget :k1 :k2 :k3)         ; Gets their current value
+ (mapv car/incr [:k1 :k3])      ; Modifies them
+ (dirty tstore :k1 :k3)         ; Marks them for later refreezing by worker
+ )
+
+)

@@ -50,18 +50,16 @@
                             (throw (Exception. (str "Couldn't coerce as bool: "
                                                     x))))))
 
-(defmacro with-parser
-  "Alpha - subject to change!!
-  Wraps body so that replies to any wrapped Redis commands will be parsed with
+(defmacro parse
+  "Wraps body so that replies to any wrapped Redis commands will be parsed with
   `(f reply)`. Replaces any current parser; removes parser when `f` is nil."
   [f & body] `(binding [protocol/*parser* ~f] ~@body))
 
-(defmacro parse-long    [& body] `(with-parser as-long   ~@body))
-(defmacro parse-double  [& body] `(with-parser as-double ~@body))
-(defmacro parse-bool    [& body] `(with-parser as-bool   ~@body))
-(defmacro parse-keyword [& body] `(with-parser keyword   ~@body))
-(defmacro parse-raw "Alpha - subject to change."
-  [& body] `(with-parser (with-meta identity {:raw? true}) ~@body))
+(defmacro parse-long    [& body] `(parse as-long   ~@body))
+(defmacro parse-double  [& body] `(parse as-double ~@body))
+(defmacro parse-bool    [& body] `(parse as-bool   ~@body))
+(defmacro parse-keyword [& body] `(parse keyword   ~@body))
+(defmacro parse-raw     [& body] `(parse (with-meta identity {:raw? true}) ~@body))
 
 (defn kname
   "Joins keywords, integers, and strings to form an idiomatic compound Redis key
@@ -83,8 +81,7 @@
   to be subject to automatic de/serialization with Nippy.")
 
 (defn return
-  "Alpha - subject to change.
-  Special command that takes any value and returns it unchanged as part of
+  "Special command that takes any value and returns it unchanged as part of
   an enclosing `wcar` pipeline response."
   [value]
   (let [vfn (constantly value)]
@@ -93,10 +90,10 @@
              {:dummy-reply? true}))))
 
 (comment (wcar {} (return :foo) (ping) (return :bar))
-         (wcar {} (with-parser name (return :foo)) (ping) (return :bar)))
+         (wcar {} (parse name (return :foo)) (ping) (return :bar)))
 
 (defmacro with-replies
-  "Alpha - subject to change!!
+  "Alpha - subject to change.
   Evaluates body, immediately returning the server's response to any contained
   Redis commands (i.e. before enclosing `wcar` ends). Ignores any parser
   in enclosing (not _enclosed_) context.
@@ -108,11 +105,11 @@
   (let [as-pipeline? (= s1 :as-pipeline)
         body (if as-pipeline? sn sigs)]
     `(let [stashed-replies# (protocol/get-replies true)]
-       (try (with-parser nil ~@body) ; Herewith dragons; tread lightly
+       (try (parse nil ~@body) ; Herewith dragons; tread lightly
             (protocol/get-replies ~as-pipeline?)
             (finally
              ;; doseq here broken with Clojure <1.5, Ref. http://goo.gl/5DvRt
-             (with-parser nil (dorun (map return stashed-replies#))))))))
+             (parse nil (dorun (map return stashed-replies#))))))))
 
 (comment (wcar {} (echo 1) (println (with-replies (ping))) (echo 2))
          (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
@@ -156,7 +153,7 @@
   [script numkeys key & args]
   (let [[r & _] (->> (apply evalsha* script numkeys key args)
                      (with-replies :as-pipeline))]
-    (with-parser protocol/*parser*
+    (parse protocol/*parser*
       (if (and (instance? Exception r)
                (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
         (apply eval script numkeys key args)
@@ -210,7 +207,7 @@
   "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
   keywordizes map keys."
   [key & [keywordize?]]
-  (with-parser
+  (parse
     (if keywordize?
       #(utils/keywordize-map (apply hash-map %))
       #(apply hash-map %))
@@ -219,10 +216,10 @@
 (defn info*
   "Like `info` but automatically coerces reply into a hash-map."
   []
-  (with-parser (fn [reply] (->> reply str/split-lines
-                               (map #(str/split % #":"))
-                               (filter #(= (count %) 2))
-                               (into {})))
+  (parse (fn [reply] (->> reply str/split-lines
+                         (map #(str/split % #":"))
+                         (filter #(= (count %) 2))
+                         (into {})))
     (info)))
 
 (defn zinterstore*
@@ -278,7 +275,7 @@
        (multi)
        ~@body)
      ;; Body discards will result in an (exec) exception:
-     (with-parser #(if (instance? Exception %) [] %) (exec))))
+     (parse #(if (instance? Exception %) [] %) (exec))))
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
 
@@ -379,6 +376,7 @@
 (def remember  "DEPRECATED: Use `return` instead." return)
 (def ^:macro skip-replies "DEPRECATED: Use `with-replies` instead." #'with-replies)
 (def ^:macro with-reply   "DEPRECATED: Use `with-replies` instead." #'with-replies)
+(def ^:macro with-parser  "DEPRECATED: Use `parse` instead."        #'parse)
 
 (defn make-keyfn "DEPRECATED: Use `kname` instead."
   [& prefix-parts]
