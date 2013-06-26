@@ -45,14 +45,14 @@
                  (dirty tstore :k1 :k2 :k3)
                  (car/mget :k1 :k2 :k3)
                  (->> (car/smembers (#'tundra/tkey :dirty))
-                      (car/with-parser set))))
+                      (car/parse set))))
 
 ;; Worker freezes ks and marks ks as clean w/o modifying them
 (expect [#{} 1 1 ["1" "1" stress-data]]
         (do (tundra/start tundra-worker)
             (Thread/sleep 8000) ; Wait for freezing
             (wcar {} (->> (car/smembers (#'tundra/tkey :dirty))
-                          (car/with-parser set))
+                          (car/parse set))
                           (mapv car/incr [:k1 :k2]) ; NOT marking as dirty!
                           (car/mget :k1 :k2 :k3))))
 
