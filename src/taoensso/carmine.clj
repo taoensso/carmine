@@ -25,7 +25,8 @@
                      :timeout-ms 6000
                      :db 3}}
 
-  For pool options, Ref. http://goo.gl/EiTbn."
+  A `nil` or `{}` `conn` or opts will use defaults. A `:none` pool can be used
+  to skip connection pooling. For other pool options, Ref. http://goo.gl/EiTbn."
   [conn & body]
   `(let [{pool-opts# :pool spec-opts# :spec} ~conn
          [pool# conn#] (conns/pooled-conn pool-opts# spec-opts#)]
