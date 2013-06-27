@@ -1,4 +1,4 @@
-**[API docs](http://ptaoussanis.github.io/carmine/)** | **[changelog](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
+**[API docs](http://ptaoussanis.github.io/carmine/)** | **[CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
 [com.taoensso/carmine "1.12.0"]      ; Stable, needs Clojure 1.4+ as of 1.9.0
@@ -7,7 +7,7 @@
 
 v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. (A [Faraday DynamoDB](https://github.com/ptaoussanis/faraday) implementation is included).
 
-This is a **mostly** backwards-compatible release. See the [changelog](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for migration details.
+This is a **mostly** backwards-compatible release. See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for migration details.
 
 # Carmine, a Clojure Redis client & message queue
 
