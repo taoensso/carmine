@@ -24,7 +24,7 @@
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
   [ttl-ms keys]
-  (apply car/eval*
+  (car/lua
     "local result = {}
      local ttl = tonumber(ARGV[1])
      for i,k in pairs(KEYS) do
@@ -35,8 +35,8 @@
        end
      end
      return result"
-    (count keys)
-    (conj (vec keys) (or ttl-ms 0))))
+    keys
+    [(or ttl-ms 0)]))
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
 
@@ -45,7 +45,7 @@
   marking keys as dirty."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
   [ttl-ms keys]
-  (apply car/eval*
+  (car/lua
     "local dirty_set = table.remove(KEYS) -- Last script key is set key
      local ttl = tonumber(ARGV[1])
      local result = {}
@@ -65,8 +65,8 @@
        end
      end
      return result"
-    (inc (count keys))
-    (conj (vec keys) (tkey :dirty) (or ttl-ms 0))))
+    (conj (vec keys) (tkey :dirty))
+    [(or ttl-ms 0)]))
 
 (comment (wcar {} (pexpire-dirty-exists nil ["k1" "k2" "k3"])))
 

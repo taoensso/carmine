@@ -22,7 +22,7 @@
     (wcar conn ; Hold one connection for all attempts
      (loop []
        (when (> max-udt (System/currentTimeMillis))
-         (if (-> (car/lua-script
+         (if (-> (car/lua
                   "if redis.call('setnx', _:lkey, _:uuid) == 1 then
                     redis.call('pexpire', _:lkey, _:timeout-ms)
                     return 1
@@ -43,7 +43,7 @@
   [conn lock-name owner-uuid]
   (wcar conn
     (car/parse-bool
-     (car/lua-script
+     (car/lua
       "if redis.call('get', _:lkey) == _:uuid then
          redis.call('del', _:lkey)
          return 1

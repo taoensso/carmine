@@ -2,7 +2,7 @@
 
 ```clojure
 [com.taoensso/carmine "1.12.0"]      ; Stable, needs Clojure 1.4+ as of 1.9.0
-[com.taoensso/carmine "2.0.0-beta1"] ; Development (notes below)
+[com.taoensso/carmine "2.0.0-beta2"] ; Development (notes below)
 ```
 
 v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. (A [Faraday DynamoDB](https://github.com/ptaoussanis/faraday) implementation is included).
@@ -28,7 +28,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Flexible, high-performance **binary-safe serialization** using [Nippy](https://github.com/ptaoussanis/nippy).
   * Full support for **Lua scripting**, **Pub/Sub**, etc.
   * Full support for custom **reply parsing**.
-  * **Command helpers** (`atomically`, `lua-script`, `sort*`, etc.).
+  * **Command helpers** (`atomically`, `lua`, `sort*`, etc.).
   * **Ring session-store**.
   * Simple, high-performance **message queue** (Redis 2.6+, stable v2+).
   * Simple, high-performance **distributed lock** (Redis 2.6+, stable v2+).
@@ -148,9 +148,9 @@ Redis 2.6 introduced a remarkably powerful feature: server-side Lua scripting! A
 ```clojure
 (defn my-set
   [key value]
-  (car/lua-script "return redis.call('set', _:my-key, 'lua '.. _:my-value)"
-                  {:my-key key}     ; Named key variables and their values
-                  {:my-value value} ; Named non-key variables and their values
+  (car/lua "return redis.call('set', _:my-key, 'lua '.. _:my-val)"
+                  {:my-key key}   ; Named key variables and their values
+                  {:my-val value} ; Named non-key variables and their values
                   ))
 
 (wcar* (my-set "foo" "bar")

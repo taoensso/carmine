@@ -161,7 +161,7 @@
         (return r)))))
 
 (def ^:private interpolate-script
-  "Substitutes indexed KEYS[]s and ARGV[]s for named variables in Lua script.
+  "Substitutes named variables for indexed KEYS[]s and ARGV[]s in Lua script.
 
   (interpolate-script \"return redis.call('set', _:my-key, _:my-val)\"
                       [:my-key] [:my-val])
@@ -170,7 +170,7 @@
    (fn [script key-vars arg-vars]
      (let [;; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
            subst-map (fn [vars array-name]
-                       (zipmap (map #(str "_" %) vars)
+                       (zipmap (map #(str "_:" (name %)) vars)
                                (map #(str array-name "[" % "]")
                                     (map inc (range)))))]
        (reduce (fn [s [match replacement]] (str/replace s match replacement))
@@ -179,6 +179,7 @@
                       (subst-map arg-vars "ARGV")))))))
 
 (comment
+  (interpolate-script "return redis.call('set', _:my-key, _:my-val)" nil nil)
   (interpolate-script "return redis.call('set', _:my-key, _:my-val)"
                       [:my-key] [:my-val])
 
@@ -186,23 +187,27 @@
                       [:k3 :k1 :k2]
                       [:a3 :a1 :a2]))
 
-(defn lua-script
+(defn lua
   "All singing, all dancing Lua script helper. Like `eval*` but allows script
-  to use \"_:my-var\"-style named keys and args.
+  vars to be provided as {<var> <value> ...} maps:
 
-  Keys are given separately from other args as an implementation detail for
-  clustering purposes (keys need to all be on same shard)."
-  [script key-vars-map arg-vars-map]
-  (apply eval* (interpolate-script script (clojure.core/keys key-vars-map)
-                                          (clojure.core/keys arg-vars-map))
-         (count key-vars-map)
-         (into (vec (vals key-vars-map)) (vals arg-vars-map))))
+  (lua \"redis.call('set', _:my-key, _:my-arg)\" {:my-key \"foo} {:my-arg \"bar\"})
+
+  Keys are separate from other args as an implementation detail for clustering
+  purposes (keys need to all be on same shard)."
+  [script key-vars arg-vars]
+  (apply eval* (interpolate-script script
+                (when (map? key-vars) (clojure.core/keys key-vars))
+                (when (map? arg-vars) (clojure.core/keys arg-vars)))
+         (count key-vars)
+         (into (vec (if (map? key-vars) (vals key-vars) key-vars))
+               (if (map? arg-vars) (vals arg-vars) arg-vars))))
 
 (comment
-  (wcar {} (lua-script "redis.call('set', _:my-key, _:my-val)
-                        return redis.call('get', 'foo')"
-                       {:my-key "foo"}
-                       {:my-val "bar"})))
+  (wcar {} (lua "redis.call('set', _:my-key, _:my-val)
+                return redis.call('get', 'foo')"
+                {:my-key "foo"}
+                {:my-val "bar"})))
 
 (defn hgetall*
   "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
@@ -378,6 +383,8 @@
 (def ^:macro skip-replies "DEPRECATED: Use `with-replies` instead." #'with-replies)
 (def ^:macro with-reply   "DEPRECATED: Use `with-replies` instead." #'with-replies)
 (def ^:macro with-parser  "DEPRECATED: Use `parse` instead."        #'parse)
+
+(defn lua-script "DEPRECATED: Use `lua` instead." [& args] (apply lua args))
 
 (defn make-keyfn "DEPRECATED: Use `kname` instead."
   [& prefix-parts]

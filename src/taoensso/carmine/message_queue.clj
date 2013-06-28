@@ -67,7 +67,7 @@
   [conn qname mid]
   (wcar conn
     (car/parse-keyword
-     (car/lua-script
+     (car/lua
       "if redis.call('sismember', _:qk-recently-done, _:mid) == 1 then
          return 'recently-done'
        else
@@ -93,7 +93,7 @@
   "Pushes given message (any Clojure datatype) to named queue and returns a
   unique message id."
   [qname message]
-  (car/lua-script
+  (car/lua
    "redis.call('hset', _:qk-messages, _:mid, _:mcontent)
 
     -- lpushnx end-of-circle marker to ensure an initialized mid-circle
@@ -117,7 +117,7 @@
   [qname & [{:keys [lock-ms eoq-backoff-ms]
              :or   {lock-ms (* 60 60 1000)
                     eoq-backoff-ms 2000}}]]
-  (car/lua-script
+  (car/lua
    "if redis.call('exists', _:qk-eoq-backoff) == 1 then
       return 'eoq-backoff'
     else

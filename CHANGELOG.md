@@ -1,4 +1,4 @@
-## v1.12.0 → v2.0.0-beta1
+## v1.12.0 → v2.0.0-beta2
 
   * Refactored a bunch of code for simplicity+performance (~20% improved roundtrip times).
   * Upgraded to [Nippy v2][Nippy GitHub] for pluggable compression+crypto. See the [Nippy CHANGELOG][] for details.
@@ -55,7 +55,8 @@
   * Remove alpha status: `parse`, `return`, message queue ns.
   * **DEPRECATED**: `with-parser` -> `parse`.
   * **DEPRECATED**: `make-dequeue-worker` -> `worker`. See docstring for details.
-
+  * Added support for unnamed vector (non-map) keys/args to `lua-script`.
+  * **DEPRECATED**: `lua-script` -> `lua`.
 
 ## v1.10.0 → v1.12.0
 
