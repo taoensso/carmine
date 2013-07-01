@@ -256,11 +256,11 @@
                          throttle-ms    200
                          eoq-backoff-ms (fn [druns] (exp-backoff druns {:max 10000}))
                          auto-start?    true}}]]
-  (let [w (Worker. conn qname (atom false)
-                   {:handler        handler
-                    :lock-ms        lock-ms
-                    :eoq-backoff-ms eoq-backoff-ms
-                    :throttle-ms    throttle-ms})]
+  (let [w (->Worker conn qname (atom false)
+                    {:handler        handler
+                     :lock-ms        lock-ms
+                     :eoq-backoff-ms eoq-backoff-ms
+                     :throttle-ms    throttle-ms})]
     (when auto-start? (start w)) w))
 
 (comment

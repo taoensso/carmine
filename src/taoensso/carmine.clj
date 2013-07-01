@@ -337,7 +337,7 @@
                 (timbre/error t# "Listener handler exception")))))))
 
      (protocol/with-context conn# ~@body)
-     (Listener. conn# handler-atom# state-atom#)))
+     (->Listener conn# handler-atom# state-atom#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent

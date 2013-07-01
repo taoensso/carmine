@@ -30,7 +30,7 @@
   [conn & [{:keys [key-prefix expiration-secs]
             :or   {key-prefix       "carmine:session"
                    expiration-secs  (str (* 60 60 24 30))}}]]
-  (CarmineSessionStore. (atom conn) key-prefix (str expiration-secs)))
+  (->CarmineSessionStore (atom conn) key-prefix (str expiration-secs)))
 
 (defn make-carmine-store ; 1.x backwards compatiblity
   {:doc      (-> make-carmine-store* var meta :doc)

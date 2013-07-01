@@ -16,6 +16,8 @@
             [taoensso.nippy.tools   :as nippy-tools]
             [taoensso.timbre        :as timbre]))
 
+;; TODO Redis 2.8+ http://redis.io/topics/notifications
+
 ;;;; Private Redis commands
 
 (def ^:private tkey (memoize (partial car/kname "carmine" "tundra")))
@@ -122,7 +124,7 @@
   (freeze [_ x]  (nippy/freeze x  opts))
   (thaw   [_ ba] (nippy/thaw   ba opts)))
 
-(def nippy-freezer "Default Nippy Freezer." (NippyFreezer. {}))
+(def nippy-freezer "Default Nippy Freezer." (->NippyFreezer {}))
 
 (defrecord DiskDataStore [path]
   IDataStore
@@ -255,7 +257,7 @@
                                           {:failed-ks ks-failed})]
                           (timbre/error ex)))))))))
 
-          w (Worker. conn work-fn (atom false) {:frequency-ms frequency-ms})]
+          w (->Worker conn work-fn (atom false) {:frequency-ms frequency-ms})]
       (when auto-start? (start w)) w)))
 
 (defn tundra-store
@@ -281,7 +283,7 @@
   (assert (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))
           (str "Bad TTL (< 10 hours): " redis-ttl-ms))
 
-  (TundraStore. datastore freezer {:redis-ttl-ms redis-ttl-ms}))
+  (->TundraStore datastore freezer {:redis-ttl-ms redis-ttl-ms}))
 
 (comment ; README
 

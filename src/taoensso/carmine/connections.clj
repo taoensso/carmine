@@ -34,8 +34,7 @@
   IConnectionPool
   (get-conn     [_ spec] (.borrowObject pool spec))
   (release-conn [_ conn] (.returnObject pool (:spec conn) conn))
-  (release-conn [_ conn exception] (.invalidateObject pool (:spec conn)
-                                                         conn))
+  (release-conn [_ conn exception] (.invalidateObject pool (:spec conn) conn))
   java.io.Closeable
   (close [_] (.close pool)))
 
@@ -45,11 +44,11 @@
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer (or timeout-ms 0)))
-        conn (Connection. socket spec (-> (.getInputStream socket)
-                                          (BufferedInputStream.)
-                                          (DataInputStream.))
-                                      (-> (.getOutputStream socket)
-                                          (BufferedOutputStream.)))]
+        conn (->Connection socket spec (-> (.getInputStream socket)
+                                           (BufferedInputStream.)
+                                           (DataInputStream.))
+                                       (-> (.getOutputStream socket)
+                                           (BufferedOutputStream.)))]
     (when password (protocol/with-context conn (taoensso.carmine/auth password)))
     (when (and db (not (zero? db))) (protocol/with-context conn
                                       (taoensso.carmine/select (str db))))
@@ -97,12 +96,12 @@
     (if-let [dp (and cached? (@pool-cache opts))]
       @dp
       (let [dp (delay
-                (if (= opts :none) (NonPooledConnectionPool.)
+                (if (= opts :none) (->NonPooledConnectionPool)
                     (let [defaults {:test-while-idle?              true
                                     :num-tests-per-eviction-run    -1
                                     :min-evictable-idle-time-ms    60000
                                     :time-between-eviction-runs-ms 30000}]
-                      (ConnectionPool.
+                      (->ConnectionPool
                        (reduce set-pool-option
                                (GenericKeyedObjectPool. (make-connection-factory))
                                (merge defaults opts))))))]

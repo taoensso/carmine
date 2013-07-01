@@ -19,7 +19,7 @@
 
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
-  [x] (if (utils/bytes? x) (WrappedRaw. x)
+  [x] (if (utils/bytes? x) (->WrappedRaw x)
           (throw (Exception. "Raw arg must be byte[]"))))
 
 (defmacro ^:private bytestring
@@ -39,7 +39,7 @@
 
 (defprotocol IRedisArg (coerce-bs [x] "x -> [<ba> <meta>]"))
 (extend-protocol IRedisArg
-  String  (coerce-bs [x] [(bytestring ^String x) nil])
+  String  (coerce-bs [x] [(bytestring x) nil])
   Keyword (coerce-bs [x] [(bytestring ^String (utils/fq-name x)) nil])
 
   ;;; Simple number types (Redis understands these)
@@ -192,7 +192,7 @@
   `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~connection
          listener?# (:listener? spec#)]
      (binding [*parser*  nil
-               *context* (Context. in-stream# out-stream# (when-not listener?#
-                                                            (atom [])))]
+               *context* (->Context in-stream# out-stream# (when-not listener?#
+                                                             (atom [])))]
        ~@body
        (when-not listener?# (get-replies false)))))

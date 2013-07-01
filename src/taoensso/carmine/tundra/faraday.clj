@@ -101,9 +101,9 @@
              :or   {table default-table
                     key-ns :default
                     auto-write-units {0 1, 200 2, 400 4}}}]]
-  (FaradayDataStore. creds {:table            table
-                            :key-ns           key-ns
-                            :auto-write-units auto-write-units}))
+  (->FaradayDataStore creds {:table            table
+                             :key-ns           key-ns
+                             :auto-write-units auto-write-units}))
 
 (comment
   (ensure-table creds {:throughput {:read 1 :write 1}})
