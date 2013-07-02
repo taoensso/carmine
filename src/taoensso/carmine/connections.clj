@@ -59,7 +59,9 @@
   IConnectionPool
   (get-conn     [_ spec] (make-new-connection spec))
   (release-conn [_ conn] (close-conn conn))
-  (release-conn [_ conn exception] (close-conn conn)))
+  (release-conn [_ conn exception] (close-conn conn))
+  java.io.Closeable
+  (close [_] nil))
 
 (defn make-connection-factory []
   (reify KeyedPoolableObjectFactory
