@@ -93,7 +93,7 @@
 
 (defn conn-pool
   [opts & [cached?]]
-  (if (instance? ConnectionPool opts)
+  (if (satisfies? IConnectionPool opts)
     opts ; 1.x backwards compatiblity, testing
     (if-let [dp (and cached? (@pool-cache opts))]
       @dp
