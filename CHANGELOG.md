@@ -1,4 +1,4 @@
-## v1.12.0 → v2.0.0-beta3
+## v1.12.0 → v2.0.0-beta4
 
   * Refactored a bunch of code for simplicity+performance (~20% improved roundtrip times).
   * Upgraded to [Nippy v2][Nippy GitHub] for pluggable compression+crypto. See the [Nippy CHANGELOG][] for details.
