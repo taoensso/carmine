@@ -1,6 +1,6 @@
 (ns taoensso.carmine.connections
   "Handles life cycle of socket connections to Redis server. Connection pool is
-  implemented using Apache Commons pool. Adapted from redis-clojure."
+  implemented using Apache Commons pool. Originally adapted from redis-clojure."
   {:author "Peter Taoussanis"}
   (:require [taoensso.carmine (utils :as utils) (protocol :as protocol)])
   (:import  [java.net Socket URI]
@@ -91,10 +91,9 @@
 
 (def ^:private pool-cache (atom {}))
 
-(defn conn-pool
-  ^java.io.Closeable [opts & [cached?]]
+(defn conn-pool ^java.io.Closeable [opts & [cached?]]
   (if (satisfies? IConnectionPool opts)
-    opts ; 1.x backwards compatiblity, testing
+    opts ; Pass through pre-made pools
     (if-let [dp (and cached? (@pool-cache opts))]
       @dp
       (let [dp (delay
@@ -134,11 +133,11 @@
 
 (defn pooled-conn "Returns [<open-pool> <pooled-connection>]."
   [pool-opts spec-opts]
-  (let [spec (conn-spec spec-opts)]
-    (let [pool (conn-pool pool-opts true)]
-      (try (try [pool (get-conn pool spec)]
-                (catch IllegalStateException e
-                  (let [pool (conn-pool pool-opts)]
-                    [pool (get-conn pool spec)])))
-        (catch Exception e
-          (throw (Exception. "Carmine connection error" e)))))))
+  (let [spec (conn-spec spec-opts)
+        pool (conn-pool pool-opts true)]
+    (try (try [pool (get-conn pool spec)]
+              (catch IllegalStateException e
+                (let [pool (conn-pool pool-opts)]
+                  [pool (get-conn pool spec)])))
+         (catch Exception e
+           (throw (Exception. "Carmine connection error" e))))))
