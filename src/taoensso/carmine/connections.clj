@@ -92,7 +92,7 @@
 (def ^:private pool-cache (atom {}))
 
 (defn conn-pool
-  [opts & [cached?]]
+  ^java.io.Closeable [opts & [cached?]]
   (if (satisfies? IConnectionPool opts)
     opts ; 1.x backwards compatiblity, testing
     (if-let [dp (and cached? (@pool-cache opts))]
