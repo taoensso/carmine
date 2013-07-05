@@ -1,4 +1,4 @@
-## v1.12.0 → v2.0.0-beta4
+## v1.12.0 → v2.0.0-beta5
 
   * Refactored a bunch of code for simplicity+performance (~20% improved roundtrip times).
   * Upgraded to [Nippy v2][Nippy GitHub] for pluggable compression+crypto. See the [Nippy CHANGELOG][] for details.
@@ -57,6 +57,7 @@
   * **DEPRECATED**: `make-dequeue-worker` -> `worker`. See docstring for details.
   * Added support for unnamed vector (non-map) keys/args to `lua-script`.
   * **DEPRECATED**: `lua-script` -> `lua`.
+  * **DEPRECATED**: `ring/make-carmine-store` -> `ring/carmine-store`.
 
 ## v1.10.0 → v1.12.0
 
