@@ -58,6 +58,7 @@
   * Added support for unnamed vector (non-map) keys/args to `lua-script`.
   * **DEPRECATED**: `lua-script` -> `lua`.
   * **DEPRECATED**: `ring/make-carmine-store` -> `ring/carmine-store`.
+  * Add `ensure-atomically`. See docstring for details.
 
 ## v1.10.0 → v1.12.0
 

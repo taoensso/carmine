@@ -277,13 +277,33 @@
 
   Body may contain a (discard) call to abort transaction."
   [watch-keys & body]
-  `(try
+  `(do
      (with-replies ; discard "OK" and "QUEUED" replies
        (when-let [wk# (seq ~watch-keys)] (apply watch wk#))
        (multi)
        ~@body)
+
      ;; Body discards will result in an (exec) exception:
      (parse #(if (instance? Exception %) [] %) (exec))))
+
+(defmacro ensure-atomically
+  "Repeatedly calls `atomically` on body until transaction succeeds or
+  given limit is hit, in which case an exception will be thrown."
+  [{:keys [max-tries]
+    :or   {max-tries 100}}
+   watch-keys & body]
+  `(let [watch-keys# ~watch-keys
+         max-idx#    ~max-tries]
+     (loop [idx# 0]
+       (let [result# (with-replies (atomically watch-keys# ~@body))]
+         (if (not= [] result#)
+           (remember result#)
+           (if (= idx# max-idx#)
+             (throw (Exception. (str "`ensure-atomically` failed after " idx#
+                                     " attempts")))
+             (recur (inc idx#))))))))
+
+(comment (wcar {} (ensure-atomically {} [:foo] (set :foo "new-val") (get :foo))))
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
 
