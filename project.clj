@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.0.0-RC1"
+(defproject com.taoensso/carmine "2.0.0"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
   :license {:name "Eclipse Public License"
@@ -9,8 +9,8 @@
                  [commons-codec/commons-codec "1.8"]
                  [org.clojure/data.json       "0.2.2"]
                  [expectations                "1.4.49"]
-                 [com.taoensso/timbre         "2.1.2"]
-                 [com.taoensso/nippy          "2.0.0-RC1"]]
+                 [com.taoensso/timbre         "2.4.1"]
+                 [com.taoensso/nippy          "2.0.0"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure "1.6.0-master-SNAPSHOT"]]}
