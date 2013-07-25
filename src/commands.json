@@ -151,6 +151,24 @@
     "since": "2.4.0",
     "group": "server"
   },
+  "CLIENT GETNAME": {
+    "summary": "Get the current connection name",
+    "complexity": "O(1)",
+    "since": "2.6.9",
+    "group": "server"
+  },
+  "CLIENT SETNAME": {
+    "summary": "Set the current connection name",
+    "complexity": "O(1)",
+    "since": "2.6.9",
+    "arguments": [
+      {
+        "name": "connection-name",
+        "type": "string"
+      }
+    ],
+    "group": "server"
+  },
   "CONFIG GET": {
     "summary": "Get the value of a configuration parameter",
     "arguments": [
@@ -705,6 +723,13 @@
   },
   "INFO": {
     "summary": "Get information and statistics about the server",
+    "arguments": [
+      {
+        "name": "section",
+        "type": "string",
+        "optional": true
+      }
+    ],
     "since": "1.0.0",
     "group": "server"
   },
@@ -1385,6 +1410,24 @@
       {
         "name": "value",
         "type": "string"
+      },
+      {
+        "command": "EX",
+        "name": "seconds",
+        "type": "integer",
+        "optional": true
+      },
+      {
+        "command": "PX",
+        "name": "milliseconds",
+        "type": "integer",
+        "optional": true
+      },
+      {
+        "name": "condition",
+        "type": "enum",
+        "enum": ["NX", "XX"],
+        "optional": true
       }
     ],
     "since": "1.0.0",
@@ -1821,22 +1864,9 @@
         "type": "key"
       },
       {
-        "name": "score",
-        "type": "double"
-      },
-      {
-        "name": "member",
-        "type": "string"
-      },
-      {
-        "name": "score",
-        "type": "double",
-        "optional": true
-      },
-      {
-        "name": "member",
-        "type": "string",
-        "optional": true
+        "name": ["score", "member"],
+        "type": ["double", "string"],
+        "multiple": true
       }
     ],
     "since": "1.2.0",
