@@ -1,6 +1,6 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis"}
-  (:refer-clojure :exclude [time get set keys type sync sort eval])
+  (:refer-clojure :exclude [time get set key keys type sync sort eval])
   (:require [clojure.string :as str]
             [taoensso.carmine
              (utils       :as utils)
@@ -27,18 +27,21 @@
 
   A `nil` or `{}` `conn` or opts will use defaults. A `:none` pool can be used
   to skip connection pooling. For other pool options, Ref. http://goo.gl/EiTbn."
-  [conn & body]
+  {:arglists '([conn :as-pipeline & body] [conn & body])}
+  [conn & sigs]
   `(let [{pool-opts# :pool spec-opts# :spec} ~conn
          [pool# conn#] (conns/pooled-conn pool-opts# spec-opts#)]
      (try
-       (let [response# (protocol/with-context conn# ~@body)]
+       (let [response# (protocol/with-context conn# ~@sigs)]
          (conns/release-conn pool# conn#)
          response#)
        (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
 
 (comment (wcar {} (ping) "not-a-Redis-command" (ping))
          (with-open [p (conns/conn-pool {})]
-           (wcar {:pool p} (ping) (ping))))
+           (wcar {:pool p} (ping) (ping)))
+         (wcar {} (ping))
+         (wcar {} :as-pipeline (ping)))
 
 ;;;; Misc
 
@@ -64,18 +67,14 @@
 (defmacro parse-keyword [& body] `(parse keyword   ~@body))
 (defmacro parse-raw     [& body] `(parse (with-meta identity {:raw? true}) ~@body))
 
-(defn kname
-  "Joins keywords, integers, and strings to form an idiomatic compound Redis key
-  name.
-
-  Suggested key naming style:
+(defn key
+  "Joins parts to form an idiomatic compound Redis key name. Suggested style:
     * \"category:subcategory:id:field\" basic form.
     * Singular category names (\"account\" rather than \"accounts\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
+  [& parts] (str/join ":" (map utils/keyname parts)))
 
-  [& parts] (str/join ":" (map utils/keyname (filter identity parts))))
-
-(comment (kname :foo/bar :baz "qux" nil 10))
+(comment (key :foo/bar :baz "qux" nil 10))
 
 (utils/defalias raw            protocol/raw)
 (utils/defalias with-thaw-opts nippy-tools/with-thaw-opts)
@@ -95,6 +94,7 @@
 (comment (wcar {} (return :foo) (ping) (return :bar))
          (wcar {} (parse name (return :foo)) (ping) (return :bar)))
 
+;; TODO Could probably merge at least some `with-replies`, `with-context` logic.
 (defmacro with-replies
   "Alpha - subject to change.
   Evaluates body, immediately returning the server's response to any contained
@@ -398,6 +398,11 @@
      ~@subscription-commands))
 
 ;;;; Renamed/deprecated
+
+(defn kname "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
+  [& parts] (apply key (filter identity parts)))
+
+(comment (kname :foo/bar :baz "qux" nil 10))
 
 (def serialize "DEPRECATED: Use `freeze` instead." freeze)
 (def preserve  "DEPRECATED: Use `freeze` instead." freeze)

@@ -69,26 +69,14 @@
                                              (if vf (vf v) v)))
                           (transient {}) (or m {}))))
 
-(defn keyname
-  "Like `name` but supports integers and includes namespace in string when
-  present."
-  [x]
-  (cond (string?  x) x
-        (keyword? x) (let [n (name x)] (if-let [ns (namespace x)]
-                                         (str ns "/" n) n))
-        (integer? x) (str x)
-        :else (throw (Exception. (str "Invalid keyname type: " (type x))))))
-
-(comment (map keyname [:foo :foo/bar 12 :foo.bar/baz])
-         (time (dotimes [_ 10000] (name :foo)))
-         (time (dotimes [_ 10000] (keyname :foo))))
-
 (defn fq-name "Like `name` but includes namespace in string when present."
   [x] (if (string? x) x
           (let [n (name x)]
             (if-let [ns (namespace x)] (str ns "/" n) n))))
 
 (comment (map fq-name ["foo" :foo :foo.bar/baz]))
+
+(defn keyname [x] (if (keyword? x) (fq-name x) (str x)))
 
 (defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {} (or m {})))
 

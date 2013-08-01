@@ -1,3 +1,12 @@
+## v2.0.0 → v2.1.0
+  * Like `with-replies`, `wcar` macro can now take a first `:as-pipeline` arg:
+  ```clojure
+  (wcar {} (car/ping)) => "PONG"
+  (wcar {} :as-pipeline (car/ping)) => ["PONG"]
+  ```
+  * **DEPRECATED**: `kname` -> `key`. The new fn does NOT automatically filter input parts for nil. This plays better with Redis' key pattern matching style, but may require manual filtering in some cases.
+
+
 ## v1.12.0 → v2.0.0
 
   * Refactored a bunch of code for simplicity+performance (~20% improved roundtrip times).

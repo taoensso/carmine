@@ -188,11 +188,14 @@
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server.
   For non-listener connections, returns server's response."
-  [connection & body]
-  `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~connection
-         listener?# (:listener? spec#)]
-     (binding [*parser*  nil
-               *context* (->Context in-stream# out-stream# (when-not listener?#
-                                                             (atom [])))]
-       ~@body
-       (when-not listener?# (get-replies false)))))
+  {:arglists '([conn :as-pipeline & body] [conn & body])}
+  [conn & [s1 & sn :as sigs]]
+  (let [as-pipeline? (= s1 :as-pipeline)
+        body (if as-pipeline? sn sigs)]
+    `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~conn
+           listener?# (:listener? spec#)]
+       (binding [*parser*  nil
+                 *context* (->Context in-stream# out-stream# (when-not listener?#
+                                                               (atom [])))]
+         ~@body
+         (when-not listener?# (get-replies ~as-pipeline?))))))
