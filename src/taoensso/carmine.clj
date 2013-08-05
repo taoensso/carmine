@@ -170,9 +170,9 @@
   => \"return redis.call('set', KEYS[1], ARGV[1])\""
   (memoize
    (fn [script key-vars arg-vars]
-     (let [;; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
+     (let [;; {match replacement} e.g. {#"\b_:my-var\b" "ARRAY-NAME[1]"}
            subst-map (fn [vars array-name]
-                       (zipmap (map #(str "_:" (name %)) vars)
+                       (zipmap (map #(re-pattern (str "\\b_:" (name %) "\\b")) vars)
                                (map #(str array-name "[" % "]")
                                     (map inc (range)))))]
        (reduce (fn [s [match replacement]] (str/replace s match replacement))
@@ -184,6 +184,9 @@
   (interpolate-script "return redis.call('set', _:my-key, _:my-val)" nil nil)
   (interpolate-script "return redis.call('set', _:my-key, _:my-val)"
                       [:my-key] [:my-val])
+
+  (interpolate-script "return redis.call('set', _:f, _:foo)"
+                      [:f :foo] [])
 
   (interpolate-script "Hello _:k1 _:k1 _:k2 _:k3 _:a1 _:a2 _:a3"
                       [:k3 :k1 :k2]

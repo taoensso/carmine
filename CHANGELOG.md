@@ -1,3 +1,7 @@
+## v2.0.0 → v2.1.1
+  * Fixed `lua` clashing var name regex bug (thanks to Alex Kehayias for report).
+
+
 ## v2.0.0 → v2.1.0
   * Like `with-replies`, `wcar` macro can now take a first `:as-pipeline` arg:
   ```clojure
