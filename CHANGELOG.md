@@ -1,4 +1,4 @@
-## v2.0.0 → v2.1.1
+## v2.0.0 → v2.1.2
   * Fixed `lua` clashing var name regex bug (thanks to Alex Kehayias for report).
 
 
