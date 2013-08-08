@@ -200,9 +200,9 @@ Carmine has a flexible **Listener** API to support persistent-connection feature
 
 ```clojure
 (def listener
-  (car/with-new-pubsub-listener
-   spec-server1 {"foobar" (fn f1 [msg] (println "Channel match: " msg))
-                 "foo*"   (fn f2 [msg] (println "Pattern match: " msg))}
+  (car/with-new-pubsub-listener (:spec server1-conn)
+    {"foobar" (fn f1 [msg] (println "Channel match: " msg))
+     "foo*"   (fn f2 [msg] (println "Pattern match: " msg))}
    (car/subscribe  "foobar" "foobaz")
    (car/psubscribe "foo*")))
 ```
