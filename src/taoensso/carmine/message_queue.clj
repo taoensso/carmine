@@ -215,9 +215,11 @@
                   (if (= poll-reply "eoq-backoff")
                     (when eoq-backoff-ms* (Thread/sleep eoq-backoff-ms*))
                     (let [{:keys [status throwable backoff-ms]}
-                          (try (handler {:message mcontent :attempt attempt})
-                               (catch Throwable t {:status :error
-                                                   :throwable t}))]
+                          (let [result (try (handler {:message mcontent
+                                                      :attempt attempt})
+                                            (catch Throwable t {:status :error
+                                                                :throwable t}))]
+                            (when (map? result) result))]
                       (druns :reset)
                       (case status
                         :success (done mid)
@@ -226,7 +228,7 @@
                         (do (done mid)
                             (timbre/warn (str "Invalid handler status:" status))))))))
               (catch Throwable t
-                (timbre/fatal t "Worker error!!")
+                (timbre/fatal t "Worker error!")
                 (throw t)))
             (when throttle-ms (Thread/sleep throttle-ms)))))
       true))

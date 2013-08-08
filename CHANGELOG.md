@@ -1,4 +1,8 @@
-## v2.0.0 → v2.1.2
+## v2.1.2 → v2.1.3
+  * Fixed message queue error when handler returns a non-map.
+
+
+## v2.1.0 → v2.1.2
   * Fixed `lua` clashing var name regex bug (thanks to Alex Kehayias for report).
 
 
