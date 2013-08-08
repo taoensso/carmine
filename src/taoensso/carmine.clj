@@ -350,11 +350,11 @@
       3. An atom containing any other optional listener state.
 
   Useful for pub/sub, monitoring, etc."
-  [connection-spec handler initial-state & body]
+  [conn-spec handler initial-state & body]
   `(let [handler-atom# (atom ~handler)
          state-atom#   (atom ~initial-state)
-         conn# (conns/make-new-connection (assoc ~connection-spec
-                                            :listener? true))
+         conn# (conns/make-new-connection
+                (assoc (conns/conn-spec ~conn-spec) :listener? true))
          in#   (:in-stream conn#)]
 
      (future-call ; Thread to long-poll for messages
@@ -394,8 +394,7 @@
   Returns the Listener to allow manual closing and adjustments to
   message-handlers."
   [conn-spec message-handlers & subscription-commands]
-  `(with-new-listener (assoc (conns/conn-spec ~conn-spec)
-                        :pubsub-listener? true)
+  `(with-new-listener (assoc ~conn-spec :pubsub-listener? true)
 
      ;; Message handler (fn [message state])
      (fn [[_# source-channel# :as incoming-message#] msg-handlers#]
