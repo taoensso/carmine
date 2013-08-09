@@ -271,7 +271,9 @@ Redis makes a great [message queue server](http://antirez.com/post/250):
 
 (def my-worker
   (mq/worker {:pool {<opts>} :spec {<opts>}} "my-queue"
-   {:handler (fn [{:keys [message attempt]}] (println "Received" message))}))
+   {:handler (fn [{:keys [message attempt]}]
+               (println "Received" message)
+               {:status :success})}))
 
 (wcar* (mq/enqueue "my-queue" "my message!"))
 %> Received my message!
@@ -279,7 +281,7 @@ Redis makes a great [message queue server](http://antirez.com/post/250):
 (mq/stop my-worker)
 ```
 
-Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.message-queue` namespace for details.
+Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See the [API docs](http://ptaoussanis.github.io/carmine/taoensso.carmine.message-queue.html) for details.
 
 ### Distributed locks
 
