@@ -170,32 +170,24 @@
   => \"return redis.call('set', KEYS[1], ARGV[1])\""
   (memoize
    (fn [script key-vars arg-vars]
-     (let [;; {match replacement} e.g. {#"\b_:my-var\b(?!-)" "ARRAY-NAME[1]"}
-           ;; \b incl. hyphens so we need a negative lookahead (?!-) to exclude
+     (let [;; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
            subst-map
            (fn [vars array-name]
-             (zipmap (map #(re-pattern (str "\\b_:" (name %) "\\b(?!-)")) vars)
+             (zipmap (map #(str "_:" (name %)) vars)
                      (map #(str array-name "[" % "]")
                           (map inc (range)))))]
        (reduce (fn [s [match replacement]] (str/replace s match replacement))
                (str script)
-               (merge (subst-map key-vars "KEYS")
-                      (subst-map arg-vars "ARGV")))))))
+               (->> (merge (subst-map key-vars "KEYS")
+                           (subst-map arg-vars "ARGV"))
+                    ;; Prevent ":foo" from replacing ":foo-bar" w/o the need for
+                    ;; an insane Regex:
+                    (sort-by #(- (.length ^String (first %))))))))))
 
 (comment
-  (interpolate-script "return redis.call('set', _:my-key, _:my-val)" nil nil)
-  (interpolate-script "return redis.call('set', _:my-key, _:my-val)"
-                      [:my-key] [:my-val])
-
-  (interpolate-script
-   "redis.call('set', _:foo-bar, _:foo)
-    redis.call('get', _:f2, _:f)"
-   [:f  :foo]
-   [:f2 :foo-bar])
-
-  (interpolate-script "Hello _:k1 _:k1 _:k2 _:k3 _:a1 _:a2 _:a3"
-                      [:k3 :k1 :k2]
-                      [:a3 :a1 :a2]))
+  (= (interpolate-script "_:k1 _:a1 _:k2! _:a _:k3? _:k _:a2 _:a _:a3 _:a-4"
+                         [:k3? :k1 :k2! :k] [:a2 :a-4 :a3 :a :a1])
+     "KEYS[2] ARGV[5] KEYS[3] ARGV[4] KEYS[1] KEYS[4] ARGV[1] ARGV[4] ARGV[3] ARGV[2]"))
 
 (defn lua
   "All singing, all dancing Lua script helper. Like `eval*` but allows script
