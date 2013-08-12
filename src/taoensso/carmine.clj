@@ -244,12 +244,20 @@
 
 (defn info*
   "Like `info` but automatically coerces reply into a hash-map."
-  []
+  [& [clojureize?]]
   (->> (info)
-       (parse (fn [reply] (->> reply str/split-lines
-                              (map #(str/split % #":"))
-                              (filter #(= (count %) 2))
-                              (into {}))))))
+       (parse
+        (fn [reply]
+          (let [m (->> reply str/split-lines
+                       (map #(str/split % #":"))
+                       (filter #(= (count %) 2))
+                       (into {}))]
+            (if-not clojureize?
+              m
+              (reduce-kv (fn [m k v] (assoc m (keyword (str/replace k "_" "-")) v))
+                         {} (or m {}))))))))
+
+(comment (wcar {} (info* :clojurize)))
 
 (defn zinterstore*
   "Like `zinterstore` but automatically counts keys."
