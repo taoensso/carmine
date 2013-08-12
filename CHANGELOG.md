@@ -1,3 +1,9 @@
+## v2.1.4 → v2.2,0
+  * Add `hmset*`, `hmget*` helpers.
+  * Add `:clojurize?` option to `info*` helper.
+  * Allow `hmget*`, `hgetall*`, `zinterstore*` to work with custom parsers.
+
+
 ## v2.1.0 → v2.1.4
   * Fixed `lua` clashing var name regex bug (thanks to Alex Kehayias for report).
 
