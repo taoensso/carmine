@@ -88,7 +88,7 @@
   [value]
   (let [vfn (constantly value)]
     (swap! (:parser-queue protocol/*context*) conj
-           (with-meta (if-let [p protocol/*parser*] (comp p vfn) vfn)
+           (with-meta (utils/comp-maybe protocol/*parser* vfn)
              {:dummy-reply? true}))))
 
 (comment (wcar {} (return :foo) (ping) (return :bar))
@@ -213,35 +213,43 @@
 (defn hmset* "Like `hmset` but takes a map argument."
   [key m] (apply hmset key (reduce concat m)))
 
-(defn hmget* "Like `hmget` but automatically coerces reply into a hash-map."
+(defn hmget*
+  "Like `hmget` but automatically coerces reply into a hash-map.
+  Any parser will apply to each hash value."
   [key field & more]
-  (let [fields (cons field more)]
-    (parse #(zipmap fields %) (apply hmget key fields))))
+  (let [fields (cons field more)
+        inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+        outer-parser #(zipmap fields %)]
+    (->> (apply hmget key fields)
+         (parse (utils/comp-maybe outer-parser inner-parser)))))
 
 (defn hgetall*
   "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
-  keywordizes map keys."
+  keywordizes map keys. Any parser will apply to each hash value."
   [key & [keywordize?]]
-  (parse
-    (if keywordize?
-      #(utils/keywordize-map (apply hash-map %))
-      #(apply hash-map %))
-    (hgetall key)))
+  (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+        outer-parser (if keywordize?
+                       #(utils/keywordize-map (apply hash-map %))
+                       #(apply hash-map %))]
+    (->> (hgetall key)
+         (parse (utils/comp-maybe outer-parser inner-parser)))))
 
 (comment (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
-         (wcar {} (hmset* "hkey" {}))
+         (wcar {} (hmset* "hkey" {})) ; ex
          (wcar {} (hmget* "hkey" :a :b))
+         (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
          (wcar {} (hmget* "hkey" "a" "b"))
-         (wcar {} (hgetall* "hkey")))
+         (wcar {} (hgetall* "hkey"))
+         (wcar {} (parse str/upper-case (hgetall* "hkey"))))
 
 (defn info*
   "Like `info` but automatically coerces reply into a hash-map."
   []
-  (parse (fn [reply] (->> reply str/split-lines
-                         (map #(str/split % #":"))
-                         (filter #(= (count %) 2))
-                         (into {})))
-    (info)))
+  (->> (info)
+       (parse (fn [reply] (->> reply str/split-lines
+                              (map #(str/split % #":"))
+                              (filter #(= (count %) 2))
+                              (into {}))))))
 
 (defn zinterstore*
   "Like `zinterstore` but automatically counts keys."
@@ -297,7 +305,9 @@
        ~@body)
 
      ;; Body discards will result in an (exec) exception:
-     (parse #(if (instance? Exception %) [] %) (exec))))
+     (parse (utils/comp-maybe protocol/*parser*
+              #(if (instance? Exception %) [] %))
+            (exec))))
 
 (defmacro ensure-atomically
   "Repeatedly calls `atomically` on body until transaction succeeds or

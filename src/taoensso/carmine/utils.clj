@@ -80,6 +80,14 @@
 
 (defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {} (or m {})))
 
+(defn comp-maybe [f g]
+  (cond (and f g) (comp f g)
+        f f
+        g g
+        :else nil))
+
+(comment ((comp-maybe nil identity) :x))
+
 (defmacro repeatedly* "Like `repeatedly` but faster and returns a vector."
   [n & body]
   `(let [n# ~n]
