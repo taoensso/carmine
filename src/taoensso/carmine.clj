@@ -211,6 +211,14 @@
                 {:my-key "foo"}
                 {:my-val "bar"})))
 
+(defn hmset* "Like `hmset` but takes a map argument."
+  [key m] (apply hmset key (reduce concat m)))
+
+(defn hmget* "Like `hmget` but automatically coerces reply into a hash-map."
+  [key field & more]
+  (let [fields (cons field more)]
+    (parse #(zipmap fields %) (apply hmget key fields))))
+
 (defn hgetall*
   "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
   keywordizes map keys."
@@ -220,6 +228,12 @@
       #(utils/keywordize-map (apply hash-map %))
       #(apply hash-map %))
     (hgetall key)))
+
+(comment (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
+         (wcar {} (hmset* "hkey" {}))
+         (wcar {} (hmget* "hkey" :a :b))
+         (wcar {} (hmget* "hkey" "a" "b"))
+         (wcar {} (hgetall* "hkey")))
 
 (defn info*
   "Like `info` but automatically coerces reply into a hash-map."
