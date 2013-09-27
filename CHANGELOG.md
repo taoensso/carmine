@@ -1,4 +1,8 @@
-## v2.1.4 → v2.2,0
+## v2.2.0 → v2.2.1
+  * Fix race condition for pool creation (thanks cespare!).
+
+
+## v2.1.4 → v2.2.0
   * Add `hmset*`, `hmget*` helpers.
   * Add `:clojurize?` option to `info*` helper.
   * Allow `hmget*`, `hgetall*`, `zinterstore*` to work with custom parsers.
