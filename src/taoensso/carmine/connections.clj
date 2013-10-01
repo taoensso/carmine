@@ -92,11 +92,7 @@
 (def ^:private pool-cache (atom {}))
 
 (defn conn-pool ^java.io.Closeable [opts & [cached?]]
-  (if (and (not (or (nil? opts) (map? opts)))
-           (or (instance? ConnectionPool opts)
-               (instance? NonPooledConnectionPool opts)
-               (satisfies? IConnectionPool opts) ; Slow, check last
-               ))
+  (if (not (or (nil? opts) (map? opts) (keyword? opts)))
     opts ; Pass through pre-made pools (Carmine v1 & custom pool support)
     (if-let [dp (and cached? (@pool-cache opts))]
       @dp
