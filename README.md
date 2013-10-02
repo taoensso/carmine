@@ -150,7 +150,7 @@ Script primitives are also provided: `eval`, `eval-sha`, `eval*`, `eval-sha*`. S
 
 ### Helpers
 
-The `lua-script` command above is a good example of a Carmine *helper*.
+The `lua` command above is a good example of a Carmine *helper*.
 
 Carmine will never surprise you by interfering with the standard Redis command API. But there are times when it might want to offer you a helping hand (if you want it). Compare:
 
@@ -161,7 +161,7 @@ Carmine will never surprise you by interfering with the standard Redis command A
 
 Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
 
-Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `lua-script`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
+Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `lua`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
 
 ### Commands are (just) functions
 
