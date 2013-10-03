@@ -91,27 +91,31 @@
 
 (def ^:private pool-cache (atom {}))
 
-(defn conn-pool ^java.io.Closeable [opts & [cached?]]
-  (if (not (or (nil? opts) (map? opts) (keyword? opts)))
-    opts ; Pass through pre-made pools (Carmine v1 & custom pool support)
-    (if-let [dp (and cached? (@pool-cache opts))]
-      @dp
-      (locking pool-cache ; Pool creation can be racey even with `delay`
-        ;; Retry after lock acquisition:
-        (if-let [dp (and cached? (@pool-cache opts))]
-          @dp
-          (let [dp (delay
-                    (if (= opts :none) (->NonPooledConnectionPool)
-                        (let [defaults {:test-while-idle?              true
-                                        :num-tests-per-eviction-run    -1
-                                        :min-evictable-idle-time-ms    60000
-                                        :time-between-eviction-runs-ms 30000}]
-                          (->ConnectionPool
-                           (reduce set-pool-option
-                                   (GenericKeyedObjectPool. (make-connection-factory))
-                                   (merge defaults opts))))))]
-            (swap! pool-cache assoc opts dp)
-            @dp))))))
+(defn conn-pool ^java.io.Closeable [opts & [use-cache?]]
+  ;; Impl. a little contorted for high-speed v1 API backwards-comp
+  (if-let [dp (and use-cache? (@pool-cache opts))]
+    @dp
+    (let [dp (delay
+              (cond
+               (= opts :none) (->NonPooledConnectionPool)
+               ;; Pass through pre-made pools (note that test reflects):
+               (satisfies? IConnectionPool opts) opts
+               :else
+               (let [defaults {:test-while-idle?              true
+                               :num-tests-per-eviction-run    -1
+                               :min-evictable-idle-time-ms    60000
+                               :time-between-eviction-runs-ms 30000}]
+                 (->ConnectionPool
+                  (reduce set-pool-option
+                          (GenericKeyedObjectPool. (make-connection-factory))
+                          (merge defaults opts))))))]
+      (if-not use-cache?
+        @dp
+        (locking pool-cache ; Pool creation can be racey even with `delay`
+          (if-let [dp (@pool-cache opts)] ; Retry after lock acquisition
+            @dp
+            (do (swap! pool-cache assoc opts dp)
+                @dp)))))))
 
 (comment (conn-pool :none) (conn-pool {}))
 
@@ -138,7 +142,7 @@
 (defn pooled-conn "Returns [<open-pool> <pooled-connection>]."
   [pool-opts spec-opts]
   (let [spec (conn-spec spec-opts)
-        pool (conn-pool pool-opts :cached)]
+        pool (conn-pool pool-opts :use-cache)]
     (try (try [pool (get-conn pool spec)]
               (catch IllegalStateException e
                 (let [pool (conn-pool pool-opts)]
