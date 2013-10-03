@@ -1,4 +1,4 @@
-## v2.2.0 → v2.2.2
+## v2.2.0 → v2.2.3
   * Fix race condition for pool creation (thanks cespare!).
   * Fix unnecessary reflection for pool creation (thanks harob!).
 
