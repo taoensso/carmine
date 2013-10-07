@@ -17,7 +17,9 @@
   (delete-session [_ key] (wcar* (car/del key)) nil)
   (write-session  [_ key data]
     (let [key  (or key (new-session-key prefix))
-          data (assoc data :session-id key)]
+          ;; TODO Deprecate? Ring request already has :session/key
+          data (assoc data :session-id key)
+          ]
       (if expiration
         (wcar* (car/setex key expiration data))
         (wcar* (car/set key data)))
