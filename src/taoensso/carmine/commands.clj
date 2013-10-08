@@ -64,9 +64,15 @@
       `(println ~fn-name ":" \" ~(args->params-docstring args) \"
                 "->" ~(str fn-params))
       (if-not varps
-        `(defn ~(symbol fn-name) ~fn-docstring ~fn-params
+        `(defn ~(symbol fn-name)
+           {:doc ~fn-docstring
+            :redis-api true}
+           ~fn-params
            (protocol/send-request ~ps))
-        `(defn ~(symbol fn-name) ~fn-docstring ~fn-params
+        `(defn ~(symbol fn-name)
+           {:doc ~fn-docstring
+            :redis-api true}
+           ~fn-params
            (protocol/send-request (into ~ps ~varps)))))))
 
 (defn- get-command-reference
