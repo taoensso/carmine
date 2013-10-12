@@ -39,6 +39,9 @@
 
 (comment
 
+  ;;; 2013 Oct 12, Carmine 2.2.3
+  ;; {:wcar 73, :ping 741, :set 830, :get 785, :roundtrip 1105, :ping-pipelined 14171}
+
   ;;; 24 June 2013, + Perf. refactoring
   ;; {:wcar-unpooled 53188, :ping-unpooled 33540}
   ;; {:wcar 42, :ping 576, :set 608, :get 596, :roundtrip 875, :ping-pipelined 13939}
