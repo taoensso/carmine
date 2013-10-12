@@ -312,7 +312,7 @@
                    (car/ping))
                  (car/ping))))))
 
-(deftest test-transactions
+(deftest test-transactions ; Uses DEPRECATED `atomically`
   (let [k      (test-key "atomic")
         wk     (test-key "watch")
         k-val  "initial-k-value"

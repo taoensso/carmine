@@ -300,41 +300,79 @@
   :alpha, :asc, :desc."
   [key & sort-args] (apply sort key (parse-sort-args sort-args)))
 
-(defmacro atomically
-  "Executes all Redis commands in body as a single transaction and returns
-  server response vector or an empty vector if transaction failed.
+(defmacro atomic
+  "Alpha - subject to change.
+  Tool to ease Redis transactions for fun & profit. Wraps body in a `wcar`
+  call that terminates with `exec`, cleans up reply, and supports automatic
+  retry for failed optimistic locking. Parsers NOT supported.
 
-  Body may contain a (discard) call to abort transaction."
-  [watch-keys & body]
-  `(do
-     (with-replies ; discard "OK" and "QUEUED" replies
-       (when-let [wk# (seq ~watch-keys)] (apply watch wk#))
-       (multi)
-       ~@body)
+  ;;; Atomically increment integer key without using INCR
+  (atomic {} 100 ; Retry <= 100 times on failed optimistic lock, or throw ex
+    (watch :my-int-key) ; Watch key for changes
+    (let [curr-val (-> (wcar {} ; Note additional connection!
+                         (get :my-int-key)) ; Use val of watched key
+                       (as-long)
+                       (or 0))]
+      (multi) ; Start a transaction (replies from prev cmds will be discarded)
+      (set :my-int-key (inc curr-val)) ; Will return \"OK\"
+      (get :my-int-key)                ; Will return new integer val
+      ))
+  => [\"OK\" 1]
 
-     ;; Body discards will result in an (exec) exception:
-     (parse (utils/comp-maybe protocol/*parser*
-              #(if (instance? Exception %) [] %))
-            (exec))))
+  Body must contain a `multi` call and may contain calls to: `watch`, `unwatch`,
+  `discard`, etc. Ref. http://redis.io/topics/transactions for more info.
 
-(defmacro ensure-atomically
-  "Repeatedly calls `atomically` on body until transaction succeeds or
-  given limit is hit, in which case an exception will be thrown."
-  [{:keys [max-tries]
-    :or   {max-tries 100}}
-   watch-keys & body]
-  `(let [watch-keys# ~watch-keys
-         max-idx#    ~max-tries]
-     (loop [idx# 0]
-       (let [result# (with-replies (atomically watch-keys# ~@body))]
-         (if (not= [] result#)
-           (remember result#)
-           (if (= idx# max-idx#)
-             (throw (Exception. (str "`ensure-atomically` failed after " idx#
-                                     " attempts")))
-             (recur (inc idx#))))))))
+  See also `lua` as an alternative method of achieving transactional behaviour."
+  [conn max-cas-attempts & body]
+  (assert (>= max-cas-attempts 1))
+  `(let [conn#    ~conn
+         max-idx# ~max-cas-attempts
+         wcar-result#
+         (wcar :as-pipeline ; To ensure `peek` is always valid
+           conn# ; Hold 1 conn for all attempts
+           (loop [idx# 1]
+             (try (do ~@body)
+                  (catch Exception e#
+                    (discard) ; Always return conn to normal state
+                    (throw e#)))
+             (let [exec-result# (with-replies (exec))]
+               (if (not= exec-result# []) ; => empty `mutli` or watched key changed
+                 (remember exec-result#)
+                 (if (= idx# max-idx#)
+                   (throw (Exception. (format "`atomic` failed after %s attempt(s)"
+                                              idx#)))
+                   (recur (inc idx#)))))))
+         result# (peek wcar-result#) ; Discard pre-`exec` replies
+         ]
+     ;; Mimic normal `get-replies` behaviour here re: vectorized replies:
+     (if (next result#) result#
+       (let [result# (nth result# 0)]
+         (if (instance? Exception result#) (throw result#) result#)))))
 
-(comment (wcar {} (ensure-atomically {} [:foo] (set :foo "new-val") (get :foo))))
+(comment
+  ;; Error before exec (=> syntax, etc.)
+  (wcar {} (multi) (redis-call [:invalid]) (ping) (exec))
+  ;; ["OK" #<Exception: ERR unknown command 'INVALID'> "QUEUED"
+  ;;  #<Exception: EXECABORT Transaction discarded because of previous errors.>]
+
+  ;; Error during exec (=> datatype, etc.)
+  (wcar {} (set "aa" "string") (multi) (ping) (incr "aa") (ping) (exec))
+  ;; ["OK" "OK" "QUEUED" "QUEUED" "QUEUED"
+  ;;  ["PONG" #<Exception: ERR value is not an integer or out of range> "PONG"]]
+
+  (wcar {} (multi) (ping) (discard)) ; ["OK" "QUEUED" "OK"]
+  (wcar {} (multi) (ping) (discard) (exec))
+  ;; ["OK" "QUEUED" "OK" #<Exception: ERR EXEC without MULTI>]
+
+  (wcar {} (watch "aa") (set "aa" "string") (multi) (ping) (exec))
+  ;; ["OK" "OK" "OK" "QUEUED" []]
+
+  (wcar {} (watch "aa") (set "aa" "string") (unwatch) (multi) (ping) (exec))
+  ;; ["OK" "OK" "OK" "OK" "QUEUED" ["PONG"]]
+
+  (wcar {} (multi) (multi))
+  ;; ["OK" #<Exception java.lang.Exception: ERR MULTI calls can not be nested>]
+  )
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
 
@@ -457,3 +495,31 @@
 (defmacro with-conn "DEPRECATED: Use `wcar` instead."
   [connection-pool connection-spec & body]
   `(wcar {:pool ~connection-pool :spec ~connection-spec} ~@body))
+
+(defmacro atomically "DEPRECATED: Use `atomic` instead."
+  [watch-keys & body]
+  `(do
+     (with-replies ; discard "OK" and "QUEUED" replies
+       (when-let [wk# (seq ~watch-keys)] (apply watch wk#))
+       (multi)
+       ~@body)
+
+     ;; Body discards will result in an (exec) exception:
+     (parse (utils/comp-maybe protocol/*parser*
+              #(if (instance? Exception %) [] %))
+            (exec))))
+
+(defmacro ensure-atomically "DEPRECATED: Use `atomic` instead."
+  [{:keys [max-tries] :or {max-tries 100}}
+   watch-keys & body]
+  `(let [watch-keys# ~watch-keys
+         max-idx#    ~max-tries]
+     (loop [idx# 0]
+       (let [result# (with-replies (atomically watch-keys# ~@body))]
+         (if (not= [] result#)
+           (remember result#)
+           (if (= idx# max-idx#)
+             (throw (Exception. (str "`ensure-atomically` failed after " idx#
+                                     " attempts")))
+             (recur (inc idx#))))))))
+
