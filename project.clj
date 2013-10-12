@@ -18,12 +18,12 @@
                                     [ring/ring-core       "1.2.0"]
                                     [com.taoensso/faraday "0.12.0"]]}
              :bench {:dependencies [] :jvm-opts ["-server"]}}
-  :aliases {"test-all"    ["with-profile" "test,1.4:test,1.5:test,1.6"
+  :aliases {"test-all"    ["with-profile" "+test,+1.4:+test,+1.5:+test,+1.6"
                            "do" "test," "expectations"]
-            "test-auto"   ["with-profile" "test" "autoexpect"]
-            "start-dev"   ["with-profile" "dev,test,bench" "repl" ":headless"]
+            "test-auto"   ["with-profile" "+test" "autoexpect"]
+            "start-dev"   ["with-profile" "+dev,+test,+bench" "repl" ":headless"]
             "start-bench" ["trampoline" "start-dev"]
-            "codox"       ["with-profile" "test,1.5" "doc"]}
+            "codox"       ["with-profile" "+test,+1.5" "doc"]}
   :plugins [[lein-expectations "0.0.8"]
             [lein-autoexpect   "1.0"]
             [lein-ancient      "0.4.4"]
