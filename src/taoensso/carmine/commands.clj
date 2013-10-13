@@ -66,12 +66,12 @@
       (if-not varps
         `(defn ~(symbol fn-name)
            {:doc ~fn-docstring
-            :redis-api true}
+            :redis-api (or (:since ~refspec) true)}
            ~fn-params
            (protocol/send-request ~ps))
         `(defn ~(symbol fn-name)
            {:doc ~fn-docstring
-            :redis-api true}
+            :redis-api (or (:since ~refspec) true)}
            ~fn-params
            (protocol/send-request (into ~ps ~varps)))))))
 
