@@ -16,7 +16,7 @@
              :dev   {:dependencies []}
              :test  {:dependencies [[expectations         "1.4.56"]
                                     [ring/ring-core       "1.2.0"]
-                                    [com.taoensso/faraday "0.12.0"]]}
+                                    [com.taoensso/faraday "0.13.0"]]}
              :bench {:dependencies [] :jvm-opts ["-server"]}}
   :aliases {"test-all"    ["with-profile" "+test,+1.4:+test,+1.5:+test,+1.6"
                            "do" "test," "expectations"]
