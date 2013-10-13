@@ -1,3 +1,8 @@
+## v2.2.3 → v2.3.0
+  * **DEPRECATED**: `atomically`, `ensure-atomically` -> `atomic`. The new macro is faster, more robust, more flexible. See docstring for details.
+  * Official Redis command fns now contain a `:redis-api` metadata key that describes the first version of Redis to support the command.
+
+
 ## v2.2.0 → v2.2.3
   * Fix race condition for pool creation (thanks cespare!).
   * Fix unnecessary reflection for pool creation (thanks harob!).

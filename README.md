@@ -1,7 +1,7 @@
 **[API docs](http://ptaoussanis.github.io/carmine/)** | **[CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "2.2.3"] ; See CHANGELOG for changes since 1.x
+[com.taoensso/carmine "2.3.0"] ; See CHANGELOG for changes since 1.x
 ```
 
 v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. (A [Faraday DynamoDB](https://github.com/ptaoussanis/faraday) implementation is included).
@@ -27,7 +27,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Flexible, high-performance **binary-safe serialization** using [Nippy](https://github.com/ptaoussanis/nippy).
   * Full support for **Lua scripting**, **Pub/Sub**, etc.
   * Full support for custom **reply parsing**.
-  * **Command helpers** (`atomically`, `lua`, `sort*`, etc.).
+  * **Command helpers** (`atomic`, `lua`, `sort*`, etc.).
   * **Ring session-store**.
   * Simple, high-performance **message queue** (Redis 2.6+, stable v2+).
   * Simple, high-performance **distributed lock** (Redis 2.6+, stable v2+).
@@ -41,7 +41,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Add the necessary dependency to your [Leiningen](http://leiningen.org/) `project.clj` and `require` the library in your ns:
 
 ```clojure
-[com.taoensso/carmine "2.2.3"] ; project.clj
+[com.taoensso/carmine "2.3.0"] ; project.clj
 (ns my-app (:require [taoensso.carmine :as car :refer (wcar)])) ; ns
 ```
 
@@ -161,7 +161,7 @@ Carmine will never surprise you by interfering with the standard Redis command A
 
 Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
 
-Helpers currently include: `atomically`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `lua`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
+Helpers currently include: `atomic`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `lua`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
 
 ### Commands are (just) functions
 
