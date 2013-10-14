@@ -107,7 +107,7 @@
   [& [s1 & sn :as sigs]]
   (let [as-pipeline? (= s1 :as-pipeline)
         body (if as-pipeline? sn sigs)]
-    `(let [stashed-replies# (protocol/get-replies true)]
+    `(let [stashed-replies# (protocol/get-replies :as-pipeline)]
        (try (parse nil ~@body) ; Herewith dragons; tread lightly
             (protocol/get-replies ~as-pipeline?)
             (finally
@@ -301,33 +301,44 @@
   [key & sort-args] (apply sort key (parse-sort-args sort-args)))
 
 (defmacro atomic
-  "Alpha - subject to change.
+  "Alpha - subject to change!!
   Tool to ease Redis transactions for fun & profit. Wraps body in a `wcar`
   call that terminates with `exec`, cleans up reply, and supports automatic
-  retry for failed optimistic locking. Parsers NOT supported.
-
-  ;;; Atomically increment integer key without using INCR
-  (atomic {} 100 ; Retry <= 100 times on failed optimistic lock, or throw ex
-    (watch :my-int-key) ; Watch key for changes
-    (let [curr-val (-> (wcar {} ; Note additional connection!
-                         (get :my-int-key)) ; Use val of watched key
-                       (as-long)
-                       (or 0))]
-      (multi) ; Start a transaction (replies from prev cmds will be discarded)
-      (set :my-int-key (inc curr-val)) ; Will return \"OK\"
-      (get :my-int-key)                ; Will return new integer val
-      ))
-  => [\"OK\" 1]
+  retry for failed optimistic locking.
 
   Body must contain a `multi` call and may contain calls to: `watch`, `unwatch`,
   `discard`, etc. Ref. http://redis.io/topics/transactions for more info.
 
+  `return` and `parse` NOT supported after `multi` has been called.
+
+  Like `swap!` fn, body may be called multiple times so should avoid impure or
+  expensive ops.
+
+  ;;; Atomically increment integer key without using INCR
+  (atomic {} 100 ; Retry <= 100 times on failed optimistic lock, or throw ex
+
+    (watch  :my-int-key) ; Watch key for changes
+    (let [curr-val (-> (wcar {} ; Note additional connection!
+                         (get :my-int-key)) ; Use val of watched key
+                       (as-long)
+                       (or 0))]
+      (return curr-val)
+
+      (multi) ; Start the transaction
+        (set :my-int-key (inc curr-val))
+        (get :my-int-key)
+      ))
+  => [[\"OK\" nil \"OK\" \"QUEUED\" \"QUEUED\"] ; Prelude replies
+      [\"OK\" \"1\"] ; Transaction replies (`exec` reply)
+      ]
+
   See also `lua` as an alternative method of achieving transactional behaviour."
   [conn max-cas-attempts & body]
   (assert (>= max-cas-attempts 1))
-  `(let [conn#    ~conn
-         max-idx# ~max-cas-attempts
-         wcar-result#
+  `(let [conn#       ~conn
+         max-idx#    ~max-cas-attempts
+         prelude-result# (atom nil)
+         exec-result#
          (wcar :as-pipeline ; To ensure `peek` is always valid
            conn# ; Hold 1 conn for all attempts
            (loop [idx# 1]
@@ -335,19 +346,21 @@
                   (catch Exception e#
                     (discard) ; Always return conn to normal state
                     (throw e#)))
-             (let [exec-result# (with-replies (exec))]
-               (if (not= exec-result# []) ; => empty `mutli` or watched key changed
-                 (remember exec-result#)
+             (reset! prelude-result# (protocol/get-replies :as-pipeline))
+             (let [r# (with-replies (exec))]
+               (if (not= r# []) ; => empty `mutli` or watched key changed
+                 (return r#)
                  (if (= idx# max-idx#)
                    (throw (Exception. (format "`atomic` failed after %s attempt(s)"
                                               idx#)))
-                   (recur (inc idx#)))))))
-         result# (peek wcar-result#) ; Discard pre-`exec` replies
-         ]
-     ;; Mimic normal `get-replies` behaviour here re: vectorized replies:
-     (if (next result#) result#
-       (let [result# (nth result# 0)]
-         (if (instance? Exception result#) (throw result#) result#)))))
+                   (recur (inc idx#)))))))]
+
+     [@prelude-result#
+      ;; Mimic normal `get-replies` behaviour here re: vectorized replies:
+      (let [r# exec-result#]
+        (if (next r#) r#
+            (let [r# (nth r# 0)]
+              (if (instance? Exception r#) (throw r#) r#))))]))
 
 (comment
   ;; Error before exec (=> syntax, etc.)

@@ -17,8 +17,11 @@
 (expect Exception (car/atomic {} 1 (car/multi))) ; Empty multi
 (expect Exception (car/atomic {} 1 (car/multi) (car/discard))) ; Like missing multi
 
-(expect "PONG"          (car/atomic {} 1 (car/multi) (car/ping)))
-(expect ["PONG" "PONG"] (car/atomic {} 1 (car/multi) (car/ping) (car/ping)))
+(expect [["OK" "QUEUED"] "PONG"] (car/atomic {} 1 (car/multi) (car/ping)))
+(expect [["OK" "QUEUED" "QUEUED"] ["PONG" "PONG"]]
+        (car/atomic {} 1 (car/multi) (car/ping) (car/ping)))
+(expect [["echo" "OK" "QUEUED"] "PONG"]
+        (car/atomic {} 1 (car/return "echo") (car/multi) (car/ping)))
 
 (expect Exception (car/atomic {} 1
                     (car/multi)
@@ -32,19 +35,21 @@
                     (car/ping)))
 
 ;; Ignores extra multi [error] while queuing:
-(expect "PONG" (car/atomic {} 1 (car/multi) (car/multi) (car/ping)))
+(expect "PONG" (-> (car/atomic {} 1 (car/multi) (car/multi) (car/ping))
+                   second))
 
-(expect "PONG" (car/atomic {} 1
-                 (car/multi)
-                 (car/parse (constantly "foo") (car/ping)))) ; No parsers
+(expect "PONG" (-> (car/atomic {} 1
+                     (car/multi)
+                     (car/parse (constantly "foo") (car/ping)))
+                   second)) ; No parsers
 
 (expect Exception (car/atomic {} 5
                     (car/watch (tkey :watched))
-                    (set (tkey :watched) (rand))
+                    (car/set (tkey :watched) (rand))
                     (car/multi)
                     (car/ping))) ; Contending changes to watched key
 
-(expect ["PONG" 3]
+(expect [[["OK" "OK" "QUEUED"] "PONG"] 3]
         (let [idx (atom 1)]
           [(car/atomic {} 3
              (car/watch (tkey :watched))

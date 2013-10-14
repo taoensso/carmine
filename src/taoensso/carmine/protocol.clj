@@ -190,7 +190,7 @@
   For non-listener connections, returns server's response."
   {:arglists '([conn :as-pipeline & body] [conn & body])}
   [conn & [s1 & sn :as sigs]]
-  (let [as-pipeline? (= s1 :as-pipeline)
+  (let [as-pipeline? (identical? s1 :as-pipeline)
         body (if as-pipeline? sn sigs)]
     `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~conn
            listener?# (:listener? spec#)]
