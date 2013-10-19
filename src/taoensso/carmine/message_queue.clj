@@ -192,7 +192,7 @@
     (when-not @running?
       (reset! running? true)
       (future
-        (let [{:keys [handler throttle-ms eoq-backoff-ms]} opts
+        (let [{:keys [handler monitor throttle-ms eoq-backoff-ms]} opts
               qk    (partial qkey qname)
               done  (fn [mid] (wcar conn (car/sadd (qk "recently-done") mid)))
               retry (fn [mid & [backoff-ms]]
@@ -209,15 +209,14 @@
             (try
               (let [[ndruns mid-circle-len] (wcar conn (car/get  (qk "ndry-runs"))
                                                        (car/llen (qk "mid-circle")))
-                    ndruns (or ndruns 0)
+                    ndruns (or (car/as-long ndruns) 0)
                     eoq-backoff-ms* (if (fn? eoq-backoff-ms)
                                       (eoq-backoff-ms (inc ndruns))
                                       eoq-backoff-ms)
                     opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)]
 
-                ;; TODO For optional logging fn
-                ;; {:ndry-runs      ndruns
-                ;;  :mid-circle-len mid-circle-len}
+                (when monitor (monitor {:mid-circle-len mid-circle-len
+                                        :ndry-runs      ndruns}))
 
                 (when-let [[mid mcontent attempt :as poll-reply]
                            (wcar conn (dequeue qname opts*))]
@@ -251,6 +250,8 @@
                      or returns {:status     <#{:success :error :retry}>
                                  :throwable  <Throwable>
                                  :backoff-ms <retry-backoff-ms}.
+   :monitor        - (fn [{:keys [mid-circle-len ndry-runs]}]) called on each
+                     worker loop iteration. Useful for queue monitoring/logging.
    :lock-ms        - Max time handler may keep a message before handler
                      considered fatally stalled and message re-queued. Must be
                      sufficiently high to prevent double handling.
@@ -258,7 +259,8 @@
                      Can be a (fn [ndry-runs]) => ms. Sleep synchronized for all
                      queue workers.
    :throttle-ms    - Thread sleep period between each poll."
-  [conn qname & [{:keys [handler lock-ms eoq-backoff-ms throttle-ms auto-start?]
+  [conn qname & [{:keys [handler monitor lock-ms eoq-backoff-ms throttle-ms
+                         auto-start?]
                   :or   {handler (fn [{:keys [message attempt]}]
                                    (timbre/info qname message attempt)
                                    {:status :success})
@@ -268,6 +270,7 @@
                          auto-start?    true}}]]
   (let [w (->Worker conn qname (atom false)
                     {:handler        handler
+                     :monitor        monitor
                      :lock-ms        lock-ms
                      :eoq-backoff-ms eoq-backoff-ms
                      :throttle-ms    throttle-ms})]
