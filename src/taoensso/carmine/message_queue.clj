@@ -35,7 +35,7 @@
 
 ;;;; Implementation
 
-(def qkey "Prefixed queue key" (memoize (partial car/kname "carmine" "mq")))
+(def qkey "Prefixed queue key" (memoize (partial car/key "carmine" "mq")))
 
 (defn clear-queues [conn & qnames]
   (wcar conn

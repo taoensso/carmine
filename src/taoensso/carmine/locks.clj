@@ -11,7 +11,7 @@
             [taoensso.carmine.utils :as utils]
             [taoensso.timbre        :as timbre]))
 
-(def ^:private lkey (partial car/kname "carmine" "lock"))
+(def ^:private lkey (partial car/key "carmine" "lock"))
 
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
