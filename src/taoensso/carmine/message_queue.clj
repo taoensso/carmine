@@ -11,7 +11,7 @@
     * carmine:mq:<qname>:recently-done -> set, for efficient mid removal from circle.
     * carmine:mq:<qname>:eoq-backoff?  -> ttl flag, used for queue-wide (every-worker)
                                           polling backoff.
-    * carmine:mq:<qname>:dry-runs      -> int, number of times worker(s) have burnt
+    * carmine:mq:<qname>:ndry-runs     -> int, number of times worker(s) have burnt
                                           through queue w/o work to do.
 
   Ref. http://antirez.com/post/250 for basic implementation details."
@@ -46,7 +46,7 @@
 (defn queue-status [conn qname]
   (let [qk (partial qkey qname)]
     (zipmap [:messages :locks :backoffs :retry-counts :mid-circle :recently-done
-             :eoq-backoff? :dry-runs]
+             :eoq-backoff? :ndry-runs]
      (wcar conn
        (car/hgetall*      (qk "messages"))
        (car/hgetall*      (qk "locks"))
@@ -55,7 +55,7 @@
        (car/lrange        (qk "mid-circle") 0 -1)
        (->> (car/smembers (qk "recently-done")) (car/parse set))
        (->> (car/get      (qk "eoq-backoff?"))  (car/parse-bool))
-       (car/get           (qk "dry-runs"))))))
+       (->> (car/get      (qk "ndry-runs"))     (car/parse-long))))))
 
 (defn message-status
   "Returns current message status, e/o:
@@ -200,14 +200,15 @@
                       (timbre/error
                        (if throwable throwable (Exception. ":error handler response"))
                        (str "Error handling queue message: " qname "\n" poll-reply)))
-              druns #(wcar conn (case % :reset (car/set  (qk "dry-runs") 0)
-                                        :inc   (car/incr (qk "dry-runs"))))]
+              ndruns #(wcar conn (case % :reset (car/set  (qk "ndry-runs") 0)
+                                         :inc   (car/incr (qk "ndry-runs"))))]
 
-          (druns :reset)
+          (ndruns :reset)
           (while @running?
             (try
-              (let [eoq-backoff-ms* (if (fn? eoq-backoff-ms)
-                                      (eoq-backoff-ms (druns :inc))
+              (let [ndruns* (ndruns :inc) ; Speculative
+                    eoq-backoff-ms* (if (fn? eoq-backoff-ms)
+                                      (eoq-backoff-ms ndruns*)
                                       eoq-backoff-ms)
                     opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)]
                 (when-let [[mid mcontent attempt :as poll-reply]
@@ -220,7 +221,7 @@
                                             (catch Throwable t {:status :error
                                                                 :throwable t}))]
                             (when (map? result) result))]
-                      (druns :reset)
+                      (ndruns :reset)
                       (case status
                         :success (done mid)
                         :retry   (retry mid backoff-ms)
@@ -247,7 +248,7 @@
                      considered fatally stalled and message re-queued. Must be
                      sufficiently high to prevent double handling.
    :eoq-backoff-ms - Thread sleep period each time end of queue is reached.
-                     Can be a (fn [dry-runs]) => ms. Sleep synchronized for all
+                     Can be a (fn [ndry-runs]) => ms. Sleep synchronized for all
                      queue workers.
    :throttle-ms    - Thread sleep period between each poll."
   [conn qname & [{:keys [handler lock-ms eoq-backoff-ms throttle-ms auto-start?]
@@ -256,7 +257,7 @@
                                    {:status :success})
                          lock-ms        (* 60 60 1000)
                          throttle-ms    200
-                         eoq-backoff-ms (fn [druns] (exp-backoff druns {:max 10000}))
+                         eoq-backoff-ms (fn [ndruns] (exp-backoff ndruns {:max 10000}))
                          auto-start?    true}}]]
   (let [w (->Worker conn qname (atom false)
                     {:handler        handler
