@@ -127,6 +127,7 @@
       if (not mid) or (mid == 'end-of-circle') then
         -- Set queue-wide polling backoff flag
         redis.call('psetex', _:qk-eoq-backoff, _:eoq-backoff-ms, 'true')
+        redis.call('incr', _:qk-ndry-runs)
         return 'eoq-backoff'
       elseif redis.call('sismember', _:qk-recently-done, mid) == 1 then -- GC
         redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
@@ -135,6 +136,8 @@
         redis.call('hdel', _:qk-locks,         mid)
         return nil
       end
+
+      redis.call('set', _:qk-ndry-runs, 0)
 
       local now         = tonumber(_:now)
       local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
@@ -164,7 +167,8 @@
     :qk-retry-counts  (qkey qname "retry-counts")
     :qk-mid-circle    (qkey qname "mid-circle")
     :qk-recently-done (qkey qname "recently-done")
-    :qk-eoq-backoff   (qkey qname "eoq-backoff?")}
+    :qk-eoq-backoff   (qkey qname "eoq-backoff?")
+    :qk-ndry-runs     (qkey qname "ndry-runs")}
    {:now              (System/currentTimeMillis)
     :lock-ms          lock-ms
     :eoq-backoff-ms   eoq-backoff-ms}))
@@ -199,18 +203,22 @@
                       (done mid)
                       (timbre/error
                        (if throwable throwable (Exception. ":error handler response"))
-                       (str "Error handling queue message: " qname "\n" poll-reply)))
-              ndruns #(wcar conn (case % :reset (car/set  (qk "ndry-runs") 0)
-                                         :inc   (car/incr (qk "ndry-runs"))))]
+                       (str "Error handling queue message: " qname "\n" poll-reply)))]
 
-          (ndruns :reset)
           (while @running?
             (try
-              (let [ndruns* (ndruns :inc) ; Speculative
+              (let [[ndruns mid-circle-len] (wcar conn (car/get  (qk "ndry-runs"))
+                                                       (car/llen (qk "mid-circle")))
+                    ndruns (or ndruns 0)
                     eoq-backoff-ms* (if (fn? eoq-backoff-ms)
-                                      (eoq-backoff-ms ndruns*)
+                                      (eoq-backoff-ms (inc ndruns))
                                       eoq-backoff-ms)
                     opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)]
+
+                ;; TODO For optional logging fn
+                ;; {:ndry-runs      ndruns
+                ;;  :mid-circle-len mid-circle-len}
+
                 (when-let [[mid mcontent attempt :as poll-reply]
                            (wcar conn (dequeue qname opts*))]
                   (if (= poll-reply "eoq-backoff")
@@ -221,7 +229,6 @@
                                             (catch Throwable t {:status :error
                                                                 :throwable t}))]
                             (when (map? result) result))]
-                      (ndruns :reset)
                       (case status
                         :success (done mid)
                         :retry   (retry mid backoff-ms)
