@@ -4,9 +4,9 @@
             [taoensso.carmine :as car :refer (wcar)]
             [taoensso.carmine.message-queue :as mq]))
 
-(defn testq [& [more]] (if-not more "testq" (str "testq-" more)))
+(defn testq [& [more]] (if-not more :testq (keyword (str "testq-" (name more)))))
 (defn clean-up []
-  (when-let [test-keys (seq (wcar {} (car/keys (mq/qkey (str (testq) "*")))))]
+  (when-let [test-keys (seq (wcar {} (car/keys (mq/qkey (str (testq) :*)))))]
     (wcar {} (apply car/del test-keys))))
 
 (use-fixtures :each (fn [f] (clean-up) (f)))
@@ -25,7 +25,7 @@
 (defn slurp-keys []
   (doseq [i (range 10)]
     (let [[id _ _] (wcar {} (mq/dequeue (testq)))]
-      (wcar {} (car/sadd (mq/qkey (testq) "recently-done") id)))))
+      (wcar {} (car/sadd (mq/qkey (testq) :recently-done) id)))))
 
 (deftest worker-mimicking
   (let [[id] (generate-keys)]
@@ -34,7 +34,7 @@
     (eoq-backoff)
     (is (= (wcar {} (mq/dequeue (testq))) [id "0" 1]))
     (is (= (mq/message-status {} (testq) id) :locked))
-    (wcar {} (car/sadd (mq/qkey (testq) "recently-done") id))
+    (wcar {} (car/sadd (mq/qkey (testq) :recently-done) id))
     (is (= (mq/message-status {} (testq) id) :recently-done))
     (slurp-keys)
     (eoq-backoff)
@@ -43,17 +43,17 @@
 
 (deftest cleanup
   (let [id   (wcar {} (mq/enqueue (testq) 1))
-        u-id (wcar {} (mq/enqueue (testq "untouched") 1))]
+        u-id (wcar {} (mq/enqueue (testq :untouched) 1))]
     (is (= (wcar {} (mq/dequeue (testq))) "eoq-backoff"))
     (eoq-backoff)
     (is (= (wcar {} (mq/dequeue (testq))) [id 1 1]))
     (mq/clear-queues {} (testq))
     (is (= (mq/queue-status {} (testq))
-           {:messages {} :locks {} :backoffs {} :retry-counts {}
+           {:messages {} :locks {} :backoffs {} :nretries {}
             :recently-done #{} :eoq-backoff? nil :ndry-runs nil
             :mid-circle []}))
-    (is (= (mq/queue-status {} (testq "untouched")) ; cleanup is isolated
-           {:messages {u-id 1} :locks {} :backoffs {} :retry-counts {}
+    (is (= (mq/queue-status {} (testq :untouched)) ; cleanup is isolated
+           {:messages {u-id 1} :locks {} :backoffs {} :nretries {}
             :recently-done #{} :eoq-backoff? nil :ndry-runs nil
             :mid-circle [u-id "end-of-circle"]}))))
 
@@ -73,8 +73,8 @@
              result @prm]
          (Thread/sleep 500) ; Allow time for post-handler msg cleanup
          (and (= result i) (assertion q id)))
-       (testq "success") {:status :success} 1 assert-done
-       (testq "retry")   {:status :retry}   2 assert-unlocked
-       (testq "error")   {:status :error}   3 assert-done))
+       (testq :success) {:status :success} 1 assert-done
+       (testq :retry)   {:status :retry}   2 assert-unlocked
+       (testq :error)   {:status :error}   3 assert-done))
 
 (clean-up)
