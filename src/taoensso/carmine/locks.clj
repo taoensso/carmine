@@ -11,7 +11,7 @@
             [taoensso.carmine.utils :as utils]
             [taoensso.timbre        :as timbre]))
 
-(def ^:private lkey (partial car/key "carmine" "lock"))
+(def ^:private lkey (partial car/key :carmine :lock))
 
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
@@ -95,7 +95,7 @@
       (future (with-lock {} "my-lock" 2000 2000 (Thread/sleep 1000) (println "m")))))
 
 (defn- release-all-locks! [conn]
-  (when-let [lkeys (seq (wcar conn (car/keys (lkey "*"))))]
+  (when-let [lkeys (seq (wcar conn (car/keys (lkey :*))))]
     (wcar conn (apply car/del lkeys))))
 
 (comment (release-all-locks! {}))
