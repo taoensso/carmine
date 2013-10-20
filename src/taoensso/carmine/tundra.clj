@@ -20,7 +20,7 @@
 
 ;;;; Private Redis commands
 
-(def ^:private tkey (memoize (partial car/key "carmine" "tundra")))
+(def ^:private tkey (memoize (partial car/key :carmine :tundra)))
 
 (defn- extend-exists
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
