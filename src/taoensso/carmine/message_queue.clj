@@ -197,7 +197,9 @@
               done  (fn [mid] (wcar conn (car/sadd (qk :recently-done) mid)))
               retry (fn [mid & [backoff-ms]]
                       (wcar conn
-                        (when backoff-ms (car/hset (qk :backoffs) mid backoff-ms))
+                       (when backoff-ms
+                         (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
+                                                         backoff-ms)))
                         (car/hdel (qk :locks) mid)))
               error (fn [mid poll-reply & [throwable]]
                       (done mid)
