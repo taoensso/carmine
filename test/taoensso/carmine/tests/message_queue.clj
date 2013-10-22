@@ -4,6 +4,8 @@
             [taoensso.carmine :as car :refer (wcar)]
             [taoensso.carmine.message-queue :as mq]))
 
+(comment (run-tests))
+
 (defn testq [& [more]] (if-not more :testq (keyword (str "testq-" (name more)))))
 (defn clean-up []
   (when-let [test-keys (seq (wcar {} (car/keys (mq/qkey (str (testq) :*)))))]

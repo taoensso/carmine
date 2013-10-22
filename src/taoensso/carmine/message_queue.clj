@@ -59,29 +59,34 @@
 
 (defn message-status
   "Returns current message status, e/o:
-    :queued        - Waiting for processing.
-    :locked        - Currently processing.
-    :backoff       - Waiting for retry after handler-imposed backoff.
-    :recently-done - Finished processing, waiting for GC.
-    nil            - Unknown status, or invalid message id."
+    :queued            - Awaiting (re)handling.
+    :locked            - Currently with handler.
+    :retry-backoff     - Awaiting backoff for handler retry (rehandling).
+    :done-with-backoff - Finished handling, awaiting dedupe timeout.
+    :recently-done     - Finished handling, no dedupe timeout, awaiting GC.
+    nil                - Already GC'd or invalid message id."
   [conn qname mid]
   (wcar conn
     (car/parse-keyword
-     (car/lua
-      "if redis.call('sismember', _:qk-recently-done, _:mid) == 1 then
-         return 'recently-done'
-       else
-         local now         = tonumber(_:now)
-         local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
-         local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
+     (car/lua ; Careful, logic here is necessarily quite subtle!
+      "--
+      local now         = tonumber(_:now)
+      local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
+      local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
 
-         if     (now < lock_exp)    then return 'locked'
-         elseif (now < backoff_exp) then return 'backoff'
-         elseif redis.call('hexists',_:qk-messages, _:mid) == 1 then
-           return 'queued'
-         end
-         return nil
-       end"
+      if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
+        if (now < backoff_exp) then return 'done-with-backoff' end
+        return nil
+      else
+        if redis.call('sismember', _:qk-recently-done, _:mid) == 1 then
+          if (now < backoff_exp) then return 'done-with-backoff' end
+          return 'recently-done'
+        else
+          if     (now < lock_exp)    then return 'locked'
+          elseif (now < backoff_exp) then return 'retry-backoff' end
+          return 'queued'
+        end
+      end"
       {:qk-messages      (qkey qname :messages)
        :qk-locks         (qkey qname :locks)
        :qk-backoffs      (qkey qname :backoffs)
@@ -90,11 +95,36 @@
        :mid mid}))))
 
 (defn enqueue
-  "Pushes given message (any Clojure datatype) to named queue and returns a
-  unique message id."
-  [qname message]
-  (car/lua
-   "redis.call('hset', _:qk-messages, _:mid, _:mcontent)
+  "Pushes given message (any Clojure datatype) to named queue and returns unique
+  message id or {:carmine.mq/error #{<:queued :locked :retry-backoff
+                                      :done-with-backoff>}}.
+
+  For deduplication provide an explicit message id (e.g. message hash), otherwise
+  a unique message id will automatically be generated."
+  [qname message & [unique-message-id]]
+  (->>
+   (car/lua
+    "--- Check for dupes (inline `message-status` logic)
+    local now         = tonumber(_:now)
+    local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
+    local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
+
+    if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
+      if (now < backoff_exp) then return 'done-with-backoff' end
+      -- return nil
+    else
+      if redis.call('sismember', _:qk-recently-done, _:mid) == 1 then
+        if (now < backoff_exp) then return 'done-with-backoff' end
+        -- return 'recently-done'
+      else
+        if     (now < lock_exp)    then return 'locked'
+        elseif (now < backoff_exp) then return 'retry-backoff' end
+        return 'queued'
+      end
+    end
+    ---------------------------------------------------------------------------
+
+    redis.call('hset', _:qk-messages, _:mid, _:mcontent)
 
     -- lpushnx end-of-circle marker to ensure an initialized mid-circle
     if redis.call('exists', _:qk-mid-circle) == 0 then
@@ -102,11 +132,20 @@
     end
 
     redis.call('lpush', _:qk-mid-circle, _:mid)
-    return _:mid"
-   {:qk-messages   (qkey qname :messages)
-    :qk-mid-circle (qkey qname :mid-circle)}
-   {:mid           (str (java.util.UUID/randomUUID))
-    :mcontent      (car/freeze message)}))
+    return {_:mid} -- Wrap to distinguish from error replies
+    "
+    {:qk-messages      (qkey qname :messages)
+     :qk-locks         (qkey qname :locks)
+     :qk-backoffs      (qkey qname :backoffs)
+     :qk-mid-circle    (qkey qname :mid-circle)
+     :qk-recently-done (qkey qname :recently-done)}
+    {:now           (System/currentTimeMillis)
+     :mid           (or unique-message-id (str (java.util.UUID/randomUUID)))
+     :mcontent      (car/freeze message)})
+   (car/parse #(if (vector? %) (first %) {:carmine.mq/error (keyword %)}))))
+
+(comment (wcar {} (enqueue "myq" "msg"))
+         (wcar {} (enqueue "myq" "msg" "myid")))
 
 (defn dequeue
   "IMPLEMENTATION DETAIL: Use `worker` instead.
@@ -135,7 +174,8 @@
         redis.call('hdel', _:qk-messages,      mid)
         redis.call('hdel', _:qk-locks,         mid)
         redis.call('hdel', _:qk-nretries,      mid)
-        redis.call('hdel', _:qk-backoffs,      mid)
+        -- NB do NOT prune :qk_backoffs now, will be used post-handler as a
+        -- dedupe backoff
         return nil
       end
 
@@ -145,11 +185,13 @@
       local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
       local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid) or 0)
 
-      if (now < lock_exp) or (now < backoff_exp) then
-        return nil -- Has active lock or backoff
+      if (now < lock_exp) then return nil -- Active lock
       else
-        -- (Re)acquire lock
-        redis.call('hset', _:qk-locks, mid, now + tonumber(_:lock-ms))
+        redis.call('hset', _:qk-locks, mid, now + tonumber(_:lock-ms)) -- (Re)acq lock
+      end
+      if (now < backoff_exp) then return nil -- Active backoff
+      else
+        redis.call('hdel', _:qk-backoffs, mid)
       end
 
       local retries = 0
@@ -196,13 +238,17 @@
       (future
         (let [{:keys [handler monitor throttle-ms eoq-backoff-ms]} opts
               qk    (partial qkey qname)
-              done  (fn [mid] (wcar conn (car/sadd (qk :recently-done) mid)))
+              hset-backoff (fn [mid backoff-ms]
+                             (when backoff-ms
+                               (car/hset (qk :backoffs) mid
+                                         (+ (System/currentTimeMillis)
+                                            backoff-ms))))
+              done  (fn [mid & [backoff-ms]]
+                      (wcar conn (hset-backoff mid backoff-ms)
+                                 (car/sadd (qk :recently-done) mid)))
               retry (fn [mid & [backoff-ms]]
-                      (wcar conn
-                       (when backoff-ms
-                         (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
-                                                         backoff-ms)))
-                        (car/hdel (qk :locks) mid)))
+                      (wcar conn (hset-backoff mid backoff-ms)
+                                 (car/hdel (qk :locks) mid)))
               error (fn [mid poll-reply & [throwable]]
                       (done mid)
                       (timbre/error
@@ -214,6 +260,7 @@
               (let [[ndruns mid-circle-size] (wcar conn (car/get  (qk :ndry-runs))
                                                         (car/llen (qk :mid-circle)))
                     ndruns (or (car/as-long ndruns) 0)
+
                     eoq-backoff-ms* (if (fn? eoq-backoff-ms)
                                       (eoq-backoff-ms (inc ndruns))
                                       eoq-backoff-ms)
@@ -233,7 +280,7 @@
                                                                 :throwable t}))]
                             (when (map? result) result))]
                       (case status
-                        :success (done mid)
+                        :success (done  mid backoff-ms)
                         :retry   (retry mid backoff-ms)
                         :error   (error mid poll-reply throwable)
                         (do (done mid)
@@ -268,7 +315,7 @@
    :handler        - (fn [{:keys [message attempt]}]) that throws an exception
                      or returns {:status     <#{:success :error :retry}>
                                  :throwable  <Throwable>
-                                 :backoff-ms <retry-backoff-ms}.
+                                 :backoff-ms <retry-or-dedupe-backoff-ms}.
    :monitor        - (fn [{:keys [mid-circle-size ndry-runs]}]) called on each
                      worker loop iteration. Useful for queue monitoring/logging.
                      See also `monitor-fn`.
