@@ -134,6 +134,8 @@
         redis.call('srem', _:qk-recently-done, mid)
         redis.call('hdel', _:qk-messages,      mid)
         redis.call('hdel', _:qk-locks,         mid)
+        redis.call('hdel', _:qk-nretries,      mid)
+        redis.call('hdel', _:qk-backoffs,      mid)
         return nil
       end
 
