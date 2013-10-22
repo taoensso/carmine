@@ -283,15 +283,17 @@
                     ndruns (or (car/as-long ndruns) 0)
                     eoq-backoff-ms* (if-not (fn? eoq-backoff-ms) eoq-backoff-ms
                                       (eoq-backoff-ms (inc ndruns)))
-                    opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)]
+                    opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)
+                    poll-reply (wcar conn (dequeue qname opts*))]
 
-                (when monitor (monitor {:mid-circle-size mid-circle-size
-                                        :ndry-runs       ndruns}))
+                (when monitor
+                  (monitor {:mid-circle-size mid-circle-size
+                            :ndry-runs       ndruns
+                            :poll-reply      poll-reply}))
 
-                (let [poll-reply (wcar conn (dequeue qname opts*))]
-                  (if (= poll-reply "eoq-backoff")
-                    (when eoq-backoff-ms* (Thread/sleep eoq-backoff-ms*))
-                    (handle1 conn qname handler poll-reply))))
+                (if (= poll-reply "eoq-backoff")
+                  (when eoq-backoff-ms* (Thread/sleep eoq-backoff-ms*))
+                  (handle1 conn qname handler poll-reply)))
 
               (catch Throwable t (timbre/fatal t "Worker error!") (throw t)))
             (when throttle-ms (Thread/sleep throttle-ms)))))
@@ -319,9 +321,9 @@
                      or returns {:status     <#{:success :error :retry}>
                                  :throwable  <Throwable>
                                  :backoff-ms <retry-or-dedupe-backoff-ms}.
-   :monitor        - (fn [{:keys [mid-circle-size ndry-runs]}]) called on each
-                     worker loop iteration. Useful for queue monitoring/logging.
-                     See also `monitor-fn`.
+   :monitor        - (fn [{:keys [mid-circle-size ndry-runs poll-reply]}]) called
+                     on each worker loop iteration. Useful for queue
+                     monitoring/logging. See also `monitor-fn`.
    :lock-ms        - Max time handler may keep a message before handler
                      considered fatally stalled and message re-queued. Must be
                      sufficiently high to prevent double handling.
