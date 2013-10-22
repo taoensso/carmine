@@ -1,82 +1,95 @@
 (ns taoensso.carmine.tests.message-queue
-  (:require [clojure.test :refer :all]
-            [clojure.string   :as str]
-            [taoensso.carmine :as car :refer (wcar)]
+  (:require [expectations     :as test :refer :all]
+            [taoensso.carmine :as car  :refer (wcar)]
             [taoensso.carmine.message-queue :as mq]))
 
-(comment (run-tests))
+(comment (test/run-tests '[taoensso.carmine.tests.message-queue]))
 
-(defn testq [& [more]] (if-not more :testq (keyword (str "testq-" (name more)))))
-(defn clean-up []
-  (when-let [test-keys (seq (wcar {} (car/keys (mq/qkey (str (testq) :*)))))]
-    (wcar {} (apply car/del test-keys))))
+(defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
+(def tq :carmine-test-queue)
 
-(use-fixtures :each (fn [f] (clean-up) (f)))
+(defn- before-run {:expectations-options :before-run} [] (mq/clear-queues {} tq))
+(defn- after-run  {:expectations-options :after-run}  [] (mq/clear-queues {} tq))
 
-(defn generate-keys []
-  (into [] (map #(wcar {} (mq/enqueue (testq) (str %))) (range 10))))
+(defn- dequeue*
+  "Like `mq/dequeue` but has a constant (175ms) eoq-backoff-ms and always sleeps
+  the same amount before returning."
+  [qname & [opts]]
+  (let [r (mq/dequeue qname (merge {:eoq-backoff-ms 175} opts))]
+    (Thread/sleep 205) r))
 
-(defn eoq-backoff [] (Thread/sleep 2000))
+;;;; Basic enqueuing & dequeuing
+(expect (constantly true) (mq/clear-queues {} tq))
+(expect "eoq-backoff" (wcar {} (dequeue* tq)))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
+(expect {:msgs {"mid1" :msg1}, :mid-circle ["mid1" "end-of-circle"]}
+        (-> (mq/queue-status {} tq)
+            (select-keys [:mid-circle :msgs])))
+(expect :queued                     (wcar {} (mq/message-status tq :mid1)))
+(expect {:carmine.mq/error :queued} (wcar {} (mq/enqueue tq :msg1 :mid1))) ; Dupe
+(expect "eoq-backoff"    (wcar {} (dequeue* tq)))
+(expect ["mid1" :msg1 1] (wcar {} (dequeue* tq))) ; New msg
+(expect :locked          (wcar {} (mq/message-status tq :mid1)))
+(expect "eoq-backoff"    (wcar {} (dequeue* tq)))
+(expect nil              (wcar {} (dequeue* tq))) ; Locked msg
 
-(deftest baseline
-  (let [ids (generate-keys)]
-    (is (= (wcar {} (mq/dequeue (testq))) "eoq-backoff"))
-    (eoq-backoff)
-    (is (= (wcar {} (mq/dequeue (testq))) [(first ids) "0" 1]))))
+;;;; Handling: success
+(expect (constantly true) (mq/clear-queues {} tq))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
+;; (expect "eoq-backoff" (wcar {} (dequeue* tq)))
+;; Handler will *not* run against eoq-backoff/nil reply:
+(expect nil (mq/handle1 {} tq nil (wcar {} (dequeue* tq))))
+(expect {:message :msg1, :attempt 1}
+        (let [p (promise)]
+          (mq/handle1 {} tq #(do (deliver p %) {:status :success})
+                      (wcar {} (dequeue* tq)))
+          @p))
+(expect :done-awaiting-gc (wcar {} (mq/message-status tq :mid1)))
+(expect "eoq-backoff" (wcar {} (dequeue* tq)))
+(expect nil           (wcar {} (dequeue* tq))) ; Will gc
+(expect nil           (wcar {} (mq/message-status tq :mid1)))
 
-(defn slurp-keys []
-  (doseq [i (range 10)]
-    (let [[id _ _] (wcar {} (mq/dequeue (testq)))]
-      (wcar {} (car/sadd (mq/qkey (testq) :recently-done) id)))))
+;;;; Handling: handler crash
+(expect (constantly true) (mq/clear-queues {} tq))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
+(expect "eoq-backoff" (wcar {} (dequeue* tq)))
+(expect ["mid1" :msg1 1]
+        (wcar {} (dequeue* tq {:lock-ms 3000}))) ; Simulates bad handler
+(expect :locked          (wcar {} (mq/message-status tq :mid1)))
+(expect "eoq-backoff"    (wcar {} (dequeue* tq)))
+(expect ["mid1" :msg1 2] (do (Thread/sleep 3000) ; Wait for lock to expire
+                             (wcar {} (dequeue* tq))))
 
-(deftest worker-mimicking
-  (let [[id] (generate-keys)]
-    (is (= (mq/message-status {} (testq) id) :queued))
-    (is (= (wcar {} (mq/dequeue (testq))) "eoq-backoff"))
-    (eoq-backoff)
-    (is (= (wcar {} (mq/dequeue (testq))) [id "0" 1]))
-    (is (= (mq/message-status {} (testq) id) :locked))
-    (wcar {} (car/sadd (mq/qkey (testq) :recently-done) id))
-    (is (= (mq/message-status {} (testq) id) :recently-done))
-    (slurp-keys)
-    (eoq-backoff)
-    (slurp-keys)
-    (is (= (mq/message-status {} (testq) id) nil))))
+;;;; Handling: retry with backoff
+(expect (constantly true) (mq/clear-queues {} tq))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
+(expect "eoq-backoff" (wcar {} (dequeue* tq)))
+(expect {:message :msg1, :attempt 1}
+        (let [p (promise)]
+          (mq/handle1 {} tq #(do (deliver p %) {:status :retry :backoff-ms 3000})
+                      (wcar {} (dequeue* tq)))
+          @p))
+(expect :retry-backoff   (wcar {} (mq/message-status tq :mid1)))
+(expect "eoq-backoff"    (wcar {} (dequeue* tq)))
+(expect nil              (wcar {} (dequeue* tq))) ; Backoff (< 3s)
+(expect "eoq-backoff"    (wcar {} (dequeue* tq)))
+(expect ["mid1" :msg1 2] (do (Thread/sleep 3000) ; Wait for backoff to expire
+                             (wcar {} (dequeue* tq))))
 
-(deftest cleanup
-  (let [id   (wcar {} (mq/enqueue (testq) 1))
-        u-id (wcar {} (mq/enqueue (testq :untouched) 1))]
-    (is (= (wcar {} (mq/dequeue (testq))) "eoq-backoff"))
-    (eoq-backoff)
-    (is (= (wcar {} (mq/dequeue (testq))) [id 1 1]))
-    (mq/clear-queues {} (testq))
-    (is (= (mq/queue-status {} (testq))
-           {:messages {} :locks {} :backoffs {} :nretries {}
-            :recently-done #{} :eoq-backoff? nil :ndry-runs nil
-            :mid-circle []}))
-    (is (= (mq/queue-status {} (testq :untouched)) ; cleanup is isolated
-           {:messages {u-id 1} :locks {} :backoffs {} :nretries {}
-            :recently-done #{} :eoq-backoff? nil :ndry-runs nil
-            :mid-circle [u-id "end-of-circle"]}))))
-
-(defn create-worker [q resp]
-  (let [prm (promise)]
-    (mq/worker {} q {:handler (fn [{:keys [message]}] (deliver prm message)
-                                resp)})
-    prm))
-
-(defn assert-unlocked [q _]  (empty? (:locks (mq/queue-status {} q))))
-(defn assert-done     [q id] ((:recently-done (mq/queue-status {} q)) id))
-
-(deftest statuses
-  (are [q resp i assertion]
-       (let [prm (create-worker q resp)
-             id  (wcar {} (mq/enqueue q i))
-             result @prm]
-         (Thread/sleep 500) ; Allow time for post-handler msg cleanup
-         (and (= result i) (assertion q id)))
-       (testq :success) {:status :success} 1 assert-done
-       (testq :retry)   {:status :retry}   2 assert-unlocked
-       (testq :error)   {:status :error}   3 assert-done))
-
-(clean-up)
+;;;; Handling: success with backoff (dedupe)
+(expect (constantly true) (mq/clear-queues {} tq))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
+(expect "eoq-backoff" (wcar {} (dequeue* tq)))
+(expect {:message :msg1, :attempt 1}
+        (let [p (promise)]
+          (mq/handle1 {} tq #(do (deliver p %) {:status :success :backoff-ms 3000})
+                      (wcar {} (dequeue* tq)))
+          @p))
+(expect :done-with-backoff (wcar {} (mq/message-status tq :mid1)))
+(expect "eoq-backoff"      (wcar {} (dequeue* tq)))
+(expect nil                (wcar {} (dequeue* tq))) ; Will gc
+(expect :done-with-backoff (wcar {} (mq/message-status tq :mid1))) ; Backoff (< 3s)
+(expect {:carmine.mq/error :done-with-backoff}
+        (wcar {} (mq/enqueue tq :msg1 :mid1))) ; Dupe
+(expect "mid1" (do (Thread/sleep 3000) ; Wait for backoff to expire
+                   (wcar {} (mq/enqueue tq :msg1 :mid1))))
