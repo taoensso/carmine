@@ -115,7 +115,7 @@
     \"eoq-backoff\" - If circle uninitialized or end-of-circle marker reached.
     [<mid> <mcontent> <attempt-count>] - If message should be (re)handled now."
   [qname & [{:keys [lock-ms eoq-backoff-ms]
-             :or   {lock-ms (* 60 60 1000)
+             :or   {lock-ms (* 1000 60 60)
                     eoq-backoff-ms 2000}}]]
   (car/lua
    "if redis.call('exists', _:qk-eoq-backoff) == 1 then
@@ -243,6 +243,21 @@
   java.io.Closeable
   (close [this] (stop this)))
 
+(defn monitor-fn
+  "Returns a worker monitor fn that warns when queue's mid-circle exceeds
+  the prescribed size. A backoff timeout can be provided to rate-limit this
+  warning."
+  [qname max-circle-size warn-backoff-ms]
+  (let [udt-last-warning (atom nil)]
+    (fn [{:keys [mid-circle-size]}]
+      (let [instant (System/currentTimeMillis)]
+        (when (and (> mid-circle-size max-circle-size)
+                   (> (- instant (or @udt-last-warning 0))
+                      (or warn-backoff-ms 0)))
+          (reset! udt-last-warning instant)
+          (timbre/warnf "Message queue size warning: %s (mid-circle-size: %s)"
+                        qname max-circle-size))))))
+
 (defn worker
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
   named queue. Options:
@@ -252,6 +267,7 @@
                                  :backoff-ms <retry-backoff-ms}.
    :monitor        - (fn [{:keys [mid-circle-len ndry-runs]}]) called on each
                      worker loop iteration. Useful for queue monitoring/logging.
+                     See also `monitor-fn`.
    :lock-ms        - Max time handler may keep a message before handler
                      considered fatally stalled and message re-queued. Must be
                      sufficiently high to prevent double handling.
@@ -264,7 +280,8 @@
                   :or   {handler (fn [{:keys [message attempt]}]
                                    (timbre/info qname message attempt)
                                    {:status :success})
-                         lock-ms        (* 60 60 1000)
+                         monitor (monitor-fn qname 1000 (* 1000 60 60))
+                         lock-ms        (* 1000 60 60)
                          throttle-ms    200
                          eoq-backoff-ms (fn [ndruns] (exp-backoff ndruns {:max 10000}))
                          auto-start?    true}}]]
