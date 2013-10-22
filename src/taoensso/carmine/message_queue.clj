@@ -33,7 +33,7 @@
 
 (comment (map #(exp-backoff % {}) (range 10)))
 
-;;;; Implementation
+;;;; Admin
 
 (def qkey "Prefixed queue key" (memoize (partial car/key :carmine :mq)))
 
@@ -57,6 +57,8 @@
        (->> (car/get      (qk :eoq-backoff?))  (car/parse-bool))
        (->> (car/get      (qk :ndry-runs))     (car/parse-long))))))
 
+;;;; Implementation
+
 (defn message-status
   "Returns current message status, e/o:
     :queued            - Awaiting (re)handling.
@@ -65,34 +67,33 @@
     :done-with-backoff - Finished handling, awaiting dedupe timeout.
     :recently-done     - Finished handling, no dedupe timeout, awaiting GC.
     nil                - Already GC'd or invalid message id."
-  [conn qname mid]
-  (wcar conn
-    (car/parse-keyword
-     (car/lua ; Careful, logic here is necessarily quite subtle!
-      "--
-      local now         = tonumber(_:now)
-      local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
-      local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
+  [qname mid]
+  (car/parse-keyword
+   (car/lua ; Careful, logic here is necessarily quite subtle!
+    "--
+    local now         = tonumber(_:now)
+    local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
+    local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
 
-      if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
+    if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
+      if (now < backoff_exp) then return 'done-with-backoff' end
+      return nil
+    else
+      if redis.call('sismember', _:qk-recently-done, _:mid) == 1 then
         if (now < backoff_exp) then return 'done-with-backoff' end
-        return nil
+        return 'recently-done'
       else
-        if redis.call('sismember', _:qk-recently-done, _:mid) == 1 then
-          if (now < backoff_exp) then return 'done-with-backoff' end
-          return 'recently-done'
-        else
-          if     (now < lock_exp)    then return 'locked'
-          elseif (now < backoff_exp) then return 'retry-backoff' end
-          return 'queued'
-        end
-      end"
-      {:qk-messages      (qkey qname :messages)
-       :qk-locks         (qkey qname :locks)
-       :qk-backoffs      (qkey qname :backoffs)
-       :qk-recently-done (qkey qname :recently-done)}
-      {:now (System/currentTimeMillis)
-       :mid mid}))))
+        if     (now < lock_exp)    then return 'locked'
+        elseif (now < backoff_exp) then return 'retry-backoff' end
+        return 'queued'
+      end
+    end"
+    {:qk-messages      (qkey qname :messages)
+     :qk-locks         (qkey qname :locks)
+     :qk-backoffs      (qkey qname :backoffs)
+     :qk-recently-done (qkey qname :recently-done)}
+    {:now (System/currentTimeMillis)
+     :mid mid})))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue and returns unique
@@ -221,7 +222,7 @@
   (clear-queues {} "myq")
   (queue-status {} "myq")
   (let [mid (wcar {} (enqueue "myq" "msg"))]
-    (message-status {} "myq" mid))
+    (wcar {} (message-status "myq" mid)))
 
   (wcar {} (dequeue "myq")))
 
