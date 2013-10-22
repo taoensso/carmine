@@ -225,11 +225,48 @@
 
   (wcar {} (dequeue "myq")))
 
+(defn handle1 "Implementation detail!"
+  [conn qname handler [mid mcontent attempt :as poll-reply]]
+  (when (and poll-reply (not= poll-reply "eoq-backoff"))
+    (let [qk (partial qkey qname)
+          hset-backoff
+          (fn [mid backoff-ms]
+            (when backoff-ms
+              (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
+                                              backoff-ms))))
+
+          done  (fn [mid & [backoff-ms]] (wcar conn
+                                           (hset-backoff mid backoff-ms)
+                                           (car/sadd (qk :recently-done) mid)))
+
+          retry (fn [mid & [backoff-ms]] (wcar conn
+                                           (hset-backoff mid backoff-ms)
+                                           (car/hdel (qk :locks) mid)))
+
+          error (fn [mid poll-reply & [throwable]]
+                (done mid)
+                (timbre/error
+                 (if throwable throwable (Exception. ":error handler response"))
+                 (str "Error handling queue message: " qname "\n" poll-reply)))
+
+          {:keys [status throwable backoff-ms]}
+          (let [result (try (handler {:message mcontent
+                                      :attempt attempt})
+                            (catch Throwable t {:status :error :throwable t}))]
+            (when (map? result) result))]
+
+      (case status
+        :success (done  mid backoff-ms)
+        :retry   (retry mid backoff-ms)
+        :error   (error mid poll-reply throwable)
+        (do (done mid)
+            (timbre/warn (str "Invalid handler status:" status)))))))
+
 ;;;; Workers
 
 (defprotocol IWorker (start [this]) (stop [this]))
-
-(defrecord Worker [conn qname running? opts]
+(defrecord    Worker [conn qname running? opts]
+  java.io.Closeable (close [this] (stop this))
   IWorker
   (stop  [_] (let [stopped? @running?] (reset! running? false) stopped?))
   (start [_]
@@ -237,62 +274,27 @@
       (reset! running? true)
       (future
         (let [{:keys [handler monitor throttle-ms eoq-backoff-ms]} opts
-              qk    (partial qkey qname)
-              hset-backoff (fn [mid backoff-ms]
-                             (when backoff-ms
-                               (car/hset (qk :backoffs) mid
-                                         (+ (System/currentTimeMillis)
-                                            backoff-ms))))
-              done  (fn [mid & [backoff-ms]]
-                      (wcar conn (hset-backoff mid backoff-ms)
-                                 (car/sadd (qk :recently-done) mid)))
-              retry (fn [mid & [backoff-ms]]
-                      (wcar conn (hset-backoff mid backoff-ms)
-                                 (car/hdel (qk :locks) mid)))
-              error (fn [mid poll-reply & [throwable]]
-                      (done mid)
-                      (timbre/error
-                       (if throwable throwable (Exception. ":error handler response"))
-                       (str "Error handling queue message: " qname "\n" poll-reply)))]
-
+              qk (partial qkey qname)]
           (while @running?
             (try
               (let [[ndruns mid-circle-size] (wcar conn (car/get  (qk :ndry-runs))
                                                         (car/llen (qk :mid-circle)))
                     ndruns (or (car/as-long ndruns) 0)
-
-                    eoq-backoff-ms* (if (fn? eoq-backoff-ms)
-                                      (eoq-backoff-ms (inc ndruns))
-                                      eoq-backoff-ms)
+                    eoq-backoff-ms* (if-not (fn? eoq-backoff-ms) eoq-backoff-ms
+                                      (eoq-backoff-ms (inc ndruns)))
                     opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)]
 
                 (when monitor (monitor {:mid-circle-size mid-circle-size
                                         :ndry-runs       ndruns}))
 
-                (when-let [[mid mcontent attempt :as poll-reply]
-                           (wcar conn (dequeue qname opts*))]
+                (let [poll-reply (wcar conn (dequeue qname opts*))]
                   (if (= poll-reply "eoq-backoff")
                     (when eoq-backoff-ms* (Thread/sleep eoq-backoff-ms*))
-                    (let [{:keys [status throwable backoff-ms]}
-                          (let [result (try (handler {:message mcontent
-                                                      :attempt attempt})
-                                            (catch Throwable t {:status :error
-                                                                :throwable t}))]
-                            (when (map? result) result))]
-                      (case status
-                        :success (done  mid backoff-ms)
-                        :retry   (retry mid backoff-ms)
-                        :error   (error mid poll-reply throwable)
-                        (do (done mid)
-                            (timbre/warn (str "Invalid handler status:" status))))))))
-              (catch Throwable t
-                (timbre/fatal t "Worker error!")
-                (throw t)))
-            (when throttle-ms (Thread/sleep throttle-ms)))))
-      true))
+                    (handle1 conn qname handler poll-reply))))
 
-  java.io.Closeable
-  (close [this] (stop this)))
+              (catch Throwable t (timbre/fatal t "Worker error!") (throw t)))
+            (when throttle-ms (Thread/sleep throttle-ms)))))
+      true)))
 
 (defn monitor-fn
   "Returns a worker monitor fn that warns when queue's mid-circle exceeds
