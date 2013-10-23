@@ -162,11 +162,23 @@
 
     -- TODO Waiting for Lua brpoplpush support to get us long polling
     local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle)
+    local now = tonumber(_:now)
 
     if (not mid) or (mid == 'end-of-circle') then
       -- Set queue-wide polling backoff flag
       redis.call('psetex', _:qk-eoq-backoff, _:eoq-backoff-ms, 'true')
       redis.call('incr',   _:qk-ndry-runs)
+
+      -- Prune expired backoffs. We have to do this manually if we want to keep
+      -- backoffs in a hash as we do for efficiency & Cluster support. This hash
+      -- is usu. quite small since it consists only of active retry and dedupe
+      -- backoffs.
+      for i,k in pairs(redis.call('hkeys', _:qk-backoffs)) do
+        if (now >= tonumber(redis.call('hget', _:qk-backoffs, k))) then
+          redis.call('hdel', _:qk-backoffs, k)
+        end
+      end
+
       return 'eoq-backoff'
     end
 
@@ -181,7 +193,6 @@
       return nil
     end
 
-    local now         = tonumber(_:now)
     local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
     local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid) or 0)
 
@@ -189,7 +200,7 @@
     if (now < lock_exp) or (now < backoff_exp) then return nil end
 
     redis.call('hset', _:qk-locks,    mid, now + tonumber(_:lock-ms)) -- Acquire
-    redis.call('hdel', _:qk-backoffs, mid) -- Expired, so prune
+    redis.call('hdel', _:qk-backoffs, mid) -- Expired, so prune (keep gc-prune fast)
     redis.call('set',  _:qk-ndry-runs, 0) -- Did work
 
     local mcontent  = redis.call('hget',    _:qk-msgs,      mid)
