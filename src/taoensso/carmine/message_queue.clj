@@ -169,7 +169,9 @@
         redis.call('psetex', _:qk-eoq-backoff, _:eoq-backoff-ms, 'true')
         redis.call('incr', _:qk-ndry-runs)
         return 'eoq-backoff'
-      elseif redis.call('sismember', _:qk-recently-done, mid) == 1 then -- GC
+      end
+
+      if redis.call('sismember', _:qk-recently-done, mid) == 1 then -- GC
         redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
         redis.call('srem', _:qk-recently-done, mid)
         redis.call('hdel', _:qk-messages,      mid)
@@ -177,10 +179,9 @@
         redis.call('hdel', _:qk-nretries,      mid)
         -- NB do NOT prune :qk_backoffs now, will be used post-handler as a
         -- dedupe backoff
+        redis.call('set', _:qk-ndry-runs, 0) -- Did work on this run
         return nil
       end
-
-      redis.call('set', _:qk-ndry-runs, 0)
 
       local now         = tonumber(_:now)
       local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
@@ -201,6 +202,8 @@
       else
         retries = tonumber(redis.call('hget', _:qk-nretries, mid) or 0)
       end
+
+      redis.call('set', _:qk-ndry-runs, 0) -- Did work on this run
 
       local mcontent = redis.call('hget', _:qk-messages, mid)
       local attempts = retries + 1
