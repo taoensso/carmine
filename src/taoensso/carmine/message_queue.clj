@@ -78,13 +78,13 @@
     if redis.call('hexists', _:qk-msgs, _:mid) ~= 1 then
       if (now < backoff_exp) then return 'done-with-backoff' end
       return nil
-    else
+    else -- Necessary for `enqueue`
       if redis.call('sismember', _:qk-gc, _:mid) == 1 then
         if (now < backoff_exp) then return 'done-with-backoff' end
         return 'done-awaiting-gc'
-      else
-        if     (now < lock_exp)    then return 'locked'
-        elseif (now < backoff_exp) then return 'retry-backoff' end
+      else -- Necessary for `enqueue`
+        if (now < lock_exp)    then return 'locked'        end
+        if (now < backoff_exp) then return 'retry-backoff' end
         return 'queued'
       end
     end"
@@ -118,23 +118,23 @@
         if (now < backoff_exp) then return 'done-with-backoff' end
         -- return 'done-awaiting-gc'
       else
-        if     (now < lock_exp)    then return 'locked'
-        elseif (now < backoff_exp) then return 'retry-backoff' end
+        if (now < lock_exp)    then return 'locked'        end
+        if (now < backoff_exp) then return 'retry-backoff' end
         return 'queued'
       end
     end
-    ---------------------------------------------------------------------------
+    ---
 
     redis.call('hset', _:qk-msgs, _:mid, _:mcontent)
 
     -- lpushnx end-of-circle marker to ensure an initialized mid-circle
-    if redis.call('exists', _:qk-mid-circle) == 0 then
+    if redis.call('exists', _:qk-mid-circle) ~= 1 then
       redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
     end
 
     redis.call('lpush', _:qk-mid-circle, _:mid)
     return {_:mid} -- Wrap to distinguish from error replies
-    "
+" ; Necessary for Lua script-end weirdness
     {:qk-msgs       (qkey qname :msgs)
      :qk-locks      (qkey qname :locks)
      :qk-backoffs   (qkey qname :backoffs)
@@ -158,49 +158,43 @@
              :or   {lock-ms (* 1000 60 60)
                     eoq-backoff-ms 2000}}]]
   (car/lua
-   "if redis.call('exists', _:qk-eoq-backoff) == 1 then
+   "if redis.call('exists', _:qk-eoq-backoff) == 1 then return 'eoq-backoff' end
+
+    -- TODO Waiting for Lua brpoplpush support to get us long polling
+    local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle)
+
+    if (not mid) or (mid == 'end-of-circle') then
+      -- Set queue-wide polling backoff flag
+      redis.call('psetex', _:qk-eoq-backoff, _:eoq-backoff-ms, 'true')
+      redis.call('incr',   _:qk-ndry-runs)
       return 'eoq-backoff'
-    else
-      -- TODO Waiting for Lua brpoplpush support to get us long polling
-      local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle)
+    end
 
-      if (not mid) or (mid == 'end-of-circle') then
-        -- Set queue-wide polling backoff flag
-        redis.call('psetex', _:qk-eoq-backoff, _:eoq-backoff-ms, 'true')
-        redis.call('incr', _:qk-ndry-runs)
-        return 'eoq-backoff'
-      end
+    if redis.call('sismember', _:qk-gc, mid) == 1 then -- GC
+      redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
+      redis.call('srem', _:qk-gc,            mid)
+      redis.call('hdel', _:qk-msgs,          mid)
+      redis.call('hdel', _:qk-locks,         mid)
+      --redis.call('hdel', _:qk-backoffs,    mid) -- No! Will use as dedupe backoff
+      redis.call('hdel', _:qk-nattempts,     mid)
+      redis.call('set',  _:qk-ndry-runs, 0) -- Did work
+      return nil
+    end
 
-      if redis.call('sismember', _:qk-gc, mid) == 1 then -- GC
-        redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
-        redis.call('srem', _:qk-gc,            mid)
-        redis.call('hdel', _:qk-msgs,          mid)
-        redis.call('hdel', _:qk-locks,         mid)
-        redis.call('hdel', _:qk-nattempts,     mid)
-        -- NB do NOT prune :qk_backoffs now, will be used post-handler as a
-        -- dedupe backoff
-        redis.call('set', _:qk-ndry-runs, 0) -- Did work on this run
-        return nil
-      end
+    local now         = tonumber(_:now)
+    local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
+    local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid) or 0)
 
-      local now         = tonumber(_:now)
-      local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
-      local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid) or 0)
+    -- Active lock/backoff
+    if (now < lock_exp) or (now < backoff_exp) then return nil end
 
-      if (now < lock_exp) then return nil -- Active lock
-      else
-        redis.call('hset', _:qk-locks, mid, now + tonumber(_:lock-ms)) -- (Re)acq lock
-      end
-      if (now < backoff_exp) then return nil -- Active backoff
-      else
-        redis.call('hdel', _:qk-backoffs, mid)
-      end
+    redis.call('hset', _:qk-locks,    mid, now + tonumber(_:lock-ms)) -- Acquire
+    redis.call('hdel', _:qk-backoffs, mid) -- Expired, so prune
+    redis.call('set',  _:qk-ndry-runs, 0) -- Did work
 
-      redis.call('set', _:qk-ndry-runs, 0) -- Did work on this run
-      local mcontent  = redis.call('hget', _:qk-msgs, mid)
-      local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1)
-      return {mid, mcontent, nattempts}
-    end"
+    local mcontent  = redis.call('hget',    _:qk-msgs,      mid)
+    local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1)
+    return {mid, mcontent, nattempts}"
    {:qk-msgs        (qkey qname :msgs)
     :qk-locks       (qkey qname :locks)
     :qk-backoffs    (qkey qname :backoffs)
