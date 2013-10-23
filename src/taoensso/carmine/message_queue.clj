@@ -23,15 +23,14 @@
 ;;;; Public utils
 
 (defn exp-backoff "Returns binary exponential backoff value."
-  [attempt & [{:keys [factor min max]
-               :or   {factor 2000}}]]
+  [attempt & [{:keys [factor min max] :or {factor 2200}}]]
   (let [binary-exp (Math/pow 2 (dec attempt))
         time (* (+ binary-exp (rand binary-exp)) 0.5 factor)]
     (long (let [time (if min (clojure.core/max min time) time)
                 time (if max (clojure.core/min max time) time)]
             time))))
 
-(comment (map #(exp-backoff % {}) (range 10)))
+(comment (mapv #(exp-backoff % {}) (range 5)))
 
 ;;;; Admin
 
@@ -54,7 +53,7 @@
        (car/hgetall*      (qk :nattempts))
        (car/lrange        (qk :mid-circle) 0 -1)
        (->> (car/smembers (qk :gc))            (car/parse set))
-       (->> (car/get      (qk :eoq-backoff?))  (car/parse-bool))
+       (->> (car/get      (qk :eoq-backoff?))  (car/parse-bool)) ; Give TTL?
        (->> (car/get      (qk :ndry-runs))     (car/parse-long))))))
 
 ;;;; Implementation
@@ -145,9 +144,6 @@
      :mcontent      (car/freeze message)})
    (car/parse #(if (vector? %) (first %) {:carmine.mq/error (keyword %)}))))
 
-(comment (wcar {} (enqueue "myq" "msg"))
-         (wcar {} (enqueue "myq" "msg" "myid")))
-
 (defn dequeue
   "IMPLEMENTATION DETAIL: Use `worker` instead.
   Rotates queue's mid-circle and processes next mid. Returns:
@@ -155,76 +151,92 @@
     \"eoq-backoff\" - If circle uninitialized or end-of-circle marker reached.
     [<mid> <mcontent> <attempt-count>] - If message should be (re)handled now."
   [qname & [{:keys [lock-ms eoq-backoff-ms]
-             :or   {lock-ms (* 1000 60 60)
-                    eoq-backoff-ms 2000}}]]
-  (car/lua
-   "if redis.call('exists', _:qk-eoq-backoff) == 1 then return 'eoq-backoff' end
+             :or   {lock-ms (* 1000 60 60) eoq-backoff-ms exp-backoff}}]]
+  (let [;; Precomp 5 backoffs so that `dequeue` can init the backoff
+        ;; atomically. This is hackish, but a decent tradeoff.
+        eoq-backoff-ms-vec
+        (cond (fn?      eoq-backoff-ms) (mapv eoq-backoff-ms              (range 5))
+              (integer? eoq-backoff-ms) (mapv (constantly eoq-backoff-ms) (range 5))
+              :else (throw (Exception. (str "Bad eoq-backoff-ms: " eoq-backoff-ms))))]
+    (car/lua
+     "if redis.call('exists', _:qk-eoq-backoff) == 1 then return 'eoq-backoff' end
 
-    -- TODO Waiting for Lua brpoplpush support to get us long polling
-    local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle)
-    local now = tonumber(_:now)
+     -- TODO Waiting for Lua brpoplpush support to get us long polling
+     local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle)
+     local now = tonumber(_:now)
 
-    if (not mid) or (mid == 'end-of-circle') then
-      -- Set queue-wide polling backoff flag
-      redis.call('psetex', _:qk-eoq-backoff, _:eoq-backoff-ms, 'true')
-      redis.call('incr',   _:qk-ndry-runs)
+     if (not mid) or (mid == 'end-of-circle') then -- Uninit'd or eoq
 
-      -- Prune expired backoffs. We have to do this manually if we want to keep
-      -- backoffs in a hash as we do for efficiency & Cluster support. This hash
-      -- is usu. quite small since it consists only of active retry and dedupe
-      -- backoffs.
-      for i,k in pairs(redis.call('hkeys', _:qk-backoffs)) do
-        if (now >= tonumber(redis.call('hget', _:qk-backoffs, k))) then
-          redis.call('hdel', _:qk-backoffs, k)
-        end
-      end
+       -- Calculate eoq_backoff_ms
+       local ndry_runs = tonumber(redis.call('get', _:qk-ndry-runs) or 0)
+       local eoq_ms_tab = {_:eoq-ms0, _:eoq-ms1, _:eoq-ms2, _:eoq-ms3, _:eoq-ms4}
+       local eoq_backoff_ms = tonumber(eoq_ms_tab[math.min(5, (ndry_runs + 1))])
 
-      return 'eoq-backoff'
-    end
+       -- Set queue-wide polling backoff flag
+       redis.call('psetex', _:qk-eoq-backoff, eoq_backoff_ms, 'true')
+       redis.call('incr',   _:qk-ndry-runs)
 
-    if redis.call('sismember', _:qk-gc, mid) == 1 then -- GC
-      redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
-      redis.call('srem', _:qk-gc,            mid)
-      redis.call('hdel', _:qk-msgs,          mid)
-      redis.call('hdel', _:qk-locks,         mid)
-      --redis.call('hdel', _:qk-backoffs,    mid) -- No! Will use as dedupe backoff
-      redis.call('hdel', _:qk-nattempts,     mid)
-      redis.call('set',  _:qk-ndry-runs, 0) -- Did work
-      return nil
-    end
+       -- Prune expired backoffs. We have to do this manually if we want to keep
+       -- backoffs in a hash as we do for efficiency & Cluster support. This hash
+       -- is usu. quite small since it consists only of active retry and dedupe
+       -- backoffs.
+       for i,k in pairs(redis.call('hkeys', _:qk-backoffs)) do
+         if (now >= tonumber(redis.call('hget', _:qk-backoffs, k))) then
+           redis.call('hdel', _:qk-backoffs, k)
+         end
+       end
 
-    local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
-    local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid) or 0)
+       return 'eoq-backoff'
+     end
 
-    -- Active lock/backoff
-    if (now < lock_exp) or (now < backoff_exp) then return nil end
+     if redis.call('sismember', _:qk-gc, mid) == 1 then -- GC
+       redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
+       redis.call('srem', _:qk-gc,            mid)
+       redis.call('hdel', _:qk-msgs,          mid)
+       redis.call('hdel', _:qk-locks,         mid)
+       --redis.call('hdel', _:qk-backoffs,    mid) -- No! Will use as dedupe backoff
+       redis.call('hdel', _:qk-nattempts,     mid)
+       redis.call('set',  _:qk-ndry-runs, 0) -- Did work
+       return nil
+     end
 
-    redis.call('hset', _:qk-locks,    mid, now + tonumber(_:lock-ms)) -- Acquire
-    redis.call('hdel', _:qk-backoffs, mid) -- Expired, so prune (keep gc-prune fast)
-    redis.call('set',  _:qk-ndry-runs, 0) -- Did work
+     local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
+     local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid) or 0)
 
-    local mcontent  = redis.call('hget',    _:qk-msgs,      mid)
-    local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1)
-    return {mid, mcontent, nattempts}"
-   {:qk-msgs        (qkey qname :msgs)
-    :qk-locks       (qkey qname :locks)
-    :qk-backoffs    (qkey qname :backoffs)
-    :qk-nattempts   (qkey qname :nattempts)
-    :qk-mid-circle  (qkey qname :mid-circle)
-    :qk-gc          (qkey qname :gc)
-    :qk-eoq-backoff (qkey qname :eoq-backoff?)
-    :qk-ndry-runs   (qkey qname :ndry-runs)}
-   {:now            (System/currentTimeMillis)
-    :lock-ms        lock-ms
-    :eoq-backoff-ms eoq-backoff-ms}))
+     -- Active lock/backoff
+     if (now < lock_exp) or (now < backoff_exp) then return nil end
+
+     redis.call('hset', _:qk-locks,    mid, now + tonumber(_:lock-ms)) -- Acquire
+     redis.call('hdel', _:qk-backoffs, mid) -- Expired, so prune (keep gc-prune fast)
+     redis.call('set',  _:qk-ndry-runs, 0) -- Did work
+
+     local mcontent  = redis.call('hget',    _:qk-msgs,      mid)
+     local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1)
+     return {mid, mcontent, nattempts}"
+     {:qk-msgs        (qkey qname :msgs)
+      :qk-locks       (qkey qname :locks)
+      :qk-backoffs    (qkey qname :backoffs)
+      :qk-nattempts   (qkey qname :nattempts)
+      :qk-mid-circle  (qkey qname :mid-circle)
+      :qk-gc          (qkey qname :gc)
+      :qk-eoq-backoff (qkey qname :eoq-backoff?)
+      :qk-ndry-runs   (qkey qname :ndry-runs)}
+     {:now            (System/currentTimeMillis)
+      :lock-ms        lock-ms
+      :eoq-ms0        (nth eoq-backoff-ms-vec 0)
+      :eoq-ms1        (nth eoq-backoff-ms-vec 1)
+      :eoq-ms2        (nth eoq-backoff-ms-vec 2)
+      :eoq-ms3        (nth eoq-backoff-ms-vec 3)
+      :eoq-ms4        (nth eoq-backoff-ms-vec 4)})))
 
 (comment
-  (clear-queues {} "myq")
-  (queue-status {} "myq")
-  (let [mid (wcar {} (enqueue "myq" "msg"))]
-    (wcar {} (message-status "myq" mid)))
-
-  (wcar {} (dequeue "myq")))
+  (clear-queues {} :q1)
+  (queue-status {} :q1)
+  (wcar {} (enqueue :q1 :msg1 :mid1))
+  (wcar {} (message-status :q1 :mid1))
+  (wcar {} (dequeue :q1))
+  ;;(mapv exp-backoff (range 5))
+  (wcar {} (car/pttl (qkey :q1 :eoq-backoff?))))
 
 (defn handle1 "Implementation detail!"
   [conn qname handler [mid mcontent attempt :as poll-reply]]
@@ -269,25 +281,21 @@
     (when-not @running?
       (reset! running? true)
       (future
-        (let [{:keys [handler monitor throttle-ms eoq-backoff-ms]} opts
+        (let [{:keys [handler monitor throttle-ms _]} opts
               qk (partial qkey qname)]
           (while @running?
             (try
-              (let [[ndruns mid-circle-size] (wcar conn (car/get  (qk :ndry-runs))
-                                                        (car/llen (qk :mid-circle)))
-                    ndruns (or (car/as-long ndruns) 0)
-                    eoq-backoff-ms* (if-not (fn? eoq-backoff-ms) eoq-backoff-ms
-                                      (eoq-backoff-ms (inc ndruns)))
-                    opts* (assoc opts :eoq-backoff-ms eoq-backoff-ms*)
-                    poll-reply (wcar conn (dequeue qname opts*))]
+              (let [[poll-reply ndruns mid-circle-size]
+                    (wcar conn (dequeue qname opts)
+                               (car/get  (qk :ndry-runs))
+                               (car/llen (qk :mid-circle)))]
 
-                (when monitor
-                  (monitor {:mid-circle-size mid-circle-size
-                            :ndry-runs       ndruns
-                            :poll-reply      poll-reply}))
+                (when monitor (monitor {:mid-circle-size mid-circle-size
+                                        :ndry-runs       (or ndruns 0)
+                                        :poll-reply      poll-reply}))
 
                 (if (= poll-reply "eoq-backoff")
-                  (when eoq-backoff-ms* (Thread/sleep eoq-backoff-ms*))
+                  (Thread/sleep (max (wcar conn (car/pttl (qk :eoq-backoff?))) 10))
                   (handle1 conn qname handler poll-reply)))
 
               (catch Throwable t (timbre/fatalf t "Worker error!") (throw t)))
@@ -323,19 +331,17 @@
                      considered fatally stalled and message re-queued. Must be
                      sufficiently high to prevent double handling.
    :eoq-backoff-ms - Thread sleep period each time end of queue is reached.
-                     Can be a (fn [ndry-runs]) => ms. Sleep synchronized for all
-                     queue workers.
+                     Can be a (fn [ndry-runs]) -> ms (n<=5) will be used.
+                     Sleep synchronized for all queue workers.
    :throttle-ms    - Thread sleep period between each poll."
   [conn qname & [{:keys [handler monitor lock-ms eoq-backoff-ms throttle-ms
                          auto-start?]
-                  :or   {handler (fn [{:keys [message attempt] :as handler-args}]
-                                   (timbre/infof "%s" handler-args)
-                                   {:status :success})
+                  :or   {handler (fn [args] (timbre/infof "%s" args)
+                                           {:status :success})
                          monitor (monitor-fn qname 1000 (* 1000 60 60))
                          lock-ms        (* 1000 60 60)
                          throttle-ms    200
-                         eoq-backoff-ms (fn [ndruns] (exp-backoff ndruns
-                                                       {:max 10000}))
+                         eoq-backoff-ms exp-backoff
                          auto-start?    true}}]]
   (let [w (->Worker conn qname (atom false)
                     {:handler        handler
@@ -344,12 +350,6 @@
                      :eoq-backoff-ms eoq-backoff-ms
                      :throttle-ms    throttle-ms})]
     (when auto-start? (start w)) w))
-
-(comment
-  (def w1 (worker {} "myq"))
-  (wcar {} (enqueue "myq" "msg"))
-  (stop w1)
-  (queue-status {} "myq"))
 
 ;;;; Renamed/deprecated
 
