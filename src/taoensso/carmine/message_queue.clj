@@ -218,38 +218,33 @@
 (defn handle1 "Implementation detail!"
   [conn qname handler [mid mcontent attempt :as poll-reply]]
   (when (and poll-reply (not= poll-reply "eoq-backoff"))
-    (let [qk (partial qkey qname)
-          hset-backoff
-          (fn [mid backoff-ms]
-            (when backoff-ms
-              (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
-                                              backoff-ms))))
-
-          done  (fn [mid & [backoff-ms]] (wcar conn
-                                           (hset-backoff mid backoff-ms)
-                                           (car/sadd (qk :gc) mid)))
-
-          retry (fn [mid & [backoff-ms]] (wcar conn
-                                           (hset-backoff mid backoff-ms)
-                                           (car/hdel (qk :locks) mid)))
+    (let [qk   (partial qkey qname)
+          done (fn [status mid & [backoff-ms]]
+                 (wcar conn
+                   (when backoff-ms ; Retry or dedupe backoff, depending on type
+                     (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
+                                                     backoff-ms)))
+                   (case status
+                     :success (car/sadd (qk :gc)    mid) ; Queue for GC
+                     :retry   (car/hdel (qk :locks) mid) ; Unlock
+                     )))
 
           error (fn [mid poll-reply & [throwable]]
-                (done mid)
-                (timbre/errorf
-                 (if throwable throwable (Exception. ":error handler response"))
-                 "Error handling %s queue message:\n%s" qname poll-reply))
+                  (done mid)
+                  (timbre/errorf
+                   (if throwable throwable (Exception. ":error handler response"))
+                   "Error handling %s queue message:\n%s" qname poll-reply))
 
           {:keys [status throwable backoff-ms]}
-          (let [result (try (handler {:message mcontent
-                                      :attempt attempt})
+          (let [result (try (handler {:message mcontent :attempt attempt})
                             (catch Throwable t {:status :error :throwable t}))]
             (when (map? result) result))]
 
       (case status
-        :success (done  mid backoff-ms)
-        :retry   (retry mid backoff-ms)
+        :success (done status mid backoff-ms)
+        :retry   (done status mid backoff-ms)
         :error   (error mid poll-reply throwable)
-        (do (done mid)
+        (do (done :success mid) ; For backwards-comp with old API
             (timbre/warnf "Invalid handler status: %s" status))))))
 
 ;;;; Workers
