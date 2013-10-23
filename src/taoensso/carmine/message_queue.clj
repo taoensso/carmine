@@ -6,7 +6,7 @@
     * carmine:mq:<qname>:msgs         -> hash, {mid mcontent}.
     * carmine:mq:<qname>:locks        -> hash, {mid lock-expiry-time}.
     * carmine:mq:<qname>:backoffs     -> hash, {mid backoff-expiry-time}.
-    * carmine:mq:<qname>:nretries     -> hash, {mid retry-count}.
+    * carmine:mq:<qname>:nattempts    -> hash, {mid attempt-count}.
     * carmine:mq:<qname>:mid-circle   -> list, rotating list of mids.
     * carmine:mq:<qname>:gc           -> set, for efficient mid removal from circle.
     * carmine:mq:<qname>:eoq-backoff? -> ttl flag, used for queue-wide (every-worker)
@@ -45,13 +45,13 @@
 
 (defn queue-status [conn qname]
   (let [qk (partial qkey qname)]
-    (zipmap [:msgs :locks :backoffs :nretries :mid-circle :gc
+    (zipmap [:msgs :locks :backoffs :nattempts :mid-circle :gc
              :eoq-backoff? :ndry-runs]
      (wcar conn
        (car/hgetall*      (qk :msgs))
        (car/hgetall*      (qk :locks))
        (car/hgetall*      (qk :backoffs))
-       (car/hgetall*      (qk :nretries))
+       (car/hgetall*      (qk :nattempts))
        (car/lrange        (qk :mid-circle) 0 -1)
        (->> (car/smembers (qk :gc))            (car/parse set))
        (->> (car/get      (qk :eoq-backoff?))  (car/parse-bool))
@@ -176,7 +176,7 @@
         redis.call('srem', _:qk-gc,            mid)
         redis.call('hdel', _:qk-msgs,          mid)
         redis.call('hdel', _:qk-locks,         mid)
-        redis.call('hdel', _:qk-nretries,      mid)
+        redis.call('hdel', _:qk-nattempts,     mid)
         -- NB do NOT prune :qk_backoffs now, will be used post-handler as a
         -- dedupe backoff
         redis.call('set', _:qk-ndry-runs, 0) -- Did work on this run
@@ -196,23 +196,15 @@
         redis.call('hdel', _:qk-backoffs, mid)
       end
 
-      local retries = 0
-      if (lock_exp ~= 0) then
-        retries = tonumber(redis.call('hincrby', _:qk-nretries, mid))
-      else
-        retries = tonumber(redis.call('hget', _:qk-nretries, mid) or 0)
-      end
-
       redis.call('set', _:qk-ndry-runs, 0) -- Did work on this run
-
-      local mcontent = redis.call('hget', _:qk-msgs, mid)
-      local attempts = retries + 1
-      return {mid, mcontent, attempts}
+      local mcontent  = redis.call('hget', _:qk-msgs, mid)
+      local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1)
+      return {mid, mcontent, nattempts}
     end"
    {:qk-msgs        (qkey qname :msgs)
     :qk-locks       (qkey qname :locks)
     :qk-backoffs    (qkey qname :backoffs)
-    :qk-nretries    (qkey qname :nretries)
+    :qk-nattempts   (qkey qname :nattempts)
     :qk-mid-circle  (qkey qname :mid-circle)
     :qk-gc          (qkey qname :gc)
     :qk-eoq-backoff (qkey qname :eoq-backoff?)
