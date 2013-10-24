@@ -241,27 +241,6 @@
                       ["pmessage"    "ps-*"   "ps-foo" "four"]
                       ["pmessage"    "ps-*"   "ps-baz" "five"]]))))
 
-(deftest test-nippy
-  (let [k1   (test-key "stress-data")
-        k2   (test-key "stress-data-hash")
-        data (dissoc nippy/stress-data :bytes)
-        num-key    (test-key "num-key")
-        freeze-key (test-key "freeze-key")]
-    (wcar* (car/set k1 data))
-    (is (= data (wcar* (car/get k1))))
-    (wcar* (car/hmset k2 "field1" data "field2" "just a string"))
-    (is (= data (wcar* (car/hget k2 "field1"))))
-    (is (= "just a string" (wcar* (car/hget k2 "field2"))))
-
-    (wcar* (car/set num-key 10)
-           (car/set freeze-key (car/freeze 10)))
-    (is (= (wcar* (car/get num-key))      "10"))
-    (is (= (wcar* (car/get freeze-key)) 10))
-
-    (wcar* (car/set freeze-key (car/freeze "secret" {:password [:cached "p"]})))
-    (is (= "secret" (car/with-thaw-opts {:password [:cached "p"]}
-                      (wcar* (car/get freeze-key)))))))
-
 (deftest test-binary-safety
   (let [k (test-key "binary-safety")
         ba (byte-array [(byte 3) (byte 1) (byte 4)])]
