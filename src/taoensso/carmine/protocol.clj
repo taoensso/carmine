@@ -158,17 +158,41 @@
       (throw (Exception. (str "Server returned unknown reply type: "
                               reply-type))))))
 
+;;;; Parsers
+
+(defmacro parse
+  "Wraps body so that replies to any wrapped Redis commands will be parsed with
+  `(f reply)`. Replaces any current parser; removes parser when `f` is nil.
+  See also `parser-comp`."
+  [f & body] `(binding [*parser* ~f] ~@body))
+
+(defn parser-comp "Composes parsers when f or g are nnil, preserving metadata."
+  [f g] (let [m (merge (meta g) (meta f))]
+          (with-meta (utils/comp-maybe f g) m)))
+
+(defn return
+  "Takes value and returns it unchanged as part of next reply from Redis server.
+  Unlike `echo`, does not actually send any data to Redis."
+  [value]
+  (let [vfn (with-meta identity {:dummy-reply value})]
+    (swap! (:parser-queue *context*) conj (parser-comp *parser* vfn))))
+
 (defn- get-parsed-reply [^DataInputStream in parser]
   (if-not parser
     (get-basic-reply in false) ; Common case
-    (let [{:keys [dummy-reply? raw?] :as m} (meta parser)]
-      (let [reply (when-not dummy-reply? (get-basic-reply in raw?))]
+    (let [;; Implementation detail! We use metadata to control optional
+          ;; reply/parser opts. Metadata is *merged* on parser composition.
+          {:keys [dummy-reply raw? parse-exceptions?] :as m} (meta parser)
+          reply (if (contains? m :dummy-reply) dummy-reply
+                    (get-basic-reply in raw?))]
+      (if (and (instance? Exception reply) (not parse-exceptions?))
+        reply ; Pass through w/o parsing
         (try (parser reply)
              (catch Exception e
-               (Exception. (str "Parser error: " (.getMessage e)) e)))))))
+               (Exception. (format "Parser error: %s" (.getMessage e)) e)))))))
 
-(defn get-replies
-  "Implementation detail - don't use this.
+(defn get-parsed-replies
+  "Implementation detail.
   BLOCKS to receive queued (pipelined) replies from Redis server. Applies all
   parsing and returns the result. Note that Redis returns replies as a FIFO
   queue per connection."
@@ -177,25 +201,38 @@
         pq          (:parser-queue *context*)
         parsers     @pq
         reply-count (count parsers)]
-
     (when (pos? reply-count)
       (reset! pq [])
       (if (or (> reply-count 1) as-pipeline?)
         (mapv #(get-parsed-reply in %) parsers)
-        (let [reply (get-parsed-reply in (nth parsers 0))]
-          (if (instance? Exception reply) (throw reply) reply))))))
+        (let [single-reply (get-parsed-reply in (nth parsers 0))]
+          (if (instance? Exception single-reply) (throw single-reply)
+              single-reply))))))
+
+;;;; General-purpose macros
+
+(defmacro with-replies
+  "Alpha - subject to change.
+  Evaluates body, immediately returning the server's response to any contained
+  Redis commands (i.e. before enclosing context ends).
+
+  As an implementation detail, stashes and then `return`s any replies already
+  queued with Redis server: i.e. should be compatible with pipelining."
+  {:arglists '([:as-pipeline & body] [& body])}
+  [& [s1 & sn :as sigs]]
+  (let [as-pipeline? (identical? s1 :as-pipeline)
+        body         (if as-pipeline? sn sigs)]
+    `(let [stashed-replies# (get-parsed-replies :as-pipeline)]
+       (try (do ~@body) ; TODO Now safe w/o (parse nil ...)?
+            (get-parsed-replies ~as-pipeline?)
+            (finally (parse nil (mapv return stashed-replies#)))))))
 
 (defmacro with-context
-  "Evaluates body in the context of a thread-bound connection to a Redis server.
-  For non-listener connections, returns server's response."
-  {:arglists '([conn :as-pipeline & body] [conn & body])}
-  [conn & [s1 & sn :as sigs]]
-  (let [as-pipeline? (identical? s1 :as-pipeline)
-        body (if as-pipeline? sn sigs)]
-    `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~conn
-           listener?# (:listener? spec#)]
-       (binding [*parser*  nil
-                 *context* (->Context in-stream# out-stream# (when-not listener?#
-                                                               (atom [])))]
-         ~@body
-         (when-not listener?# (get-replies ~as-pipeline?))))))
+  "Evaluates body in the context of a thread-bound connection to a Redis server."
+  [conn & body]
+  `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~conn
+         listener?# (:listener? spec#)]
+     (binding [*context* (->Context in-stream# out-stream#
+                                    (when-not listener?# (atom [])))
+               *parser*  nil]
+       ~@body)))

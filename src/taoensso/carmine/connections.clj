@@ -22,7 +22,9 @@
   (conn-alive? [this]
     (if (:listener? spec)
       true ; TODO Waiting on Redis update, Ref. http://goo.gl/LPhIO
-      (= "PONG" (try (protocol/with-context this (taoensso.carmine/ping))
+      (= "PONG" (try (->> (taoensso.carmine/ping)
+                          (protocol/with-replies)
+                          (protocol/with-context this))
                      (catch Exception _)))))
   (close-conn [_] (.close socket)))
 
@@ -49,9 +51,12 @@
                                            (DataInputStream.))
                                        (-> (.getOutputStream socket)
                                            (BufferedOutputStream.)))]
-    (when password (protocol/with-context conn (taoensso.carmine/auth password)))
-    (when (and db (not (zero? db))) (protocol/with-context conn
-                                      (taoensso.carmine/select (str db))))
+    (when password (->> (taoensso.carmine/auth password)
+                        (protocol/with-replies)
+                        (protocol/with-context conn)))
+    (when (and db (not (zero? db))) (->> (taoensso.carmine/select (str db))
+                                         (protocol/with-replies)
+                                         (protocol/with-context conn)))
     conn))
 
 ;; A degenerate connection pool: gives pool-like interface for non-pooled conns
