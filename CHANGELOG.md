@@ -1,3 +1,24 @@
+## v2.3.1 → v2.4.0-beta1 (major update)
+
+  * **IMPORTANT** Message queues: pre-2.4.0-beta1 queues *should* be compatible with 2.4.0-beta1+, but I would recommend **draining your old queues before upgrading** to 2.4.0-beta1+ to be on the safe side. That is: if you have any queued work outstanding - finish processing the work **before upgrading Carmine**.
+  * **POTENTIALLY BREAKING** Parsers: `with-replies` now passes enclosing parser state to its body. This only affects you if you have used `with-replies` to write custom Redis commands that operate within an implicit context _and_ you interpret the `with-replies` result internally. The new docstring contains details.
+
+  * Parsers: completely refactored design for robustness+flexibility.
+  * Parsers: new unit-test suite.
+  * Parsers: fixed a number of subtle bugs, mostly internal.
+  * Parsers: Added `parser-comp` fn for composing parsers (see docstring for details).
+
+  * Message queues: completely refactored design for robustness+efficiency.
+  * Message queues: new unit-test suite.
+  * Message queues: fixed a number of bugs, mostly garbage-collection issues.
+  * Message queues: `enqueue` now accepts an optional, custom unique message id (e.g. message hash).
+  * Message queues: handlers may now return {:status :success :backoff-ms `<msecs>`} for de-duplicate backoff. `enqueue` will return an error in these cases (see docstring for details).
+  * Message queues: `message-status` can now be called within pipelines.
+  * Message queues: `message-status` now has more detailed return types (see docstring for details).
+  * Message queues: multi-worker end-of-queue backoffs are now synchronized more efficiently.
+  * Message queues: workers now accept an optional monitor fn for queue-status logging, etc. (see docstring for details). A default monitor is provided that will warn when queue size > 1000 items.
+
+
 ## v2.2.3 → v2.3.1
   * **DEPRECATED**: `atomically`, `ensure-atomically` -> `atomic`. The new macro is faster, more robust, more flexible. See docstring for details.
   * Official Redis command fns now contain a `:redis-api` metadata key that describes the first version of Redis to support the command.
