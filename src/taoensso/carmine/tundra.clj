@@ -20,7 +20,7 @@
 
 ;;;; Private Redis commands
 
-(def ^:private tkey (memoize (partial car/kname "carmine" "tundra")))
+(def ^:private tkey (memoize (partial car/key :carmine :tundra)))
 
 (defn- extend-exists
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
@@ -222,8 +222,8 @@
             (timbre/trace "Worker job running:" wopts)
             (let [kdset (tkey :dirty)
                   kcset (tkey :cleaning)
-                  [ks-dirty ks-cleaning] (wcar {} (car/smembers kdset)
-                                                  (car/smembers kcset))
+                  [ks-dirty ks-cleaning] (wcar conn (car/smembers kdset)
+                                                    (car/smembers kcset))
 
                   ;; Grab ks from both dirty AND cleaning sets (the
                   ;; latter will be empty unless prev work-fn failed):
@@ -231,9 +231,9 @@
 
               (when-not (empty? ks-to-freeze)
                 (timbre/trace "Freezing keys:" ks-to-freeze)
-                (wcar {} (mapv (partial car/smove kdset kcset) ks-to-freeze))
+                (wcar conn (mapv (partial car/smove kdset kcset) ks-to-freeze))
                 (let [dumps ; [<raw-data-or-nil> ...]
-                      (wcar {} (car/parse-raw (mapv car/dump ks-to-freeze)))
+                      (wcar conn (car/parse-raw (mapv car/dump ks-to-freeze)))
 
                       keyed-data ; {<existing-redis-key> <frozen-data> ...}
                       (let [thawed-data
@@ -256,7 +256,7 @@
                           ks-failed    (vec (reduce disj (set ks-to-freeze)
                                                     ks-succeeded))]
 
-                      (wcar {} (mapv (partial car/srem kcset) ks-succeeded))
+                      (wcar conn (mapv (partial car/srem kcset) ks-succeeded))
                       (when-not (empty? ks-failed) ; Don't rethrow!
                         (let [ex (ex-info "Failed to freeze some key(s)"
                                           {:failed-ks ks-failed})]

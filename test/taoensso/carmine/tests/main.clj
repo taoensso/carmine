@@ -5,6 +5,8 @@
             [taoensso.carmine.protocol   :as protocol]
             [taoensso.carmine.benchmarks :as benchmarks]))
 
+(comment (test/run-tests '[taoensso.carmine.tests.main]))
+
 (defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
 (defn tkey [key] (car/key :carmine :temp :test))
 (defn clean-up-tkeys! [] (when-let [ks (seq (wcar* (car/keys (tkey :*))))]

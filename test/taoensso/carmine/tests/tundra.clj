@@ -26,10 +26,10 @@
 
 (defn- before-run {:expectations-options :before-run} []
   (println "Setting up testing environment...")
-  (tfar/ensure-table creds
-    {:name        ttable
-     :throughput  {:read 1 :write 1}
-     :block?      false})
+  (tfar/ensure-table creds ttable [:key-ns :s]
+    {:range-keydef [:redis-key :s]
+     :throughput   {:read 1 :write 1}
+     :block?       true})
   (cleanup)
   (println "Ready to roll..."))
 

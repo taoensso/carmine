@@ -76,7 +76,7 @@
     * \"category:subcategory:id:field\" basic form.
     * Singular category names (\"account\" rather than \"accounts\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
-  [& parts] (str/join ":" (map utils/keyname parts)))
+  [& parts] (str/join ":" (mapv utils/keyname parts)))
 
 (comment (key :foo/bar :baz "qux" nil 10))
 
