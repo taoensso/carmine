@@ -3,7 +3,7 @@
   Simple implementation. Very simple API. Reliable. Fast.
 
   Redis keys:
-    * carmine:mq:<qname>:msgs         -> hash, {mid mcontent}.
+    * carmine:mq:<qname>:messages     -> hash, {mid mcontent}.
     * carmine:mq:<qname>:locks        -> hash, {mid lock-expiry-time}.
     * carmine:mq:<qname>:backoffs     -> hash, {mid backoff-expiry-time}.
     * carmine:mq:<qname>:nattempts    -> hash, {mid attempt-count}.
@@ -44,10 +44,10 @@
 
 (defn queue-status [conn qname]
   (let [qk (partial qkey qname)]
-    (zipmap [:msgs :locks :backoffs :nattempts :mid-circle :gc
+    (zipmap [:messages :locks :backoffs :nattempts :mid-circle :gc
              :eoq-backoff? :ndry-runs]
      (wcar conn
-       (car/hgetall*      (qk :msgs))
+       (car/hgetall*      (qk :messages))
        (car/hgetall*      (qk :locks))
        (car/hgetall*      (qk :backoffs))
        (car/hgetall*      (qk :nattempts))
@@ -74,7 +74,7 @@
     local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
     local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
 
-    if redis.call('hexists', _:qk-msgs, _:mid) ~= 1 then
+    if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
       if (now < backoff_exp) then return 'done-with-backoff' end
       return nil
     else -- Necessary for `enqueue`
@@ -87,7 +87,7 @@
         return 'queued'
       end
     end"
-    {:qk-msgs     (qkey qname :msgs)
+    {:qk-messages (qkey qname :messages)
      :qk-locks    (qkey qname :locks)
      :qk-backoffs (qkey qname :backoffs)
      :qk-gc       (qkey qname :gc)}
@@ -109,7 +109,7 @@
     local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
     local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
 
-    if redis.call('hexists', _:qk-msgs, _:mid) ~= 1 then
+    if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
       if (now < backoff_exp) then return 'done-with-backoff' end
       -- return nil
     else
@@ -124,7 +124,7 @@
     end
     ---
 
-    redis.call('hset', _:qk-msgs, _:mid, _:mcontent)
+    redis.call('hset', _:qk-messages, _:mid, _:mcontent)
 
     -- lpushnx end-of-circle marker to ensure an initialized mid-circle
     if redis.call('exists', _:qk-mid-circle) ~= 1 then
@@ -134,7 +134,7 @@
     redis.call('lpush', _:qk-mid-circle, _:mid)
     return {_:mid} -- Wrap to distinguish from error replies
 " ; Necessary for Lua script-end weirdness
-    {:qk-msgs       (qkey qname :msgs)
+    {:qk-messages   (qkey qname :messages)
      :qk-locks      (qkey qname :locks)
      :qk-backoffs   (qkey qname :backoffs)
      :qk-mid-circle (qkey qname :mid-circle)
@@ -192,7 +192,7 @@
      if redis.call('sismember', _:qk-gc, mid) == 1 then -- GC
        redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
        redis.call('srem', _:qk-gc,            mid)
-       redis.call('hdel', _:qk-msgs,          mid)
+       redis.call('hdel', _:qk-messages,      mid)
        redis.call('hdel', _:qk-locks,         mid)
        --redis.call('hdel', _:qk-backoffs,    mid) -- No! Will use as dedupe backoff
        redis.call('hdel', _:qk-nattempts,     mid)
@@ -210,10 +210,10 @@
      redis.call('hdel', _:qk-backoffs, mid) -- Expired, so prune (keep gc-prune fast)
      redis.call('set',  _:qk-ndry-runs, 0) -- Did work
 
-     local mcontent  = redis.call('hget',    _:qk-msgs,      mid)
+     local mcontent  = redis.call('hget',    _:qk-messages,  mid)
      local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1)
      return {mid, mcontent, nattempts}"
-     {:qk-msgs        (qkey qname :msgs)
+     {:qk-messages    (qkey qname :messages)
       :qk-locks       (qkey qname :locks)
       :qk-backoffs    (qkey qname :backoffs)
       :qk-nattempts   (qkey qname :nattempts)

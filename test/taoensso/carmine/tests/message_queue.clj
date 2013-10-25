@@ -22,9 +22,9 @@
 (expect (constantly true) (mq/clear-queues {} tq))
 (expect "eoq-backoff" (wcar {} (dequeue* tq)))
 (expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
-(expect {:msgs {"mid1" :msg1}, :mid-circle ["mid1" "end-of-circle"]}
+(expect {:messages {"mid1" :msg1}, :mid-circle ["mid1" "end-of-circle"]}
         (-> (mq/queue-status {} tq)
-            (select-keys [:mid-circle :msgs])))
+            (select-keys [:mid-circle :messages])))
 (expect :queued                     (wcar {} (mq/message-status tq :mid1)))
 (expect {:carmine.mq/error :queued} (wcar {} (mq/enqueue tq :msg1 :mid1))) ; Dupe
 (expect "eoq-backoff"    (wcar {} (dequeue* tq)))
