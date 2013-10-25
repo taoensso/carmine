@@ -158,7 +158,9 @@
     (let [ks (prep-ks ks)
           {:keys [redis-ttl-ms]} opts
           existance-replies (->> (extend-exists redis-ttl-ms ks)
-                                 (car/with-replies)) ; Throws on errors
+                                 (car/with-replies)
+                                 (car/parse nil) ; Nb
+                                 ) ; Throws on errors
           missing-ks        (->> (mapv #(when (zero? %2) %1) ks existance-replies)
                                  (filterv identity))]
 
@@ -176,6 +178,7 @@
                        (car/return (Exception. "Malformed fetch data"))
                        (car/restore k (or redis-ttl-ms 0) (car/raw data))))
                    (car/with-replies :as-pipeline) ; ["OK" "OK" ...]
+                   (car/parse nil) ; Nb
                    (zipmap (keys keyed-data)))
 
               errors ; {<redis-key> <error> ...}
@@ -199,7 +202,9 @@
     (let [ks (prep-ks ks)
           {:keys [redis-ttl-ms]} opts
           existance-replies (->> (pexpire-dirty-exists redis-ttl-ms ks)
-                                 (car/with-replies)) ; Throws on errors
+                                 (car/with-replies)
+                                 (car/parse nil) ; Nb
+                                 ) ; Throws on errors
           missing-ks        (->> (mapv #(when (zero? %2) %1) ks existance-replies)
                                  (filterv identity))]
       (when-not (empty? missing-ks)

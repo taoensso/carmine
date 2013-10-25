@@ -1,6 +1,8 @@
 (ns taoensso.carmine.tests.main
-  (:require [expectations     :as test :refer :all]
+  (:require [clojure.string :as str]
+            [expectations     :as test :refer :all]
             [taoensso.carmine :as car  :refer (wcar)]
+            [taoensso.carmine.protocol   :as protocol]
             [taoensso.carmine.benchmarks :as benchmarks]))
 
 (defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
@@ -11,7 +13,62 @@
 (defn- before-run {:expectations-options :before-run} [] (clean-up-tkeys!))
 (defn- after-run  {:expectations-options :after-run}  [] (clean-up-tkeys!))
 
-;;;; atomic
+;;;; Parsers
+;; Like middleware, comp order can get confusing
+
+;; Basic parsing
+(expect ["PONG" "pong" "pong" "PONG"]
+  (wcar {} (car/ping) (car/parse str/lower-case (car/ping) (car/ping)) (car/ping)))
+
+;; Cancel parsing
+(expect "YoLo" (wcar {} (->> (car/echo "YoLo")
+                             (car/parse nil)
+                             (car/parse str/upper-case))))
+
+;; No auto-composition: last-applied (inner) parser wins
+(expect "yolo" (wcar {} (->> (car/echo "YoLo")
+                             (car/parse str/lower-case)
+                             (car/parse str/upper-case))))
+
+;; Dynamic composition: prefer inner
+(expect "yolo" (wcar {} (->> (car/echo "YoLo")
+                             (car/parse (car/parser-comp str/lower-case
+                                                         protocol/*parser*))
+                             (car/parse str/upper-case))))
+
+;; Dynamic composition: prefer outer
+(expect "YOLO" (wcar {} (->> (car/echo "YoLo")
+                             (car/parse (car/parser-comp protocol/*parser*
+                                                         str/lower-case))
+                             (car/parse str/upper-case))))
+
+;; Dynamic composition with metadata (`return` uses metadata and auto-composes)
+(expect "yolo" (wcar {} (->> (car/return "YoLo") (car/parse str/lower-case ))))
+
+;;; Exceptions pass through by default
+(expect Exception (wcar {} (->> (car/return (Exception. "boo")) (car/parse keyword))))
+(expect vector?   (wcar {} (->> (do (car/return (Exception. "boo"))
+                                    (car/return (Exception. "boo")))
+                                (car/parse keyword))))
+
+;; Parsers can elect to handle exceptions, even over `return`
+(expect "Oh noes!" (wcar {} (->> (car/return (Exception. "boo"))
+                                 (car/parse
+                                  (-> #(if (instance? Exception %) "Oh noes!" %)
+                                      (with-meta {:parse-exceptions? true}))))))
+
+;; Lua (`with-replies`) errors bypass normal parsers
+(expect Exception (wcar {} (->> (car/lua "invalid" {:_ :_} {}) (car/parse keyword))))
+
+;; Parsing passes `with-replies` barrier
+(expect [["ONE" "three"] "two"]
+  (let [p (promise)]
+    [(wcar {} (car/echo "ONE") (car/parse str/lower-case
+                                 (deliver p (car/with-replies (car/echo "TWO")))
+                                 (car/echo "THREE")))
+     @p]))
+
+;;;; `atomic`
 
 (expect Exception (car/atomic {} 1)) ; Missing multi
 (expect Exception (car/atomic {} 1 (car/multi))) ; Empty multi

@@ -12,6 +12,8 @@
 
 ;;;; Connections
 
+(utils/defalias with-replies protocol/with-replies)
+
 (defmacro wcar
   "Evaluates body in the context of a thread-bound pooled connection to Redis
   server. Sends Redis commands to server as pipeline and returns the server's
@@ -32,16 +34,20 @@
   `(let [{pool-opts# :pool spec-opts# :spec} ~conn
          [pool# conn#] (conns/pooled-conn pool-opts# spec-opts#)]
      (try
-       (let [response# (protocol/with-context conn# ~@sigs)]
+       (let [response# (protocol/with-context conn#
+                         (with-replies ~@sigs))]
          (conns/release-conn pool# conn#)
          response#)
        (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
 
-(comment (wcar {} (ping) "not-a-Redis-command" (ping))
-         (with-open [p (conns/conn-pool {})]
-           (wcar {:pool p} (ping) (ping)))
-         (wcar {} (ping))
-         (wcar {} :as-pipeline (ping)))
+(comment
+  (wcar {} (ping) "not-a-Redis-command" (ping))
+  (with-open [p (conns/conn-pool {})] (wcar {:pool p} (ping) (ping)))
+  (wcar {} (ping))
+  (wcar {} :as-pipeline (ping))
+
+  (wcar {} (echo 1) (println (with-replies (ping))) (echo 2))
+  (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
 
 ;;;; Misc
 
@@ -56,10 +62,8 @@
                             (throw (Exception. (str "Couldn't coerce as bool: "
                                                     x))))))
 
-(defmacro parse
-  "Wraps body so that replies to any wrapped Redis commands will be parsed with
-  `(f reply)`. Replaces any current parser; removes parser when `f` is nil."
-  [f & body] `(binding [protocol/*parser* ~f] ~@body))
+(utils/defalias parse       protocol/parse)
+(utils/defalias parser-comp protocol/parser-comp)
 
 (defmacro parse-long    [& body] `(parse as-long   ~@body))
 (defmacro parse-double  [& body] `(parse as-double ~@body))
@@ -82,40 +86,9 @@
   "Forces argument of any type (incl. keywords, simple numbers, and binary types)
   to be subject to automatic de/serialization with Nippy.")
 
-(defn return
-  "Special command that takes any value and returns it unchanged as part of
-  an enclosing `wcar` pipeline response."
-  [value]
-  (let [vfn (constantly value)]
-    (swap! (:parser-queue protocol/*context*) conj
-           (with-meta (utils/comp-maybe protocol/*parser* vfn)
-             {:dummy-reply? true}))))
-
+(utils/defalias return protocol/return)
 (comment (wcar {} (return :foo) (ping) (return :bar))
          (wcar {} (parse name (return :foo)) (ping) (return :bar)))
-
-;; TODO Could probably merge at least some `with-replies`, `with-context` logic.
-(defmacro with-replies
-  "Alpha - subject to change.
-  Evaluates body, immediately returning the server's response to any contained
-  Redis commands (i.e. before enclosing `wcar` ends). Ignores any parser
-  in enclosing (not _enclosed_) context.
-
-  As an implementation detail, stashes and then `return`s any replies already
-  queued with Redis server: i.e. should be compatible with pipelining."
-  {:arglists '([:as-pipeline & body] [& body])}
-  [& [s1 & sn :as sigs]]
-  (let [as-pipeline? (= s1 :as-pipeline)
-        body (if as-pipeline? sn sigs)]
-    `(let [stashed-replies# (protocol/get-replies :as-pipeline)]
-       (try (parse nil ~@body) ; Herewith dragons; tread lightly
-            (protocol/get-replies ~as-pipeline?)
-            (finally
-             ;; doseq here broken with Clojure <1.5, Ref. http://goo.gl/5DvRt
-             (parse nil (dorun (map return stashed-replies#))))))))
-
-(comment (wcar {} (echo 1) (println (with-replies (ping))) (echo 2))
-         (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
 
 ;;;; Standard commands
 
@@ -155,7 +128,9 @@
   Redis Cluster note: keys need to all be on same shard."
   [script numkeys key & args]
   (let [[r & _] (->> (apply evalsha* script numkeys key args)
-                     (with-replies :as-pipeline))]
+                     (with-replies :as-pipeline)
+                     (parse nil) ; Nb
+                     )]
     (if (and (instance? Exception r)
              (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
       (apply eval script numkeys key args)
@@ -221,7 +196,7 @@
         inner-parser (when-let [p protocol/*parser*] #(mapv p %))
         outer-parser #(zipmap fields %)]
     (->> (apply hmget key fields)
-         (parse (utils/comp-maybe outer-parser inner-parser)))))
+         (parse (parser-comp outer-parser inner-parser)))))
 
 (defn hgetall*
   "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
@@ -232,7 +207,7 @@
                        #(utils/keywordize-map (apply hash-map %))
                        #(apply hash-map %))]
     (->> (hgetall key)
-         (parse (utils/comp-maybe outer-parser inner-parser)))))
+         (parse (parser-comp outer-parser inner-parser)))))
 
 (comment (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
          (wcar {} (hmset* "hkey" {})) ; ex
@@ -346,8 +321,10 @@
                   (catch Exception e#
                     (discard) ; Always return conn to normal state
                     (throw e#)))
-             (reset! prelude-result# (protocol/get-replies :as-pipeline))
-             (let [r# (with-replies (exec))]
+             (reset! prelude-result# (protocol/get-parsed-replies :as-pipeline))
+             (let [r# (->> (with-replies (exec))
+                           (parse nil) ; Nb
+                           )]
                (if (not= r# []) ; => empty `mutli` or watched key changed
                  (return r#)
                  (if (= idx# max-idx#)
@@ -356,7 +333,7 @@
                    (recur (inc idx#)))))))]
 
      [@prelude-result#
-      ;; Mimic normal `get-replies` behaviour here re: vectorized replies:
+      ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
       (let [r# exec-result#]
         (if (next r#) r#
             (let [r# (nth r# 0)]
@@ -518,8 +495,9 @@
        ~@body)
 
      ;; Body discards will result in an (exec) exception:
-     (parse (utils/comp-maybe protocol/*parser*
-              #(if (instance? Exception %) [] %))
+     (parse (parser-comp protocol/*parser*
+                         (-> #(if (instance? Exception %) [] %)
+                             (with-meta {:parse-exceptions? true})))
             (exec))))
 
 (defmacro ensure-atomically "DEPRECATED: Use `atomic` instead."
@@ -535,4 +513,3 @@
              (throw (Exception. (str "`ensure-atomically` failed after " idx#
                                      " attempts")))
              (recur (inc idx#))))))))
-
