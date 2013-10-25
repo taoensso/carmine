@@ -128,7 +128,9 @@
   Redis Cluster note: keys need to all be on same shard."
   [script numkeys key & args]
   (let [[r & _] (->> (apply evalsha* script numkeys key args)
-                     (with-replies :as-pipeline))]
+                     (with-replies :as-pipeline)
+                     (parse nil) ; Nb
+                     )]
     (if (and (instance? Exception r)
              (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
       (apply eval script numkeys key args)
@@ -320,7 +322,9 @@
                     (discard) ; Always return conn to normal state
                     (throw e#)))
              (reset! prelude-result# (protocol/get-parsed-replies :as-pipeline))
-             (let [r# (with-replies (exec))]
+             (let [r# (->> (with-replies (exec))
+                           (parse nil) ; Nb
+                           )]
                (if (not= r# []) ; => empty `mutli` or watched key changed
                  (return r#)
                  (if (= idx# max-idx#)

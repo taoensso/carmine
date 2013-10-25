@@ -217,13 +217,19 @@
   Redis commands (i.e. before enclosing context ends).
 
   As an implementation detail, stashes and then `return`s any replies already
-  queued with Redis server: i.e. should be compatible with pipelining."
-  {:arglists '([:as-pipeline & body] [& body])}
+  queued with Redis server: i.e. should be compatible with pipelining.
+
+  Note on parsers: if you're writing a Redis command (e.g. a fn that is intended
+  to execute w/in an implicit connection context) and you're using `with-replies`
+  as an implementation detail (i.e. you're interpreting replies internally), you
+  probably want `(parse nil (with-replies ...))` to keep external parsers from
+  leaking into your internal logic."
+  {:arglists '([:as-pipeline & body] [& body])} ; TODO Consider [opts-map & body]
   [& [s1 & sn :as sigs]]
   (let [as-pipeline? (identical? s1 :as-pipeline)
         body         (if as-pipeline? sn sigs)]
     `(let [stashed-replies# (get-parsed-replies :as-pipeline)]
-       (try (do ~@body) ; TODO Now safe w/o (parse nil ...)?
+       (try (do ~@body) ; (parse nil ~@body) would be hygienically conservative
             (get-parsed-replies ~as-pipeline?)
             (finally (parse nil (mapv return stashed-replies#)))))))
 
