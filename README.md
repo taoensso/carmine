@@ -282,7 +282,15 @@ Redis makes a great [message queue server](http://antirez.com/post/250):
 (mq/stop my-worker)
 ```
 
-Look simple? It is. But it's also distributed, fault-tolerant, and _fast_. See the [API docs](http://ptaoussanis.github.io/carmine/taoensso.carmine.message-queue.html) for details.
+Look simple? It is. But it's also distributed, fault-tolerant, and _fast_.
+
+Guarantees:
+  * Messages are persistent (durable) as per Redis config.
+  * Each message will be handled once and only once.
+  * Handling is fault-tolerant: a message cannot be lost due to handler crash.
+  * Message de-duplication can be requested on an ad hoc (per message) basis. In these cases, the same message cannot ever be entered into the queue more than once simultaneously or within a (per message) specifiable post-handling backoff period.
+
+See the [API docs](http://ptaoussanis.github.io/carmine/taoensso.carmine.message-queue.html) for details.
 
 ### Distributed locks
 
