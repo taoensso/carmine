@@ -20,6 +20,14 @@
             [taoensso.carmine :as car :refer (wcar)]
             [taoensso.timbre  :as timbre]))
 
+;; TODO Redis 2.8+ Pub/Sub notifications could be used to more efficiently
+;; coordinate worker backoffs. This'd allow us to essentially go from a polling
+;; design to an evented design even w/o the need for a Lua brpoplpush.
+;;
+;; Note that we'd want the Pub/Sub notifier _in addition to_ the current
+;; rpoplpush design: both for atomicity and reliability (Pub/Sub doesn't
+;; currently have reliability guarantees).
+
 ;;;; Public utils
 
 (defn exp-backoff "Returns binary exponential backoff value."
