@@ -5,7 +5,7 @@
 [com.taoensso/carmine "2.4.0-beta1"] ; Development; see CHANGELOG for details
 ```
 
-v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for archiving cold data to an additional datastore. (A [Faraday DynamoDB](https://github.com/ptaoussanis/faraday) implementation is included).
+v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for replicating data to an additional datastore (S3 and DynamoDB implementations are included).
 
 This is a **mostly** backwards-compatible release. See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for migration details.
 
@@ -33,7 +33,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Simple, high-performance **message queue** (Redis 2.6+, stable v2+).
   * Simple, high-performance **distributed lock** (Redis 2.6+, stable v2+).
   * Pluggable **compression** and **encryption** support. (v2+)
-  * Includes _Tundra_, an API for **archiving cold data to an additional datastore**. (Redis 2.6+, v2+)
+  * Includes _Tundra_, an API for **replicating data to an additional datastore**. (Redis 2.6+, v2+)
 
 ## Getting started
 
@@ -305,70 +305,38 @@ See the [API docs](http://ptaoussanis.github.io/carmine/taoensso.carmine.message
 
 Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.locks` namespace for details.
 
-## Tundra
+## Tundra (beta)
 
-### Early alpha - work in progress: THIS MIGHT EAT ALL YOUR DATA
+Redis is a beautifully designed datastore that makes some explicit engineering tradeoffs. Probably the most important: your data _must_ fit in memory. Tundra helps relax this limitation: only your **hot** data need fit in memory. How does it work?
 
-Redis is great. [DynamoDB](http://aws.amazon.com/dynamodb/) is great. Together they're _amazing_. Tundra is a **semi-automatic datastore layer for Carmine** that marries the best of Redis **(simplicity, read+write performance, structured datatypes, low operational cost)** with the best of an additional datastore like DynamoDB **(scalability, reliability incl. off-site backups, and big-data storage)**. All with a secure, dead-simple, high-performance API.
+  1. Use Tundra's `dirty` command **any time you modify/create evictable keys**.
+  2. Use `worker` to create a threaded worker that'll **automatically replicate dirty keys to your secondary datastore**.
+  3. When a dirty key hasn't been used in a specified TTL, it will be **automatically evicted from Redis** (eviction is optional if you just want to use Tundra as a backup/just-in-case mechanism).
+  4. Use `ensure-ks` **any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
 
-Tundra allows you to live and work in Redis, with all Redis' usual API goodness and performance guarantees. But it eliminates one of Redis' biggest limitations: its hard dependence on memory capacity.
+That's it: two Redis commands, and a worker! Tundra uses Redis' own dump/restore mechanism for replication, and Carmine's own message queue to coordinate the replication worker.
 
-It works like this:
-  1. **Use** `dirty` **any time you modify/create evictable keys**.
-  2. Use `worker` to create a threaded worker that'll automatically copy batched dirty keys to your datastore.
-  3. When a dirty key hasn't been used in a specified TTL, it will be automatically evicted from Redis.
-  4. **Use** `ensure-ks` **any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
-
-Because a key will be dirtied at _most_ once for any number of local edits since last freezing, we get **full local write performance** along with a **knob to balance local/datastore consistency** with any costs that may be involved (e.g. performance or data transfer costs).
-
-Tundra can be easily extended to **any K/V-capable datastore**, but DynamoDB makes a particularly good fit and an implementation is provided out-the-box for the [Faraday DynamoDB client](https://github.com/ptaoussanis/faraday) (requires Clojure 1.5+).
-
-#### An example: Tundra & Faraday
+Tundra can be _very_ easily extended to **any K/V-capable datastore**. Implementations are provided out-the-box for: **Amazon S3** and **DynamoDB**.
 
 ```clojure
 (:require [taoensso.carmine.tundra :as tundra :refer (ensure-ks dirty)]
-          [taoensso.carmine.tundra.faraday :as tfar]) ; Add to ns
+          [taoensso.carmine.tundra.s3]) ; Add to ns
 
-(def creds {:access-key "<AWS_DYNAMODB_ACCESS_KEY>"
-            :secret-key "<AWS_DYNAMODB_SECRET_KEY>"}) ; AWS IAM credentials
-
-;; Create a DynamoDB table for key data storage (this can take ~2m):
-(tfar/ensure-table creds {:throughput {:read 1 :write 1} :block? true})
-
-;; Create a TundraStore backed by the above table:
-(def tstore
+(def my-tundra-store
   (tundra/tundra-store
-   (tfar/faraday-datastore creds
-     {:key-ns :my-app.production             ; For multiple apps/envs per table
-      :auto-write-units {0 1, 100 2, 200, 4} ; For automatic write-throughput scaling
-      })
+    ;; A datastore that implements the necessary (easily-extendable) protocol:
+    (taoensso.carmine.tundra.s3/s3-datastore {:access-key "" :secret-key ""}
+      "my-bucket/my-folder")))
 
-   {:freezer      nippy-freezer ; Use Nippy for compression/encryption
-    :redis-ttl-ms (* 1000 60 60 24 31) ; Evict cold keys after one month
-    }))
-
-;; Create a threaded worker to freeze dirty keys every hour:
-(def tundra-worker
-  (tundra/worker tstore {:pool {} :spec {}} ; Redis connection
-    {:frequency-ms (* 1000 60 60)}))
-
-;; Let's create some new evictable keys:
-(wcar* (car/mset :k1 0 :k2 0 :k3 0)
-       (dirty tstore :k1 :k2 :k3))
-
-;; Now imagine time passes and some keys get evicted:
-(wcar* (car/del :k1 :k3))
-
-;; And now we want to use our evictable keys:
-(wcar*
- (ensure-ks tstore :k1 :k2 :k3) ; Ensures previously-created keys are available
- (car/mget :k1 :k2 :k3)         ; Gets their current value
- (mapv car/incr [:k1 :k3])      ; Modifies them
- (dirty tstore :k1 :k3)         ; Marks them for later refreezing by worker
- )
+;; Now we have access to the Tundra API:
+(comment
+ (worker    my-tundra-store {} {}) ; Create a replication worker
+ (dirty     my-tundra-store "foo:bar1" "foo:bar2" ...) ; Queue for replication
+ (ensure-ks my-tundra-store "foo:bar1" "foo:bar2" ...) ; Fetch from replica when necessary
+)
 ```
 
-So the entire API consists of 3 fns: `worker`, `ensure-ks`, and `dirty`. See their docstrings for more info.
+See the relevant docstrings for details
 
 ## Performance
 
