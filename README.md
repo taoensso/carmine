@@ -268,18 +268,18 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 Redis makes a great [message queue server](http://antirez.com/post/250):
 
 ```clojure
-(:require [taoensso.carmine.message-queue :as mq]) ; Add to `ns` macro
+(:require [taoensso.carmine.message-queue :as car-mq]) ; Add to `ns` macro
 
 (def my-worker
-  (mq/worker {:pool {<opts>} :spec {<opts>}} "my-queue"
+  (car-mq/worker {:pool {<opts>} :spec {<opts>}} "my-queue"
    {:handler (fn [{:keys [message attempt]}]
                (println "Received" message)
                {:status :success})}))
 
-(wcar* (mq/enqueue "my-queue" "my message!"))
+(wcar* (car-mq/enqueue "my-queue" "my message!"))
 %> Received my message!
 
-(mq/stop my-worker)
+(car-mq/stop my-worker)
 ```
 
 Look simple? It is. But it's also distributed, fault-tolerant, and _fast_.
