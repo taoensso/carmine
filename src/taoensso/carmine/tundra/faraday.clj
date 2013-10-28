@@ -10,6 +10,9 @@
   (:import  [taoensso.carmine.tundra IDataStore]))
 
 ;; TODO Add auto-threading support for saturating (very) high-throughput freezing?
+;; TODO Add support for splitting data > 64KB over > 1 keys? This may be tough
+;; to do well relative to the payoff. And I'm guessing there may be an official
+;; (Java) lib to offer this capability at some point?
 
 (def default-table :faraday.tundra.datastore.default.prod)
 
