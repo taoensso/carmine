@@ -39,7 +39,7 @@
 ;; (expect "eoq-backoff" (wcar {} (dequeue* tq)))
 ;; Handler will *not* run against eoq-backoff/nil reply:
 (expect nil (mq/handle1 {} tq nil (wcar {} (dequeue* tq))))
-(expect {:message :msg1, :attempt 1}
+(expect {:mid "mid1" :message :msg1, :attempt 1}
         (let [p (promise)]
           (mq/handle1 {} tq #(do (deliver p %) {:status :success})
                       (wcar {} (dequeue* tq)))
@@ -64,7 +64,7 @@
 (expect (constantly true) (mq/clear-queues {} tq))
 (expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
 (expect "eoq-backoff" (wcar {} (dequeue* tq)))
-(expect {:message :msg1, :attempt 1}
+(expect {:mid "mid1" :message :msg1, :attempt 1}
         (let [p (promise)]
           (mq/handle1 {} tq #(do (deliver p %) {:status :retry :backoff-ms 3000})
                       (wcar {} (dequeue* tq)))
@@ -80,7 +80,7 @@
 (expect (constantly true) (mq/clear-queues {} tq))
 (expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
 (expect "eoq-backoff" (wcar {} (dequeue* tq)))
-(expect {:message :msg1, :attempt 1}
+(expect {:mid "mid1" :message :msg1, :attempt 1}
         (let [p (promise)]
           (mq/handle1 {} tq #(do (deliver p %) {:status :success :backoff-ms 3000})
                       (wcar {} (dequeue* tq)))

@@ -267,7 +267,7 @@
                    "Error handling %s queue message:\n%s" qname poll-reply))
 
           {:keys [status throwable backoff-ms]}
-          (let [result (try (handler {:message mcontent :attempt attempt})
+          (let [result (try (handler {:mid mid :message mcontent :attempt attempt})
                             (catch Throwable t {:status :error :throwable t}))]
             (when (map? result) result))]
 
@@ -330,7 +330,7 @@
 (defn worker
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
   named queue. Options:
-   :handler        - (fn [{:keys [message attempt]}]) that throws an exception
+   :handler        - (fn [{:keys [mid message attempt]}]) that throws an exception
                      or returns {:status     <#{:success :error :retry}>
                                  :throwable  <Throwable>
                                  :backoff-ms <retry-or-dedupe-backoff-ms}.
