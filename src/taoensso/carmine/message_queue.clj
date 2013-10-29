@@ -9,6 +9,7 @@
     * carmine:mq:<qname>:nattempts    -> hash, {mid attempt-count}.
     * carmine:mq:<qname>:mid-circle   -> list, rotating list of mids.
     * carmine:mq:<qname>:gc           -> set, for efficient mid removal from circle.
+    * carmine:mq:<qname>:requeue      -> set, for `allow-locked-dupe?` enqueue.
     * carmine:mq:<qname>:eoq-backoff? -> ttl flag, used for queue-wide (every-worker)
                                          polling backoff.
     * carmine:mq:<qname>:ndry-runs    -> int, number of times worker(s) have burnt
@@ -52,7 +53,7 @@
 
 (defn queue-status [conn qname]
   (let [qk (partial qkey qname)]
-    (zipmap [:messages :locks :backoffs :nattempts :mid-circle :gc
+    (zipmap [:messages :locks :backoffs :nattempts :mid-circle :gc :requeue
              :eoq-backoff? :ndry-runs]
      (wcar conn
        (car/hgetall*      (qk :messages))
@@ -60,9 +61,10 @@
        (car/hgetall*      (qk :backoffs))
        (car/hgetall*      (qk :nattempts))
        (car/lrange        (qk :mid-circle) 0 -1)
-       (->> (car/smembers (qk :gc))            (car/parse set))
-       (->> (car/get      (qk :eoq-backoff?))  (car/parse-bool)) ; Give TTL?
-       (->> (car/get      (qk :ndry-runs))     (car/parse-long))))))
+       (->> (car/smembers (qk :gc))           (car/parse set))
+       (->> (car/smembers (qk :requeue))      (car/parse set))
+       (->> (car/get      (qk :eoq-backoff?)) (car/parse-bool)) ; Give TTL?
+       (->> (car/get      (qk :ndry-runs))    (car/parse-long))))))
 
 ;;;; Implementation
 
@@ -82,17 +84,20 @@
     local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
     local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
 
+    --- Note: `else`s necessary for `enqueue`
     if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
       if (now < backoff_exp) then return 'done-with-backoff' end
       return nil
-    else -- Necessary for `enqueue`
+    else
       if redis.call('sismember', _:qk-gc, _:mid) == 1 then
         if (now < backoff_exp) then return 'done-with-backoff' end
         return 'done-awaiting-gc'
-      else -- Necessary for `enqueue`
-        if (now < lock_exp)    then return 'locked'        end
-        if (now < backoff_exp) then return 'retry-backoff' end
-        return 'queued'
+      else
+        if     (now < lock_exp)    then return 'locked'
+        elseif (now < backoff_exp) then return 'retry-backoff'
+        else
+          return 'queued'
+        end
       end
     end"
     {:qk-messages (qkey qname :messages)
@@ -106,13 +111,23 @@
   "Pushes given message (any Clojure datatype) to named queue and returns unique
   message id or {:carmine.mq/error #{<:queued :locked :retry-backoff
                                       :done-with-backoff>}}.
-
-  For deduplication provide an explicit message id (e.g. message hash), otherwise
-  a unique message id will automatically be generated."
-  [qname message & [unique-message-id]]
+  Options:
+    unique-message-id  - Specify an explicit message id (e.g. message hash) to
+                         perform a de-duplication check. If unspecified, a unique
+                         message id will be auto-generated.
+    allow-locked-dupe? - Alpha - subject to change.
+                         When true, a locked message will NOT prevent an
+                         additional message with the same id from being queued.
+                         Actually, this message will be held in escrow and
+                         queued (once) iff the locked message completes handling
+                         successfully. This mechanism provides a tool for
+                         defeating race conditions when writing handlers which
+                         read Redis state that may change before handling has
+                         been acknowledged by queue."
+  [qname message & [unique-message-id allow-locked-dupe?]]
   (->>
    (car/lua
-    "--- Check for dupes (inline `message-status` logic)
+    "--- Check for dupes (modified `message-status` logic)
     local now         = tonumber(_:now)
     local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
     local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
@@ -125,31 +140,41 @@
         if (now < backoff_exp) then return 'done-with-backoff' end
         -- return 'done-awaiting-gc'
       else
-        if (now < lock_exp)    then return 'locked'        end
-        if (now < backoff_exp) then return 'retry-backoff' end
-        return 'queued'
+        if (now < lock_exp) then
+          if _:allow-locked-dupe? ~= 'true' then return 'locked' end
+        elseif (now < backoff_exp) then return 'retry-backoff'
+        else
+          return 'queued'
+        end
       end
     end
     ---
 
-    redis.call('hset', _:qk-messages, _:mid, _:mcontent)
+    if (now < lock_exp) then
+      redis.call('sadd', _:qk-requeue, _:mid)
+    else
+      redis.call('hset', _:qk-messages, _:mid, _:mcontent)
 
-    -- lpushnx end-of-circle marker to ensure an initialized mid-circle
-    if redis.call('exists', _:qk-mid-circle) ~= 1 then
-      redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
+      -- lpushnx end-of-circle marker to ensure an initialized mid-circle
+      if redis.call('exists', _:qk-mid-circle) ~= 1 then
+        redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
+      end
+
+      redis.call('lpush', _:qk-mid-circle, _:mid)
     end
 
-    redis.call('lpush', _:qk-mid-circle, _:mid)
     return {_:mid} -- Wrap to distinguish from error replies
 " ; Necessary for Lua script-end weirdness
     {:qk-messages   (qkey qname :messages)
      :qk-locks      (qkey qname :locks)
      :qk-backoffs   (qkey qname :backoffs)
      :qk-mid-circle (qkey qname :mid-circle)
-     :qk-gc         (qkey qname :gc)}
+     :qk-gc         (qkey qname :gc)
+     :qk-requeue    (qkey qname :requeue)}
     {:now           (System/currentTimeMillis)
      :mid           (or unique-message-id (str (java.util.UUID/randomUUID)))
-     :mcontent      (car/freeze message)})
+     :mcontent      (car/freeze message)
+     :allow-locked-dupe? (if allow-locked-dupe? "true" "false")})
    (car/parse #(if (vector? %) (first %) {:carmine.mq/error (keyword %)}))))
 
 (defn dequeue
@@ -251,17 +276,27 @@
   (when (and poll-reply (not= poll-reply "eoq-backoff"))
     (let [qk   (partial qkey qname)
           done (fn [status mid & [backoff-ms]]
-                 (wcar conn
-                   (when backoff-ms ; Retry or dedupe backoff, depending on type
-                     (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
-                                                     backoff-ms)))
-                   (case status
-                     :success (car/sadd (qk :gc)    mid) ; Queue for GC
-                     :retry   (car/hdel (qk :locks) mid) ; Unlock
-                     )))
+                 (car/atomic conn 100
+                   (car/watch (qk :requeue))
+                   (let [requeue?
+                         (wcar {} (->> (car/sismember (qk :requeue) mid)
+                                       (car/parse-bool)))
+                         status (if (and (= status :success) requeue?)
+                                  :requeue status)]
+                     (car/multi)
+                     (when backoff-ms ; Retry or dedupe backoff, depending on type
+                       (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
+                                                       backoff-ms)))
+                     (case status
+                       (:success :error) (car/sadd (qk :gc) mid) ; Queue for GC
+                       (:retry :requeue)
+                       (do (car/hdel (qk :locks)   mid) ; Unlock
+                           (car/srem (qk :requeue) mid)
+                           (when (= status :requeue)
+                             (car/hdel (qk :nattempts) mid)))))))
 
           error (fn [mid poll-reply & [throwable]]
-                  (done mid)
+                  (done :error mid)
                   (timbre/errorf
                    (if throwable throwable (Exception. ":error handler response"))
                    "Error handling %s queue message:\n%s" qname poll-reply))
@@ -288,7 +323,7 @@
   (start [_]
     (when-not @running?
       (reset! running? true)
-      (let [{:keys [handler monitor nthreads throttle-ms _]} opts
+      (let [{:keys [handler monitor nthreads throttle-ms]} opts
             qk (partial qkey qname)
             start-polling-loop!
             (fn []
