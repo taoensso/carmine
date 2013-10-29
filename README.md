@@ -1,13 +1,11 @@
 **[API docs](http://ptaoussanis.github.io/carmine/)** | **[CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "2.3.1"] ; Stable; see CHANGELOG for changes since 1.x
-[com.taoensso/carmine "2.4.0-beta1"] ; Development; see CHANGELOG for details
+[com.taoensso/carmine "2.3.1"]       ; Stable
+[com.taoensso/carmine "2.4.0-beta2"] ; Development
 ```
 
-v2 adds API improvements, integration with [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto, improved performance, additional message queue features, and [Tundra](#tundra) - an API for replicating data to an additional datastore (S3 and DynamoDB implementations are included).
-
-This is a **mostly** backwards-compatible release. See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for migration details.
+v2.4 is a major, backwards-compatible update which adds significant improvements to reply parsing, message queues, and [Tundra](#tundra-beta). See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for details.
 
 # Carmine, a Clojure Redis client & message queue
 
@@ -336,7 +334,9 @@ Tundra can be _very_ easily extended to **any K/V-capable datastore**. Implement
 )
 ```
 
-See the relevant docstrings for details
+Note that this API makes it convenient to use several different datastores simultaneously (perhaps for different purposes with different latency requirements).
+
+See the relevant [docstrings](http://ptaoussanis.github.io/carmine/taoensso.carmine.tundra.html) for details.
 
 ## Performance
 
