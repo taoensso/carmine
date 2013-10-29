@@ -15,12 +15,14 @@
 ;;;; Public interfaces
 
 (defprotocol IDataStore "Extension point for additional datastores."
-  (put-key   [dstore k v] "(put-key dstore \"key\" \"val\") => e/o #{true <ex>}")
-  (fetch-key [dstore k]   "(fetch-key dstore \"key\") => e/o #{<frozen-val> <ex>}\""))
+  (put-key   [dstore k v] "(put-key dstore \"key\" <frozen-val>) => e/o #{true <ex>}")
+  (fetch-key [dstore k] "(fetch-key dstore \"key\") => e/o #{<frozen-val> <ex>}\""))
 
 (defprotocol IFreezer "Extension point for compressors, encryptors, etc."
-  (freeze [freezer x] "Returns datastore-ready key val.")
-  (thaw   [freezer x] "Returns Redis-ready key val."))
+  (freeze [freezer x] "Returns datastore-ready key val.
+                       (comp put-key freeze): dump-ba -> datastore val.")
+  (thaw   [freezer x] "Returns Redis-ready key val.
+                       (comp thaw fetch-key): datastore val -> dump-ba."))
 
 (defprotocol ITundraStore
   (ensure-ks* [tstore ks])
