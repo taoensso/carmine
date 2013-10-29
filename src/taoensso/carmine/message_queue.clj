@@ -308,8 +308,8 @@
             qk (partial qkey qname)
             start-polling-loop!
             (fn []
-              (while @running?
-                (try
+              (try
+                (while @running?
                   (let [[poll-reply ndruns mid-circle-size]
                         (wcar conn (dequeue qname opts)
                                    (car/get  (qk :ndry-runs))
@@ -323,9 +323,8 @@
                       (Thread/sleep (max (wcar conn (car/pttl (qk :eoq-backoff?)))
                                          10))
                       (handle1 conn qname handler poll-reply)))
-
-                  (catch Throwable t (timbre/fatalf t "Worker error!") (throw t)))
-                (when throttle-ms (Thread/sleep throttle-ms))))]
+                  (when throttle-ms (Thread/sleep throttle-ms)))
+                (catch Throwable t (timbre/fatalf t "Worker error!") (throw t))))]
         (dorun (repeatedly nthreads (fn [] (future (start-polling-loop!))))))
       true)))
 
