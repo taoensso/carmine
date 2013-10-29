@@ -304,26 +304,29 @@
   (start [_]
     (when-not @running?
       (reset! running? true)
-      (future
-        (let [{:keys [handler monitor throttle-ms _]} opts
-              qk (partial qkey qname)]
-          (while @running?
-            (try
-              (let [[poll-reply ndruns mid-circle-size]
-                    (wcar conn (dequeue qname opts)
-                               (car/get  (qk :ndry-runs))
-                               (car/llen (qk :mid-circle)))]
+      (let [{:keys [handler monitor nthreads throttle-ms _]} opts
+            qk (partial qkey qname)
+            start-polling-loop!
+            (fn []
+              (while @running?
+                (try
+                  (let [[poll-reply ndruns mid-circle-size]
+                        (wcar conn (dequeue qname opts)
+                                   (car/get  (qk :ndry-runs))
+                                   (car/llen (qk :mid-circle)))]
 
-                (when monitor (monitor {:mid-circle-size mid-circle-size
-                                        :ndry-runs       (or ndruns 0)
-                                        :poll-reply      poll-reply}))
+                    (when monitor (monitor {:mid-circle-size mid-circle-size
+                                            :ndry-runs       (or ndruns 0)
+                                            :poll-reply      poll-reply}))
 
-                (if (= poll-reply "eoq-backoff")
-                  (Thread/sleep (max (wcar conn (car/pttl (qk :eoq-backoff?))) 10))
-                  (handle1 conn qname handler poll-reply)))
+                    (if (= poll-reply "eoq-backoff")
+                      (Thread/sleep (max (wcar conn (car/pttl (qk :eoq-backoff?)))
+                                         10))
+                      (handle1 conn qname handler poll-reply)))
 
-              (catch Throwable t (timbre/fatalf t "Worker error!") (throw t)))
-            (when throttle-ms (Thread/sleep throttle-ms)))))
+                  (catch Throwable t (timbre/fatalf t "Worker error!") (throw t)))
+                (when throttle-ms (Thread/sleep throttle-ms))))]
+        (dorun (repeatedly nthreads (fn [] (future (start-polling-loop!))))))
       true)))
 
 (defn monitor-fn
@@ -357,13 +360,15 @@
    :eoq-backoff-ms - Thread sleep period each time end of queue is reached.
                      Can be a (fn [ndry-runs]) -> ms (n<=5) will be used.
                      Sleep synchronized for all queue workers.
+   :nthreads       - Number of synchronized worker threads to use.
    :throttle-ms    - Thread sleep period between each poll."
-  [conn qname & [{:keys [handler monitor lock-ms eoq-backoff-ms throttle-ms
-                         auto-start?]
+  [conn qname & [{:keys [handler monitor lock-ms eoq-backoff-ms nthreads
+                         throttle-ms auto-start?]
                   :or   {handler (fn [args] (timbre/infof "%s" args)
                                            {:status :success})
                          monitor (monitor-fn qname 1000 (* 1000 60 60))
                          lock-ms        (* 1000 60 60)
+                         nthreads       1
                          throttle-ms    200
                          eoq-backoff-ms exp-backoff
                          auto-start?    true}}]]
@@ -372,6 +377,7 @@
                      :monitor        monitor
                      :lock-ms        lock-ms
                      :eoq-backoff-ms eoq-backoff-ms
+                     :nthreads       nthreads
                      :throttle-ms    throttle-ms})]
     (when auto-start? (start w)) w))
 
