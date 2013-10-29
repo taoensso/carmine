@@ -246,51 +246,35 @@
   ;;(mapv exp-backoff (range 5))
   (wcar {} (car/pttl (qkey :q1 :eoq-backoff?))))
 
-(defn finalize
-  "Alpha - subject to change.
-  Low level message finalizer. Marks handled message _as_ handled.
-  Can be used inside specialized handler fns that need to finalize their
-  message atomically.
-
-  (fn my-handler [args]
-    (car/atomic {} 100
-      (watch my-key) ; We want to avoid finalization race conditions on this key
-      (multi)
-      <...>
-      (finalize <...>))
-    {:status :finalized})"
-  [qname status mid & [backoff-ms]]
-  (assert (#{:success :retry} status))
-  (let [qk (partial qkey qname)]
-    (when backoff-ms ; Retry or dedupe backoff, depending on type
-      (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
-                                      backoff-ms)))
-    (case status
-      :success (car/sadd (qk :gc)    mid) ; Queue for GC
-      :retry   (car/hdel (qk :locks) mid) ; Unlock
-      )))
-
 (defn handle1 "Implementation detail!"
   [conn qname handler [mid mcontent attempt :as poll-reply]]
   (when (and poll-reply (not= poll-reply "eoq-backoff"))
-    (let [qk    (partial qkey     qname)
-          done  (fn [& args] (wcar conn (apply finalize qname args)))
+    (let [qk   (partial qkey qname)
+          done (fn [status mid & [backoff-ms]]
+                 (wcar conn
+                   (when backoff-ms ; Retry or dedupe backoff, depending on type
+                     (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
+                                                     backoff-ms)))
+                   (case status
+                     :success (car/sadd (qk :gc)    mid) ; Queue for GC
+                     :retry   (car/hdel (qk :locks) mid) ; Unlock
+                     )))
+
           error (fn [mid poll-reply & [throwable]]
-                  (done mid :success)
+                  (done mid)
                   (timbre/errorf
                    (if throwable throwable (Exception. ":error handler response"))
                    "Error handling %s queue message:\n%s" qname poll-reply))
 
           {:keys [status throwable backoff-ms]}
-          (let [result (try (handler {:mid mid :message mcontent :attempt attempt})
+          (let [result (try (handler {:message mcontent :attempt attempt})
                             (catch Throwable t {:status :error :throwable t}))]
             (when (map? result) result))]
 
       (case status
-        :finalized nil ; Handler has already finalized message
-        :success   (done status mid backoff-ms)
-        :retry     (done status mid backoff-ms)
-        :error     (error mid poll-reply throwable)
+        :success (done status mid backoff-ms)
+        :retry   (done status mid backoff-ms)
+        :error   (error mid poll-reply throwable)
         (do (done :success mid) ; For backwards-comp with old API
             (timbre/warnf "Invalid handler status: %s" status))))))
 
@@ -346,8 +330,8 @@
 (defn worker
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
   named queue. Options:
-   :handler        - (fn [{:keys [mid message attempt]}]) that throws an exception
-                     or returns {:status     <#{:success :error :retry :finalized}>
+   :handler        - (fn [{:keys [message attempt]}]) that throws an exception
+                     or returns {:status     <#{:success :error :retry}>
                                  :throwable  <Throwable>
                                  :backoff-ms <retry-or-dedupe-backoff-ms}.
    :monitor        - (fn [{:keys [mid-circle-size ndry-runs poll-reply]}]) called
