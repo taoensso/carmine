@@ -366,7 +366,7 @@
                          throttle-ms auto-start?]
                   :or   {handler (fn [args] (timbre/infof "%s" args)
                                            {:status :success})
-                         monitor (monitor-fn qname 1000 (* 1000 60 60))
+                         monitor (monitor-fn qname 1000 (* 1000 60 60 6))
                          lock-ms        (* 1000 60 60)
                          nthreads       1
                          throttle-ms    200
