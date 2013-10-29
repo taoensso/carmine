@@ -182,7 +182,7 @@
   Rotates queue's mid-circle and processes next mid. Returns:
     nil             - If msg already GC'd, locked, or set to backoff.
     \"eoq-backoff\" - If circle uninitialized or end-of-circle marker reached.
-    [<mid> <mcontent> <attempt-count>] - If message should be (re)handled now."
+    [<mid> <mcontent> <attempt>] - If message should be (re)handled now."
   [qname & [{:keys [lock-ms eoq-backoff-ms]
              :or   {lock-ms (* 1000 60 60) eoq-backoff-ms exp-backoff}}]]
   (let [;; Precomp 5 backoffs so that `dequeue` can init the backoff
