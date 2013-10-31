@@ -11,6 +11,11 @@
             [taoensso.timbre        :as timbre]))
 
 ;; TODO Redis 2.8+ http://redis.io/topics/notifications
+;; TODO Consider implementing some kind of de-dupe mechanism for key fetching
+;; (perhaps a delay map?). The current implementation can result in multiple
+;; threads rushing the datastore to get the same key, unnecessarily duplicating
+;; work. Could solve this easily with a tstore `fetch-key` sm-memoize closure.
+;; Any alternatives that'd avoid the extra code import though?
 
 ;;;; Public interfaces
 
