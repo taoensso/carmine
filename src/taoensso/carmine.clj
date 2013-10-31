@@ -75,6 +75,7 @@
   "Joins parts to form an idiomatic compound Redis key name. Suggested style:
     * \"category:subcategory:id:field\" basic form.
     * Singular category names (\"account\" rather than \"accounts\").
+    * Plural _field_ names when appropriate (\"account:friends\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
   [& parts] (str/join ":" (mapv utils/keyname parts)))
 
