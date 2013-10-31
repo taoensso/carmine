@@ -9,7 +9,7 @@
                  [commons-codec/commons-codec "1.8"]
                  [org.clojure/data.json       "0.2.3"]
                  [com.taoensso/timbre         "2.6.3"]
-                 [com.taoensso/nippy          "2.5.0-beta1"]]
+                 [com.taoensso/nippy          "2.5.0-beta2"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure  "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure  "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure  "1.6.0-master-SNAPSHOT"]]}
