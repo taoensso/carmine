@@ -21,6 +21,7 @@
   * Message queues: workers now accept an optional `nthreads` arg for spinning up synchronized multi-threaded workers.
   * Message queues: handlers now receive message id along with other args.
   * Message queues: `enqueue` now takes an optional flag to specify dedupe behaviour when message is locked.
+  * Message queues: `queue-status` now shows next & last mid.
 
   * Tundra: completely refactored design for robustness+simplicity - now use standard message queue for replication worker.
   * Tundra: replication workers have inherited message queue features like retries, backoffs, etc.

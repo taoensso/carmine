@@ -53,9 +53,11 @@
 
 (defn queue-status [conn qname]
   (let [qk (partial qkey qname)]
-    (zipmap [:messages :locks :backoffs :nattempts :mid-circle :gc :requeue
-             :eoq-backoff? :ndry-runs]
+    (zipmap [:last-mid :next-mid :messages :locks :backoffs :nattempts
+             :mid-circle :gc :requeue :eoq-backoff? :ndry-runs]
      (wcar conn
+       (car/lindex        (qk :mid-circle)  0)
+       (car/lindex        (qk :mid-circle) -1)
        (car/hgetall*      (qk :messages))
        (car/hgetall*      (qk :locks))
        (car/hgetall*      (qk :backoffs))
