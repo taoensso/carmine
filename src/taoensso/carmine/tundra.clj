@@ -1,7 +1,11 @@
 (ns taoensso.carmine.tundra
   "Semi-automatic datastore layer for Carmine. It's like the magix.
   Use multiple Redis instances (recommended) or Redis databases for local key
-  namespacing."
+  namespacing.
+
+  Redis keys:
+    * carmine:tundra:evictable -> set, keys for which `ensure-ks` fetch failure
+                                  should throw an error."
   {:author "Peter Taoussanis"}
   (:require [taoensso.carmine       :as car :refer (wcar)]
             [taoensso.carmine.message-queue :as mq]
@@ -10,12 +14,16 @@
             [taoensso.nippy.tools   :as nippy-tools]
             [taoensso.timbre        :as timbre]))
 
-;; TODO Redis 2.8+ http://redis.io/topics/notifications
-;; TODO Consider implementing some kind of de-dupe mechanism for key fetching
-;; (perhaps a delay map?). The current implementation can result in multiple
-;; threads rushing the datastore to get the same key, unnecessarily duplicating
-;; work. Could solve this easily with a tstore `fetch-key` sm-memoize closure.
-;; Any alternatives that'd avoid the extra code import though?
+;;;; TODO
+;; * Redis 2.8+ http://redis.io/topics/notifications
+;; * Consider implementing some kind of de-dupe mechanism for key fetching
+;;   (perhaps a delay map?). The current implementation can result in multiple
+;;   threads rushing the datastore to get the same key, unnecessarily
+;;   duplicating work. Could solve this easily with a tstore `fetch-key`
+;;   sm-memoize closure. Any alternatives that'd avoid the extra code import
+;;   though?
+;; * Consider possible methods of lowering 'evictable' set overhead:
+;;   making optional, recent uncompressed set + old compressed set, ...?
 
 ;;;; Public interfaces
 
@@ -95,13 +103,21 @@
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
 
-(defn- extend-exists-missing-ks [ttl-ms ks]
+(defn- extend-exists-missing-ks [ttl-ms ks & [only-evictable?]]
   (let [existance-replies (->> (extend-exists ttl-ms ks)
-                               (car/with-replies)
-                               (car/parse nil))
-        ks-missing        (->> (mapv #(when (zero? %2) %1) ks existance-replies)
+                               (car/with-replies) ; Single bulk reply
+                               (car/parse #(mapv car/as-bool %)))
+        ks-missing        (->> (mapv #(when-not %2 %1) ks existance-replies)
                                (filterv identity))]
-    ks-missing))
+    (if-not only-evictable?
+      ks-missing
+      (let [evictable-replies
+            (->> ks-missing
+                 (mapv #(car/sismember k-evictable %))
+                 (car/with-replies :as-pipeline)
+                 (car/parse-bool))]
+        (->> (mapv #(when %2 %1) ks-missing evictable-replies)
+             (filterv identity))))))
 
 (defn- prep-ks [ks] (assert (utils/coll?* ks)) (vec (distinct (mapv name ks))))
 (comment (prep-ks [nil]) ; ex
@@ -109,16 +125,17 @@
 
 (defmacro ^:private catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
 (def ^:private tqname "carmine.tundra")
+(def ^:private k-evictable "carmine:tundra:evictable")
 
 (defrecord TundraStore [datastore freezer opts]
   ITundraStore
   (ensure-ks* [tstore ks]
     (let [{:keys [redis-ttl-ms]} opts
-          ks         (prep-ks ks)
-          ks-missing (extend-exists-missing-ks redis-ttl-ms ks)]
+          ks (prep-ks ks)
+          ks-missing (extend-exists-missing-ks redis-ttl-ms ks :only-evictable)]
 
       (when-not (empty? ks-missing)
-        (timbre/tracef "Fetching missing keys: %s" ks-missing)
+        (timbre/tracef "Fetching missing evictable keys: %s" ks-missing)
 
         (let [;;; [] e/o #{<dumpval> <throwable>}:
               throwable?    #(instance? Throwable %)
@@ -185,8 +202,9 @@
                                      (put-key datastore k %)))))]
 
               (if (= put-reply true)
-                (do (when (and redis-ttl-ms (> redis-ttl-ms 0))
-                      (wcar {} (car/pexpire k redis-ttl-ms)))
+                (do (wcar conn (car/sadd k-evictable k)
+                               (when (and redis-ttl-ms (> redis-ttl-ms 0))
+                                 (car/pexpire k redis-ttl-ms)))
                     {:status :success})
                 (if (<= attempt nattempts)
                   {:status :retry
