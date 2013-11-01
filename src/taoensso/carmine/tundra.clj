@@ -103,6 +103,7 @@
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
 
+(def ^:private k-evictable "carmine:tundra:evictable")
 (defn- extend-exists-missing-ks [ttl-ms ks & [only-evictable?]]
   (let [existance-replies (->> (extend-exists ttl-ms ks)
                                (car/with-replies) ; Single bulk reply
@@ -124,8 +125,6 @@
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
 (defmacro ^:private catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
-(def ^:private tqname "carmine.tundra")
-(def ^:private k-evictable "carmine:tundra:evictable")
 
 (defrecord TundraStore [datastore freezer opts]
   ITundraStore
@@ -171,7 +170,7 @@
           nil))))
 
   (dirty* [tstore ks]
-    (let [{:keys [redis-ttl-ms]} opts
+    (let [{:keys [tqname redis-ttl-ms]} opts
           ks             (prep-ks ks)
           ks-missing     (extend-exists-missing-ks redis-ttl-ms ks)
           ks-not-missing (->> ks (filterv (complement (set ks-missing))))]
@@ -185,7 +184,7 @@
       nil))
 
   (worker [tstore conn wopts]
-    (let [{:keys [redis-ttl-ms]} opts
+    (let [{:keys [tqname redis-ttl-ms]} opts
           {:keys [nattempts retry-backoff-ms]
            :or   {nattempts 3
                   retry-backoff-ms mq/exp-backoff}} wopts]
@@ -227,6 +226,7 @@
     datastore     - Storage for frozen key data. Default datastores:
                     `taoensso.carmine.tundra.faraday/faraday-datastore`
                     `taoensso.carmine.tundra.s3/s3-datastore`.
+    :qname        - Optional. Worker message queue name.
     :freezer      - Optional. Preps key data to/from datastore. May provide
                     services like compression and encryption, etc. Defaults to
                     Nippy with default options (Snappy compression and no
@@ -238,12 +238,14 @@
                     Otherwise YOU WILL IRREVOCABLY **LOSE DATA**.
 
   See `ensure-ks`, `dirty`, `worker` for TundraStore API."
-  [datastore & [{:keys [freezer redis-ttl-ms ]
-                 :or   {freezer nippy-freezer}}]]
+  [datastore & [{:keys [qname freezer redis-ttl-ms]
+                 :or   {qname "default" freezer nippy-freezer}}]]
 
   (assert (or (nil? freezer) (satisfies? IFreezer freezer)))
   (assert (satisfies? IDataStore datastore))
   (assert (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))
           (str "Bad TTL (< 10 hours): " redis-ttl-ms))
 
-  (->TundraStore datastore freezer {:redis-ttl-ms redis-ttl-ms}))
+  (->TundraStore datastore freezer
+    {:tqname (format "carmine-tundra-%s" (name qname))
+     :redis-ttl-ms redis-ttl-ms}))
