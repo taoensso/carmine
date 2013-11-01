@@ -47,7 +47,14 @@
   (expect Exception (wcar* (tundra/dirty     tstore (tkey "invalid"))))
   (expect nil       (wcar* (tundra/ensure-ks tstore (tkey "invalid"))))
   (expect Exception (wcar* (car/sadd @#'tundra/k-evictable (tkey "invalid-evictable"))
-                           (tundra/ensure-ks tstore (tkey "invalid-evictable")))))
+                           (tundra/ensure-ks tstore (tkey "invalid-evictable"))))
+
+  ;; API never pollutes enclosing pipeline
+  (expect ["OK" "PONG" 1] (wcar* (car/set (tkey 0) "0")
+                                 (car/ping)
+                                 (tundra/ensure-ks tstore (tkey 0) (tkey "invalid") )
+                                 (tundra/dirty     tstore (tkey 0))
+                                 (car/del (tkey 0) "0"))))
 
 (expect [[:clj-val] [:clj-val] [:clj-val-new]]
   (let [tstore  (tundra/tundra-store dstore {:qname qname})

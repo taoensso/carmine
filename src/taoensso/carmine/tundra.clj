@@ -176,7 +176,9 @@
           ks-not-missing (->> ks (filterv (complement (set ks-missing))))]
 
       (doseq [k ks-not-missing]
-        (mq/enqueue tqname k k :allow-locked-dupe)) ; key as msg & mid (deduped)
+        (->> (mq/enqueue tqname k k :allow-locked-dupe) ; key as msg & mid (deduped)
+             (car/with-replies :as-pipeline) ; Don't pollute pipeline
+             ))
 
       (when-not (empty? ks-missing)
         (let [ex (ex-info "Some dirty key(s) were missing" {:ks ks-missing})]
