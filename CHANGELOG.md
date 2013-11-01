@@ -1,4 +1,4 @@
-## v2.3.1 → v2.4.0-beta2 (major update!)
+## v2.3.1 → v2.4.0-beta3 (major update!)
 
   * **IMPORTANT** Message queues: pre-2.4.0-beta1 queues *should* be compatible with 2.4.0-beta1+, but I would recommend **draining your old queues before upgrading** to 2.4.0-beta1+ to be on the safe side. That is: if you have any queued work outstanding - finish processing the work **before upgrading Carmine**.
   * **BREAKING** Tundra: the datastore protocol has changed (been simplified). `put-keys`, `fetch-keys` -> `put-key`, `fetch-key`.
@@ -28,6 +28,7 @@
   * Tundra: added S3 DataStore and skeleton disk + secondary Carmine DataStore implementations.
   * Tundra: new unit test suite.
   * Tundra: eviction TTL is now set only _after_ first successful replication, providing an extra level of safety.
+  * Tundra: `ensure-ks` now no longer throws when attempting to ensure non-evictable keys.
 
 
 ## v2.2.3 → v2.3.1
