@@ -13,6 +13,7 @@ else
    if [ "$2" = "--auto" ]; then
       lein test-auto
    else
+      # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.tundra"
       lein test-all
     fi
 fi

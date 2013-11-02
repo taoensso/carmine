@@ -68,7 +68,7 @@
           (mq/handle1 {} tq #(do (deliver p %) {:status :retry :backoff-ms 3000})
                       (wcar {} (dequeue* tq)))
           @p))
-(expect :retry-backoff   (wcar {} (mq/message-status tq :mid1)))
+(expect :queued-with-backoff (wcar {} (mq/message-status tq :mid1)))
 (expect "eoq-backoff"    (wcar {} (dequeue* tq)))
 (expect nil              (wcar {} (dequeue* tq))) ; Backoff (< 3s)
 (expect "eoq-backoff"    (wcar {} (dequeue* tq)))
@@ -93,20 +93,39 @@
 (expect "mid1" (do (Thread/sleep 3000) ; Wait for backoff to expire
                    (wcar {} (mq/enqueue tq :msg1 :mid1))))
 
-;;;; Handling: dedupe-enqueue while locked
+;;;; Handling: enqueue while :locked
 (expect (constantly true) (mq/clear-queues {} tq))
 (expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
 (expect "eoq-backoff" (wcar {} (dequeue* tq)))
-(expect :locked (do (-> (mq/handle1 {} tq (fn [_] (Thread/sleep 2000) ; Hold lock
+(expect :locked (do (-> (mq/handle1 {} tq (fn [_] (Thread/sleep 3000) ; Hold lock
                                                   {:status :success})
                                     (wcar {} (dequeue* tq)))
                         (future))
                     (Thread/sleep 20)
                     (wcar {} (mq/message-status tq :mid1))))
 (expect {:carmine.mq/error :locked} (wcar {} (mq/enqueue tq :msg1 :mid1)))
-(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1 :allow-locked-dupe?)))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1 :allow-requeue)))
+(expect {:carmine.mq/error :locked-with-requeue}
+        (wcar {} (mq/enqueue tq :msg1 :mid1 :allow-requeue)))
 (expect :queued ; cmp :done-awaiting-gc
-        (do (Thread/sleep 3000) ; Wait for handler to complete
+        (do (Thread/sleep 3500) ; Wait for handler to complete (extra time for future!)
+            (wcar {} (mq/message-status tq :mid1))))
+(expect "eoq-backoff"    (wcar {} (dequeue* tq)))
+(expect ["mid1" :msg1 1] (wcar {} (dequeue* tq)))
+
+;;;; Handling: enqueue while :done-with-backoff
+(expect (constantly true) (mq/clear-queues {} tq))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1)))
+(expect "eoq-backoff" (wcar {} (dequeue* tq)))
+(expect :done-with-backoff
+        (do (mq/handle1 {} tq (fn [_] {:status :success :backoff-ms 3000})
+                        (wcar {} (dequeue* tq)))
+            (Thread/sleep 20)
+            (wcar {} (mq/message-status tq :mid1))))
+(expect {:carmine.mq/error :done-with-backoff} (wcar {} (mq/enqueue tq :msg1 :mid1)))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1 :allow-requeue)))
+(expect :queued ; cmp :done-awaiting-gc
+        (do (Thread/sleep 3000) ; Wait for backoff to expire
             (wcar {} (mq/message-status tq :mid1))))
 (expect "eoq-backoff"    (wcar {} (dequeue* tq)))
 (expect ["mid1" :msg1 1] (wcar {} (dequeue* tq)))

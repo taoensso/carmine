@@ -8,8 +8,8 @@
     * carmine:mq:<qname>:backoffs     -> hash, {mid backoff-expiry-time}.
     * carmine:mq:<qname>:nattempts    -> hash, {mid attempt-count}.
     * carmine:mq:<qname>:mid-circle   -> list, rotating list of mids.
-    * carmine:mq:<qname>:gc           -> set, for efficient mid removal from circle.
-    * carmine:mq:<qname>:requeue      -> set, for `allow-locked-dupe?` enqueue.
+    * carmine:mq:<qname>:done         -> set, awaiting gc, requeue, etc.
+    * carmine:mq:<qname>:requeue      -> set, for `allow-requeue?` option.
     * carmine:mq:<qname>:eoq-backoff? -> ttl flag, used for queue-wide (every-worker)
                                          polling backoff.
     * carmine:mq:<qname>:ndry-runs    -> int, number of times worker(s) have burnt
@@ -54,7 +54,7 @@
 (defn queue-status [conn qname]
   (let [qk (partial qkey qname)]
     (zipmap [:last-mid :next-mid :messages :locks :backoffs :nattempts
-             :mid-circle :gc :requeue :eoq-backoff? :ndry-runs]
+             :mid-circle :done :requeue :eoq-backoff? :ndry-runs]
      (wcar conn
        (car/lindex        (qk :mid-circle)  0)
        (car/lindex        (qk :mid-circle) -1)
@@ -63,126 +63,128 @@
        (car/hgetall*      (qk :backoffs))
        (car/hgetall*      (qk :nattempts))
        (car/lrange        (qk :mid-circle) 0 -1)
-       (->> (car/smembers (qk :gc))           (car/parse set))
+       (->> (car/smembers (qk :done))         (car/parse set))
        (->> (car/smembers (qk :requeue))      (car/parse set))
        (->> (car/get      (qk :eoq-backoff?)) (car/parse-bool)) ; Give TTL?
        (->> (car/get      (qk :ndry-runs))    (car/parse-long))))))
 
 ;;;; Implementation
 
+(def ^:private lua-message-status
+  ;; Careful, logic here's quite subtle: see state diagram for assistance
+  "--
+   local now         = tonumber(_:now)
+   local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
+   local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
+   local state       = nil
+   if redis.call('hexists', _:qk-messages, _:mid) == 1 then
+     if redis.call('sismember', _:qk-done, _:mid) == 1 then
+       if (now < backoff_exp) then
+         if redis.call('sismember', _:qk-requeue, _:mid) == 1 then
+           state = 'done-with-requeue'
+         else
+           state = 'done-with-backoff'
+         end
+       else
+         state = 'done-awaiting-gc'
+       end
+     else
+       if (now < lock_exp) then
+         if redis.call('sismember', _:qk-requeue, _:mid) == 1 then
+           state = 'locked-with-requeue'
+         else
+           state = 'locked'
+         end
+       elseif (now < backoff_exp) then
+         state = 'queued-with-backoff'
+       else
+         state = 'queued'
+       end
+     end
+   end")
+
 (defn message-status
   "Returns current message status, e/o:
-    :queued            - Awaiting (re)handling.
-    :locked            - Currently with handler.
-    :retry-backoff     - Awaiting backoff for handler retry (rehandling).
-    :done-with-backoff - Finished handling, awaiting dedupe timeout.
-    :done-awaiting-gc  - Finished handling, no dedupe timeout, awaiting GC.
-    nil                - Already GC'd or invalid message id."
+    :queued               - Awaiting handler.
+    :queued-with-backoff  - Awaiting rehandling.
+    :locked               - Currently with handler.
+    :locked-with-requeue  - Currently with handler, will requeue on success.
+    :done-awaiting-gc     - Finished handling, awaiting GC.
+    :done-with-backoff    - Finished handling, awaiting dedupe timeout.
+    nil                   - Already GC'd or invalid message id."
   [qname mid]
   (car/parse-keyword
-   (car/lua ; Careful, logic here is necessarily quite subtle!
-    "--
-    local now         = tonumber(_:now)
-    local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
-    local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
-
-    --- Note: `else`s necessary for `enqueue`
-    if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
-      if (now < backoff_exp) then return 'done-with-backoff' end
-      return nil
-    else
-      if redis.call('sismember', _:qk-gc, _:mid) == 1 then
-        if (now < backoff_exp) then return 'done-with-backoff' end
-        return 'done-awaiting-gc'
-      else
-        if     (now < lock_exp)    then return 'locked'
-        elseif (now < backoff_exp) then return 'retry-backoff'
-        else
-          return 'queued'
-        end
-      end
-    end"
+   (car/lua ; Careful, logic here's quite subtle: see state diagram for assistance
+    (format "%s\n%s" lua-message-status "return state")
     {:qk-messages (qkey qname :messages)
      :qk-locks    (qkey qname :locks)
      :qk-backoffs (qkey qname :backoffs)
-     :qk-gc       (qkey qname :gc)}
+     :qk-done     (qkey qname :done)
+     :qk-requeue  (qkey qname :requeue)}
     {:now (System/currentTimeMillis)
      :mid mid})))
 
 (defn enqueue
   "Pushes given message (any Clojure datatype) to named queue and returns unique
-  message id or {:carmine.mq/error #{<:queued :locked :retry-backoff
-                                      :done-with-backoff>}}.
+  message id or {:carmine.mq/error <message-status>}.
   Options:
     unique-message-id  - Specify an explicit message id (e.g. message hash) to
                          perform a de-duplication check. If unspecified, a unique
                          message id will be auto-generated.
-    allow-locked-dupe? - Alpha - subject to change.
-                         When true, a locked message will NOT prevent an
-                         additional message with the same id from being queued.
-                         Actually, this message will be held in escrow and
-                         queued (once) iff the locked message completes handling
-                         successfully. This mechanism provides a tool for
-                         defeating race conditions when writing handlers which
-                         read Redis state that may change before handling has
-                         been acknowledged by queue."
-  [qname message & [unique-message-id allow-locked-dupe?]]
+    allow-requeue?     - Alpha - subject to change.
+                         When true, allow buffered escrow-requeue for a message
+                         in the :locked or :done-with-backoff state."
+  [qname message & [unique-message-id allow-requeue?]]
   (->>
    (car/lua
-    "--- Check for dupes (modified `message-status` logic)
-    local now         = tonumber(_:now)
-    local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    _:mid) or 0)
-    local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, _:mid) or 0)
+    (format "%s\n%s" lua-message-status
+     "--
+     if (_:allow-requeue? == 'true') and
+        ((state == 'locked') or (state == 'done-with-backoff')) and
+        (redis.call('sismember', _:qk-requeue, _:mid) ~= 1)
+     then
+       if state == 'locked' then redis.call('sadd', _:qk-requeue, _:mid) end
+       if state == 'done-with-backoff' then
+         redis.call('hdel', _:qk-nattempts, _:mid)
+         redis.call('srem', _:qk-done,      _:mid)
+       end
+       return {_:mid}
+     end
 
-    if redis.call('hexists', _:qk-messages, _:mid) ~= 1 then
-      if (now < backoff_exp) then return 'done-with-backoff' end
-      -- return nil
-    else
-      if redis.call('sismember', _:qk-gc, _:mid) == 1 then
-        if (now < backoff_exp) then return 'done-with-backoff' end
-        -- return 'done-awaiting-gc'
-      else
-        if (now < lock_exp) then
-          if _:allow-locked-dupe? ~= 'true' then return 'locked' end
-        elseif (now < backoff_exp) then return 'retry-backoff'
-        else
-          return 'queued'
-        end
-      end
-    end
-    ---
+     if state == 'done-awaiting-gc' then
+       redis.call('hdel', _:qk-nattempts, _:mid)
+       redis.call('srem', _:qk-done,      _:mid)
+       return {_:mid}
+     end
 
-    if (now < lock_exp) then
-      redis.call('sadd', _:qk-requeue, _:mid)
-    else
-      redis.call('hset', _:qk-messages, _:mid, _:mcontent)
+     if state ~= nil then return state end -- Reject
 
-      -- lpushnx end-of-circle marker to ensure an initialized mid-circle
-      if redis.call('exists', _:qk-mid-circle) ~= 1 then
-        redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
-      end
+     redis.call('hset', _:qk-messages, _:mid, _:mcontent)
 
-      redis.call('lpush', _:qk-mid-circle, _:mid)
-    end
+     -- lpushnx end-of-circle marker to ensure an initialized mid-circle
+     if redis.call('exists', _:qk-mid-circle) ~= 1 then
+       redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
+     end
 
-    return {_:mid} -- Wrap to distinguish from error replies
-" ; Necessary for Lua script-end weirdness
+     redis.call('lpush', _:qk-mid-circle, _:mid)
+     return {_:mid}")
     {:qk-messages   (qkey qname :messages)
      :qk-locks      (qkey qname :locks)
      :qk-backoffs   (qkey qname :backoffs)
+     :qk-nattempts  (qkey qname :nattempts)
      :qk-mid-circle (qkey qname :mid-circle)
-     :qk-gc         (qkey qname :gc)
+     :qk-done       (qkey qname :done)
      :qk-requeue    (qkey qname :requeue)}
     {:now           (System/currentTimeMillis)
      :mid           (or unique-message-id (str (java.util.UUID/randomUUID)))
      :mcontent      (car/freeze message)
-     :allow-locked-dupe? (if allow-locked-dupe? "true" "false")})
+     :allow-requeue? (if allow-requeue? "true" "false")})
    (car/parse #(if (vector? %) (first %) {:carmine.mq/error (keyword %)}))))
 
 (defn dequeue
   "IMPLEMENTATION DETAIL: Use `worker` instead.
   Rotates queue's mid-circle and processes next mid. Returns:
-    nil             - If msg already GC'd, locked, or set to backoff.
+    nil             - If msg GC'd, locked, or set to backoff.
     \"eoq-backoff\" - If circle uninitialized or end-of-circle marker reached.
     [<mid> <mcontent> <attempt>] - If message should be (re)handled now."
   [qname & [{:keys [lock-ms eoq-backoff-ms]
@@ -211,28 +213,7 @@
        redis.call('psetex', _:qk-eoq-backoff, eoq_backoff_ms, 'true')
        redis.call('incr',   _:qk-ndry-runs)
 
-       -- Prune expired backoffs. We have to do this manually if we want to keep
-       -- backoffs in a hash as we do for efficiency & Cluster support. This hash
-       -- is usu. quite small since it consists only of active retry and dedupe
-       -- backoffs.
-       for i,k in pairs(redis.call('hkeys', _:qk-backoffs)) do
-         if (now >= tonumber(redis.call('hget', _:qk-backoffs, k))) then
-           redis.call('hdel', _:qk-backoffs, k)
-         end
-       end
-
        return 'eoq-backoff'
-     end
-
-     if redis.call('sismember', _:qk-gc, mid) == 1 then -- GC
-       redis.call('lrem', _:qk-mid-circle, 1, mid) -- Efficient here
-       redis.call('srem', _:qk-gc,            mid)
-       redis.call('hdel', _:qk-messages,      mid)
-       redis.call('hdel', _:qk-locks,         mid)
-       --redis.call('hdel', _:qk-backoffs,    mid) -- No! Will use as dedupe backoff
-       redis.call('hdel', _:qk-nattempts,     mid)
-       redis.call('set',  _:qk-ndry-runs, 0) -- Did work
-       return nil
      end
 
      local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid) or 0)
@@ -241,10 +222,19 @@
      -- Active lock/backoff
      if (now < lock_exp) or (now < backoff_exp) then return nil end
 
-     redis.call('hset', _:qk-locks,    mid, now + tonumber(_:lock-ms)) -- Acquire
-     redis.call('hdel', _:qk-backoffs, mid) -- Expired, so prune (keep gc-prune fast)
-     redis.call('set',  _:qk-ndry-runs, 0) -- Did work
+     redis.call('set', _:qk-ndry-runs, 0) -- Doing useful work
 
+     if redis.call('sismember', _:qk-done, mid) == 1 then -- GC
+       redis.call('hdel',  _:qk-messages,   mid)
+       redis.call('hdel',  _:qk-locks,      mid)
+       redis.call('hdel',  _:qk-backoffs,   mid)
+       redis.call('hdel',  _:qk-nattempts,  mid)
+       redis.call('ltrim', _:qk-mid-circle, 1, -1)
+       redis.call('srem',  _:qk-done,       mid)
+       return nil
+     end
+
+     redis.call('hset', _:qk-locks, mid, now + tonumber(_:lock-ms)) -- Acquire
      local mcontent  = redis.call('hget',    _:qk-messages,  mid)
      local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1)
      return {mid, mcontent, nattempts}"
@@ -253,7 +243,8 @@
       :qk-backoffs    (qkey qname :backoffs)
       :qk-nattempts   (qkey qname :nattempts)
       :qk-mid-circle  (qkey qname :mid-circle)
-      :qk-gc          (qkey qname :gc)
+      :qk-done        (qkey qname :done)
+      :qk-requeue     (qkey qname :requeue)
       :qk-eoq-backoff (qkey qname :eoq-backoff?)
       :qk-ndry-runs   (qkey qname :ndry-runs)}
      {:now            (System/currentTimeMillis)
@@ -289,13 +280,13 @@
                      (when backoff-ms ; Retry or dedupe backoff, depending on type
                        (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
                                                        backoff-ms)))
+
+                     (car/hdel (qk :locks) mid)
                      (case status
-                       (:success :error) (car/sadd (qk :gc) mid) ; Queue for GC
-                       (:retry :requeue)
-                       (do (car/hdel (qk :locks)   mid) ; Unlock
-                           (car/srem (qk :requeue) mid)
-                           (when (= status :requeue)
-                             (car/hdel (qk :nattempts) mid)))))))
+                       (:success :error) (car/sadd (qk :done) mid)
+                       :requeue          (do (car/srem (qk :requeue)   mid)
+                                             (car/hdel (qk :nattempts) mid))
+                       nil))))
 
           error (fn [mid poll-reply & [throwable]]
                   (done :error mid)
