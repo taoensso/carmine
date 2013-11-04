@@ -106,7 +106,7 @@
 (expect {:carmine.mq/error :locked} (wcar {} (mq/enqueue tq :msg1 :mid1)))
 (expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1 :allow-requeue)))
 (expect {:carmine.mq/error :locked-with-requeue}
-        (wcar {} (mq/enqueue tq :msg1 :mid1 :allow-requeue)))
+        (wcar {} (mq/enqueue tq :msg1-requeued :mid1 :allow-requeue)))
 (expect :queued ; cmp :done-awaiting-gc
         (do (Thread/sleep 3500) ; Wait for handler to complete (extra time for future!)
             (wcar {} (mq/message-status tq :mid1))))
@@ -123,7 +123,7 @@
             (Thread/sleep 20)
             (wcar {} (mq/message-status tq :mid1))))
 (expect {:carmine.mq/error :done-with-backoff} (wcar {} (mq/enqueue tq :msg1 :mid1)))
-(expect "mid1" (wcar {} (mq/enqueue tq :msg1 :mid1 :allow-requeue)))
+(expect "mid1" (wcar {} (mq/enqueue tq :msg1-requeued :mid1 :allow-requeue)))
 (expect :queued ; cmp :done-awaiting-gc
         (do (Thread/sleep 3000) ; Wait for backoff to expire
             (wcar {} (mq/message-status tq :mid1))))

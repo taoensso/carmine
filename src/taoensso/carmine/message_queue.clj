@@ -147,35 +147,34 @@
    (car/lua
     (script-with-msg-status :mid-arg nil
      "--
-     if (_:allow-requeue? == 'true') and
-        ((state == 'locked') or (state == 'done-with-backoff')) and
-        (redis.call('sismember', _:qk-requeue, _:mid) ~= 1)
+     if (state == 'done-awaiting-gc') or
+        ((state == 'done-with-backoff') and (_:allow-requeue? == 'true'))
      then
-       if state == 'locked' then redis.call('sadd', _:qk-requeue, _:mid) end
-       if state == 'done-with-backoff' then
-         redis.call('hdel', _:qk-nattempts, _:mid)
-         redis.call('srem', _:qk-done,      _:mid)
-       end
-       return {_:mid}
-     end
-
-     if state == 'done-awaiting-gc' then
        redis.call('hdel', _:qk-nattempts, _:mid)
        redis.call('srem', _:qk-done,      _:mid)
        return {_:mid}
      end
 
-     if state ~= nil then return state end -- Reject
-
-     redis.call('hset', _:qk-messages, _:mid, _:mcontent)
-
-     -- lpushnx end-of-circle marker to ensure an initialized mid-circle
-     if redis.call('exists', _:qk-mid-circle) ~= 1 then
-       redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
+     if (state == 'locked') and (_:allow-requeue? == 'true') and
+        (redis.call('sismember', _:qk-requeue, _:mid) ~= 1)
+     then
+       redis.call('sadd', _:qk-requeue, _:mid)
+       return {_:mid}
      end
 
-     redis.call('lpush', _:qk-mid-circle, _:mid)
-     return {_:mid}")
+     if state == nil then
+       redis.call('hset', _:qk-messages, _:mid, _:mcontent)
+
+       -- lpushnx end-of-circle marker to ensure an initialized mid-circle
+       if redis.call('exists', _:qk-mid-circle) ~= 1 then
+         redis.call('lpush', _:qk-mid-circle, 'end-of-circle')
+       end
+
+       redis.call('lpush', _:qk-mid-circle, _:mid)
+       return {_:mid}
+     else
+       return state -- Reject
+     end")
     {:qk-messages   (qkey qname :messages)
      :qk-locks      (qkey qname :locks)
      :qk-backoffs   (qkey qname :backoffs)
