@@ -2,7 +2,7 @@
 
 ```clojure
 [com.taoensso/carmine "2.3.1"]       ; Stable
-[com.taoensso/carmine "2.4.0-beta6"] ; Development
+[com.taoensso/carmine "2.4.0-beta7"] ; Development
 ```
 
 v2.4 is a major, backwards-compatible update which adds significant improvements to reply parsing, message queues, and [Tundra](#tundra-beta). See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for details.

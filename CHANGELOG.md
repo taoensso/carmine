@@ -1,4 +1,4 @@
-## v2.3.1 → v2.4.0-beta6 (major update!)
+## v2.3.1 → v2.4.0-beta7 (major update!)
 
   * **IMPORTANT** Message queues: pre-2.4.0-beta1 queues *should* be compatible with 2.4.0-beta1+, but I would recommend **draining your old queues before upgrading** to 2.4.0-beta1+ to be on the safe side. That is: if you have any queued work outstanding - finish processing the work **before upgrading Carmine**.
   * **BREAKING** Tundra: the datastore protocol has changed (been simplified). `put-keys`, `fetch-keys` -> `put-key`, `fetch-key`.
@@ -7,7 +7,8 @@
   * Parsers: completely refactored design for robustness+flexibility.
   * Parsers: new unit-test suite.
   * Parsers: fixed a number of subtle bugs, mostly internal.
-  * Parsers: Added `parser-comp` fn for composing parsers (see docstring for details).
+  * Parsers: added `parser-comp` fn for composing parsers (see docstring for details).
+  * Parsers: added `parse-nippy` macro for convenient per-cmd control of thaw opts.
 
   * Message queues: completely refactored design for robustness+efficiency.
   * Message queues: new unit-test suite.
