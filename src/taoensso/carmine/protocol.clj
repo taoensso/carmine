@@ -183,9 +183,11 @@
     (get-basic-reply in false) ; Common case
     (let [;; Implementation detail! We use metadata to control optional
           ;; reply/parser opts. Metadata is *merged* on parser composition.
-          {:keys [dummy-reply raw? parse-exceptions?] :as m} (meta parser)
-          reply (if (contains? m :dummy-reply) dummy-reply
-                    (get-basic-reply in raw?))]
+          {:keys [dummy-reply raw? parse-exceptions? thaw-opts] :as m} (meta parser)
+          reply (cond (contains? m :dummy-reply) dummy-reply
+                      thaw-opts (nippy-tools/with-thaw-opts thaw-opts
+                                  (get-basic-reply in raw?))
+                      :else     (get-basic-reply in raw?))]
       (if (and (instance? Exception reply) (not parse-exceptions?))
         reply ; Pass through w/o parsing
         (try (parser reply)

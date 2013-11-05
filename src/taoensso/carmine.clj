@@ -70,6 +70,8 @@
 (defmacro parse-bool    [& body] `(parse as-bool   ~@body))
 (defmacro parse-keyword [& body] `(parse keyword   ~@body))
 (defmacro parse-raw     [& body] `(parse (with-meta identity {:raw? true}) ~@body))
+(defmacro parse-nippy [thaw-opts & body]
+  `(parse (with-meta identity {:thaw-opts ~thaw-opts}) ~@body))
 
 (defn key
   "Joins parts to form an idiomatic compound Redis key name. Suggested style:
