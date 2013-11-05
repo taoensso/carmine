@@ -17,11 +17,6 @@
   (Exception. (str "Redis commands must be called within the context of a"
                    " connection to Redis server. See `wcar`.")))
 
-(defrecord WrappedRaw [ba])
-(defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
-  [x] (if (utils/bytes? x) (->WrappedRaw x)
-          (throw (Exception. "Raw arg must be byte[]"))))
-
 (defmacro ^:private bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
@@ -37,6 +32,11 @@
 (def ^bytes bs-bin (bytestring "\u0000<")) ; Binary data marker
 (def ^bytes bs-clj (bytestring "\u0000>")) ; Frozen data marker
 
+(defrecord WrappedRaw [ba])
+(defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
+  [x] (if (utils/bytes? x) (->WrappedRaw x)
+          (throw (Exception. "Raw arg must be byte[]"))))
+
 (defprotocol IRedisArg (coerce-bs [x] "x -> [<ba> <meta>]"))
 (extend-protocol IRedisArg
   String  (coerce-bs [x] [(bytestring x) nil])
@@ -46,13 +46,14 @@
   Long    (coerce-bs [x] [(bytestring (str x)) nil])
   Double  (coerce-bs [x] [(bytestring (str x)) nil])
   Float   (coerce-bs [x] [(bytestring (str x)) nil])
-  Integer (coerce-bs [x] [(bytestring (str x)) nil]))
+  Integer (coerce-bs [x] [(bytestring (str x)) nil])
 
-(extend utils/bytes-class IRedisArg {:coerce-bs (fn [x] [x :mark-bytes])})
-(extend-protocol          IRedisArg
+  ;;;
   WrappedRaw (coerce-bs [x] [(:ba x) :raw])
   nil        (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen])
   Object     (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen]))
+
+(extend utils/bytes-class IRedisArg {:coerce-bs (fn [x] [x :mark-bytes])})
 
 ;;; Macros to actually send data to stream buffer
 (defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
