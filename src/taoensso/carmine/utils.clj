@@ -111,16 +111,13 @@
                             (if (< (- now ms) ttl-ms) exp-ks
                                 (conj exp-ks k))) [])
                (apply swap! cache dissoc))))
-      (let [cv (@cache args)]
-        (if (and cv (< (- (System/currentTimeMillis) (second cv))
-                       ttl-ms))
-          @(first cv)
-
+      (let [[dv ms] (@cache args)]
+        (if (and dv (< (- (System/currentTimeMillis) ms) ttl-ms))
+          @dv
           (locking cache ; For thread racing
-            (let [cv (@cache args)] ; Retry after lock acquisition!
-              (if (and cv (< (- (System/currentTimeMillis) (second cv))
-                             ttl-ms))
-                @(first cv)
+            (let [[dv ms] (@cache args)] ; Retry after lock acquisition!
+              (if (and dv (< (- (System/currentTimeMillis) ms) ttl-ms))
+                @dv
                 (let [dv (delay (apply f args))
                       cv [dv (System/currentTimeMillis)]]
                   (swap! cache assoc args cv)
