@@ -16,12 +16,6 @@
 
 ;;;; TODO
 ;; * Redis 2.8+ http://redis.io/topics/notifications
-;; * Consider implementing some kind of de-dupe mechanism for key fetching
-;;   (perhaps a delay map?). The current implementation can result in multiple
-;;   threads rushing the datastore to get the same key, unnecessarily
-;;   duplicating work. Could solve this easily with a tstore `fetch-key`
-;;   sm-memoize closure. Any alternatives that'd avoid the extra code import
-;;   though?
 ;; * Consider possible methods of lowering 'evictable' set overhead:
 ;;   making optional, recent uncompressed set + old compressed set, ...?
 
@@ -126,6 +120,11 @@
 
 (defmacro ^:private catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
 
+(def fetch-key-delayed
+  "Used to prevent multiple threads from rushing the datastore to get the same
+  key, unnecessarily duplicating work."
+  (utils/memoize-ttl 5000 fetch-key))
+
 (defrecord TundraStore [datastore freezer opts]
   ITundraStore
   (ensure-ks* [tstore ks]
@@ -138,7 +137,7 @@
 
         (let [;;; [] e/o #{<dumpval> <throwable>}:
               throwable?    #(instance? Throwable %)
-              dvals-missing (->> ks-missing (mapv #(catcht (fetch-key datastore %))))
+              dvals-missing (->> ks-missing (mapv #(catcht (fetch-key-delayed datastore %))))
               dvals-missing (if (nil? freezer) dvals-missing
                                 (->> dvals-missing
                                      (mapv #(if (throwable? %) %

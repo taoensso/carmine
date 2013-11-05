@@ -99,3 +99,29 @@
 (def ^:const bytes-class (Class/forName "[B"))
 (defn bytes? [x] (instance? bytes-class x))
 (defn ba= [^bytes x ^bytes y] (java.util.Arrays/equals x y))
+
+(defn memoize-ttl "Low-overhead, common-case `memoize*`."
+  [ttl-ms f]
+  (let [cache (atom {})]
+    (fn [& args]
+      (when (<= (rand) 0.001) ; GC
+        (let [now (System/currentTimeMillis)]
+          (->> @cache
+               (reduce-kv (fn [exp-ks k [dv ms :as cv]]
+                            (if (< (- now ms) ttl-ms) exp-ks
+                                (conj exp-ks k))) [])
+               (apply swap! cache dissoc))))
+      (let [cv (@cache args)]
+        (if (and cv (< (- (System/currentTimeMillis) (second cv))
+                       ttl-ms))
+          @(first cv)
+
+          (locking cache ; For thread racing
+            (let [cv (@cache args)] ; Retry after lock acquisition!
+              (if (and cv (< (- (System/currentTimeMillis) (second cv))
+                             ttl-ms))
+                @(first cv)
+                (let [dv (delay (apply f args))
+                      cv [dv (System/currentTimeMillis)]]
+                  (swap! cache assoc args cv)
+                  @dv)))))))))
