@@ -8,8 +8,8 @@
                  [commons-pool/commons-pool   "1.6"]
                  [commons-codec/commons-codec "1.8"]
                  [org.clojure/data.json       "0.2.3"]
-                 [com.taoensso/timbre         "2.6.3"]
-                 [com.taoensso/nippy          "2.5.0-beta2"]]
+                 [com.taoensso/timbre         "2.7.1"]
+                 [com.taoensso/nippy          "2.5.0-RC1"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure  "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure  "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure  "1.6.0-master-SNAPSHOT"]]}
@@ -26,7 +26,7 @@
             "codox"       ["with-profile" "+test,+1.5" "doc"]}
   :plugins [[lein-expectations "0.0.8"]
             [lein-autoexpect   "1.0"]
-            [lein-ancient      "0.5.2"]
+            [lein-ancient      "0.5.3"]
             [codox             "0.6.6"]]
   :min-lein-version "2.0.0"
   :global-vars {*warn-on-reflection* true}
