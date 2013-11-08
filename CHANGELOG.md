@@ -3,12 +3,14 @@
   * **IMPORTANT** Message queues: pre-2.4.0-beta1 queues *should* be compatible with 2.4.0-beta1+, but I would recommend **draining your old queues before upgrading** to 2.4.0-beta1+ to be on the safe side. That is: if you have any queued work outstanding - finish processing the work **before upgrading Carmine**.
   * **BREAKING** Tundra: the datastore protocol has changed (been simplified). `put-keys`, `fetch-keys` -> `put-key`, `fetch-key`.
   * **POTENTIALLY BREAKING** Parsers: `with-replies` now passes enclosing parser state to its body. This only affects you if you have used `with-replies` to write custom Redis commands that operate within an implicit context _and_ you interpret the `with-replies` result internally. The new docstring contains details.
+  * **DEPRECATED**: `hmget*` and `hmgetall*`. In future use the `parse-map` macro which is: faster, more flexible, pipeline-capable.
 
   * Parsers: completely refactored design for robustness+flexibility.
   * Parsers: new unit-test suite.
   * Parsers: fixed a number of subtle bugs, mostly internal.
   * Parsers: added `parser-comp` fn for composing parsers (see docstring for details).
   * Parsers: added `parse-nippy` macro for convenient per-cmd control of thaw opts.
+  * Parsers: added `parse-map` for parsing multi-bulk replies as Clojure hashmaps.
 
   * Message queues: completely refactored design for robustness+efficiency.
   * Message queues: new unit-test suite.

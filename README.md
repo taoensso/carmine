@@ -1,7 +1,7 @@
 **[API docs](http://ptaoussanis.github.io/carmine/)** | **[CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "2.4.0-RC1"] ; Development
+[com.taoensso/carmine "2.4.0-RC2"] ; Development
 [com.taoensso/carmine "2.3.1"]     ; Stable
 ```
 
@@ -160,7 +160,7 @@ Carmine will never surprise you by interfering with the standard Redis command A
 
 Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
 
-Helpers currently include: `atomic`, `eval*`, `evalsha*`, `hgetall*`, `info*`, `lua`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
+Helpers currently include: `atomic`, `eval*`, `evalsha*`, `info*`, `lua`, `sort*`, `zinterstore*`, and `zunionstore*`. See their docstrings for more info.
 
 ### Commands are (just) functions
 
