@@ -73,6 +73,23 @@
 (defmacro parse-nippy [thaw-opts & body]
   `(parse (with-meta identity {:thaw-opts ~thaw-opts}) ~@body))
 
+(defn as-map [coll & [kf vf]]
+  (when-let [s' (seq coll)]
+    (let [kf (if-not (identical? kf :keywordize) kf
+                     (fn [k _] (keyword k)))]
+      (loop [m (transient {}) [k v :as s] s']
+        (let [k (if-not kf k (kf k v))
+              v (if-not vf v (vf k v))
+              new-m (assoc! m k v)]
+          (if-let [n (nnext s)]
+            (recur new-m n)
+            (persistent! new-m)))))))
+
+(comment (as-map ["a" "A" "b" "B" "c" "C"] :keywordize
+           (fn [k v] (case k (:a :b) (str "boo-" v) v))))
+
+(defmacro parse-map [form & [kf vf]] `(parse #(as-map % ~kf ~vf) ~form))
+
 (defn key
   "Joins parts to form an idiomatic compound Redis key name. Suggested style:
     * \"category:subcategory:id:field\" basic form.
@@ -190,35 +207,6 @@
 
 (defn hmset* "Like `hmset` but takes a map argument."
   [key m] (apply hmset key (reduce concat m)))
-
-(defn hmget*
-  "Like `hmget` but automatically coerces reply into a hash-map.
-  Any parser will apply to each hash value."
-  [key field & more]
-  (let [fields (cons field more)
-        inner-parser (when-let [p protocol/*parser*] #(mapv p %))
-        outer-parser #(zipmap fields %)]
-    (->> (apply hmget key fields)
-         (parse (parser-comp outer-parser inner-parser)))))
-
-(defn hgetall*
-  "Like `hgetall` but automatically coerces reply into a hash-map. Optionally
-  keywordizes map keys. Any parser will apply to each hash value."
-  [key & [keywordize?]]
-  (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
-        outer-parser (if keywordize?
-                       #(utils/keywordize-map (apply hash-map %))
-                       #(apply hash-map %))]
-    (->> (hgetall key)
-         (parse (parser-comp outer-parser inner-parser)))))
-
-(comment (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
-         (wcar {} (hmset* "hkey" {})) ; ex
-         (wcar {} (hmget* "hkey" :a :b))
-         (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
-         (wcar {} (hmget* "hkey" "a" "b"))
-         (wcar {} (hgetall* "hkey"))
-         (wcar {} (parse str/upper-case (hgetall* "hkey"))))
 
 (defn info*
   "Like `info` but automatically coerces reply into a hash-map."
@@ -458,7 +446,7 @@
      ~message-handlers ; Initial state
      ~@subscription-commands))
 
-;;;; Renamed/deprecated
+;;;; Deprecated
 
 (defn kname "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
   [& parts] (apply key (filter identity parts)))
@@ -516,3 +504,28 @@
              (throw (Exception. (str "`ensure-atomically` failed after " idx#
                                      " attempts")))
              (recur (inc idx#))))))))
+
+(defn hmget* "DEPRECATED: Use `parse-map` instead."
+  [key field & more]
+  (let [fields (cons field more)
+        inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+        outer-parser #(zipmap fields %)]
+    (->> (apply hmget key fields)
+         (parse (parser-comp outer-parser inner-parser)))))
+
+(defn hgetall* "DEPRECATED: Use `parse-map` instead."
+  [key & [keywordize?]]
+  (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+        outer-parser (if keywordize?
+                       #(utils/keywordize-map (apply hash-map %))
+                       #(apply hash-map %))]
+    (->> (hgetall key)
+         (parse (parser-comp outer-parser inner-parser)))))
+
+(comment (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
+         (wcar {} (hmset* "hkey" {})) ; ex
+         (wcar {} (hmget* "hkey" :a :b))
+         (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
+         (wcar {} (hmget* "hkey" "a" "b"))
+         (wcar {} (hgetall* "hkey"))
+         (wcar {} (parse str/upper-case (hgetall* "hkey"))))
