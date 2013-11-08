@@ -5,7 +5,7 @@
 
 (def bench-data  (apply str (repeat 32 "x")))
 (def bench-key   "carmine:temp:benchmark:data-key")
-(defmacro bench* [& body] `(utils/bench 10000 (do ~@body) :warmup-laps 5000))
+(defmacro bench* [& body] `(utils/bench 10000 {:warmup-laps 5000} ~@body))
 
 (defn bench [{:keys [laps unpooled?] :or {laps 1}}]
   (println)

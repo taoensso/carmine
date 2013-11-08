@@ -38,21 +38,26 @@
   [& body] `(let [t0# (System/nanoTime)] ~@body (- (System/nanoTime) t0#)))
 
 (defmacro bench
-  "Repeatedly executes form and returns time taken to complete execution."
-  [num-laps form & {:keys [warmup-laps num-threads as-ns?]}]
-  `(try (when ~warmup-laps (dotimes [_# ~warmup-laps] ~form))
-        (let [nanosecs#
-              (if-not ~num-threads
-                (time-ns (dotimes [_# ~num-laps] ~form))
-                (let [laps-per-thread# (int (/ ~num-laps ~num-threads))]
-                  (time-ns
-                   (->> (fn [] (future (dotimes [_# laps-per-thread#] ~form)))
-                        (repeatedly ~num-threads)
-                        doall
-                        (map deref)
-                        dorun))))]
-          (if ~as-ns? nanosecs# (Math/round (/ nanosecs# 1000000.0))))
-        (catch Exception e# (str "DNF: " (.getMessage e#)))))
+  "Repeatedly executes body and returns time taken to complete execution."
+  [nlaps {:keys [nlaps-warmup nthreads as-ns?]
+          :or   {nlaps-warmup 0
+                 nthreads     1}} & body]
+  `(let [nlaps#        ~nlaps
+         nlaps-warmup# ~nlaps-warmup
+         nthreads#     ~nthreads]
+     (try (dotimes [_# nlaps-warmup#] ~@body)
+          (let [nanosecs#
+                (if (= nthreads# 1)
+                  (time-ns (dotimes [_# nlaps#] ~@body))
+                  (let [nlaps-per-thread# (int (/ nlaps# nthreads#))]
+                    (time-ns
+                     (->> (fn [] (future (dotimes [_# nlaps-per-thread#] ~@body)))
+                          (repeatedly nthreads#)
+                          (doall)
+                          (map deref)
+                          (dorun)))))]
+            (if ~as-ns? nanosecs# (Math/round (/ nanosecs# 1000000.0))))
+          (catch Exception e# (format "DNF: %s" (.getMessage e#))))))
 
 (defn fq-name "Like `name` but includes namespace in string when present."
   [x] (if (string? x) x
