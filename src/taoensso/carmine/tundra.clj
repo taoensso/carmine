@@ -114,7 +114,8 @@
         (->> (mapv #(when %2 %1) ks-missing evictable-replies)
              (filterv identity))))))
 
-(defn- prep-ks [ks] (assert (utils/coll?* ks)) (vec (distinct (mapv name ks))))
+(defn- prep-ks [ks] (assert (and (coll? ks) (not (map? ks))))
+  (vec (distinct (mapv name ks))))
 (comment (prep-ks [nil]) ; ex
          (prep-ks [:a "a" :b :foo.bar/baz]))
 

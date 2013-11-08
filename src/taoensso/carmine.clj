@@ -96,7 +96,8 @@
     * Singular category names (\"account\" rather than \"accounts\").
     * Plural _field_ names when appropriate (\"account:friends\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
-  [& parts] (str/join ":" (mapv utils/keyname parts)))
+  [& parts] (str/join ":" (mapv #(if (keyword? %) (utils/fq-name %) (str %))
+                                parts)))
 
 (comment (key :foo/bar :baz "qux" nil 10))
 
@@ -515,9 +516,11 @@
 
 (defn hgetall* "DEPRECATED: Use `parse-map` instead."
   [key & [keywordize?]]
-  (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+  (let [keywordize-map (fn [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v))
+                                         {} (or m {})))
+        inner-parser (when-let [p protocol/*parser*] #(mapv p %))
         outer-parser (if keywordize?
-                       #(utils/keywordize-map (apply hash-map %))
+                       #(keywordize-map (apply hash-map %))
                        #(apply hash-map %))]
     (->> (hgetall key)
          (parse (parser-comp outer-parser inner-parser)))))

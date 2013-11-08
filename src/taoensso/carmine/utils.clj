@@ -54,21 +54,6 @@
           (if ~as-ns? nanosecs# (Math/round (/ nanosecs# 1000000.0))))
         (catch Exception e# (str "DNF: " (.getMessage e#)))))
 
-(defn version-compare "Comparator for version strings like x.y.z, etc."
-  [x y] (let [vals (fn [s] (vec (map #(Integer/parseInt %) (str/split s #"\."))))]
-          (compare (vals x) (vals y))))
-
-(defn version-sufficient? [version-str min-version-str]
-  (try (>= (version-compare version-str min-version-str) 0)
-       (catch Exception _ false)))
-
-(defn coll?* [x] (and (coll? x) (not (map? x ))))
-
-(defn map-kvs [kf vf m]
-  (persistent! (reduce-kv (fn [m k v] (assoc! m (if kf (kf k) k)
-                                             (if vf (vf v) v)))
-                          (transient {}) (or m {}))))
-
 (defn fq-name "Like `name` but includes namespace in string when present."
   [x] (if (string? x) x
           (let [n (name x)]
@@ -76,16 +61,7 @@
 
 (comment (map fq-name ["foo" :foo :foo.bar/baz]))
 
-(defn keyname [x] (if (keyword? x) (fq-name x) (str x)))
-
-(defn keywordize-map [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v)) {} (or m {})))
-
-(defn comp-maybe [f g]
-  (cond (and f g) (comp f g)
-        f f
-        g g
-        :else nil))
-
+(defn comp-maybe [f g] (cond (and f g) (comp f g) f f g g :else nil))
 (comment ((comp-maybe nil identity) :x))
 
 (defmacro repeatedly* "Like `repeatedly` but faster and returns a vector."
