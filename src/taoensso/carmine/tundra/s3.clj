@@ -16,21 +16,21 @@
 (defrecord S3DataStore [creds bucket]
   IDataStore
   (put-key [this k v]
-    (let [s3-reply (try (s3/put-object creds bucket k (ByteArrayInputStream. v)
-                          {:content-length (count v)
-                           ;; Nb! Prevents overwriting with corrupted data:
-                           :content-md5    (base64-md5 v)})
-                        (catch Exception e e))]
+    (let [reply (try (s3/put-object creds bucket k (ByteArrayInputStream. v)
+                       {:content-length (count v)
+                        ;; Nb! Prevents overwriting with corrupted data:
+                        :content-md5    (base64-md5 v)})
+                     (catch Exception e e))]
       (cond
-       (instance? PutObjectResult s3-reply) true
-       (and (instance? AmazonS3Exception s3-reply)
-            (= (.getMessage ^AmazonS3Exception s3-reply)
+       (instance? PutObjectResult reply) true
+       (and (instance? AmazonS3Exception reply)
+            (= (.getMessage ^AmazonS3Exception reply)
                "The specified bucket does not exist"))
        (let [bucket (first (str/split bucket #"/"))]
          (s3/create-bucket creds bucket)
          (recur k v))
-       (instance? Exception s3-reply) s3-reply
-       :else (Exception. "Unexpected reply type"))))
+       (instance? Exception reply) reply
+       :else (Exception. (format "Unexpected reply: %s" reply)))))
 
   (fetch-key [this k]
     (let [obj (s3/get-object creds bucket k)
