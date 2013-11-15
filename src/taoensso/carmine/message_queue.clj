@@ -322,9 +322,15 @@
 (defrecord    Worker [conn qname running? opts]
   java.io.Closeable (close [this] (stop this))
   IWorker
-  (stop  [_] (let [stopped? @running?] (reset! running? false) stopped?))
+  (stop [_]
+    (let [stopped? @running?]
+      (reset! running? false)
+      (when stopped? (timbre/infof "Message queue worker stopped: %s" qname))
+      stopped?))
+
   (start [_]
     (when-not @running?
+      (timbre/infof "Message queue worker starting: %s" qname)
       (reset! running? true)
       (let [{:keys [handler monitor nthreads throttle-ms]} opts
             qk (partial qkey qname)
