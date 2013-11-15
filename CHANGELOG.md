@@ -34,6 +34,8 @@
   * Tundra: `ensure-ks` now no longer throws when attempting to ensure non-evictable keys.
   * Tundra: added simple disk-based DataStore implementation.
 
+  * Scripts: added experimental `lua-local` for higher script performance in single-server environments.
+
 
 ## v2.2.3 → v2.3.1
   * **DEPRECATED**: `atomically`, `ensure-atomically` -> `atomic`. The new macro is faster, more robust, more flexible. See docstring for details.

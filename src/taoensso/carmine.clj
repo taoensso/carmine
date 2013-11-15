@@ -131,22 +131,18 @@
 (comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
                               [:config-get "*max-*-entries*"])))
 
-(def hash-script
-  (memoize
-   (fn [script]
-     (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
+;;; Lua scripts
 
-(defn evalsha*
-  "Like `evalsha` but automatically computes SHA1 hash for script."
-  [script numkeys key & args]
-  (apply evalsha (hash-script script) numkeys key args))
+(def script-hash (memoize (fn [script]
+  (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
+
+(defn evalsha* "Like `evalsha` but automatically computes SHA1 hash for script."
+  [script numkeys key & args] (apply evalsha (script-hash script) numkeys key args))
 
 (defn eval*
   "Optimistically tries to send `evalsha` command for given script. In the event
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
-  reply.
-
-  Redis Cluster note: keys need to all be on same shard."
+  reply. Redis Cluster note: keys need to all be on same shard."
   [script numkeys key & args]
   (let [[r & _] (->> (apply evalsha* script numkeys key args)
                      (with-replies :as-pipeline)
@@ -157,32 +153,35 @@
       (apply eval script numkeys key args)
       (return r))))
 
-(def ^:private interpolate-script
-  "Substitutes named variables for indexed KEYS[]s and ARGV[]s in Lua script.
-
-  (interpolate-script \"return redis.call('set', _:my-key, _:my-val)\"
-                      [:my-key] [:my-val])
-  => \"return redis.call('set', KEYS[1], ARGV[1])\""
+(def ^:private script-subst-vars
+  "Substitutes named variables for indexed KEYS[]s and ARGV[]s in Lua script."
   (memoize
    (fn [script key-vars arg-vars]
-     (let [;; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
-           subst-map
+     (let [subst-map ; {match replacement} e.g. {"_:my-var" "ARRAY-NAME[1]"}
            (fn [vars array-name]
              (zipmap (map #(str "_:" (name %)) vars)
                      (map #(str array-name "[" % "]")
                           (map inc (range)))))]
+
        (reduce (fn [s [match replacement]] (str/replace s match replacement))
                (str script)
                (->> (merge (subst-map key-vars "KEYS")
                            (subst-map arg-vars "ARGV"))
-                    ;; Prevent ":foo" from replacing ":foo-bar" w/o the need for
-                    ;; an insane Regex:
+                    ;; Stop ":foo" replacing ":foo-bar" w/o need for insane Regex:
                     (sort-by #(- (.length ^String (first %))))))))))
 
-(comment
-  (= (interpolate-script "_:k1 _:a1 _:k2! _:a _:k3? _:k _:a2 _:a _:a3 _:a-4"
-                         [:k3? :k1 :k2! :k] [:a2 :a-4 :a3 :a :a1])
-     "KEYS[2] ARGV[5] KEYS[3] ARGV[4] KEYS[1] KEYS[4] ARGV[1] ARGV[4] ARGV[3] ARGV[2]"))
+(comment (script-subst-vars "_:k1 _:a1 _:k2! _:a _:k3? _:k _:a2 _:a _:a3 _:a-4"
+           [:k3? :k1 :k2! :k] [:a2 :a-4 :a3 :a :a1]))
+
+(defn- script-prep-vars "-> [<key-vars> <arg-vars> <var-vals>]"
+  [keys args]
+  [(when (map? keys) (clojure.core/keys keys))
+   (when (map? args) (clojure.core/keys args))
+   (into (vec (if (map? keys) (vals keys) keys))
+              (if (map? args) (vals args) args))])
+
+(comment (script-prep-vars {:k1 :K1 :k2 :K2} {:a1 :A1 :a2 :A2})
+         (script-prep-vars [:K1 :K2] {:a1 :A1 :a2 :A2}))
 
 (defn lua
   "All singing, all dancing Lua script helper. Like `eval*` but allows script
@@ -192,19 +191,49 @@
 
   Keys are separate from other args as an implementation detail for clustering
   purposes (keys need to all be on same shard)."
-  [script key-vars arg-vars]
-  (apply eval* (interpolate-script script
-                (when (map? key-vars) (clojure.core/keys key-vars))
-                (when (map? arg-vars) (clojure.core/keys arg-vars)))
-         (count key-vars)
-         (into (vec (if (map? key-vars) (vals key-vars) key-vars))
-               (if (map? arg-vars) (vals arg-vars) arg-vars))))
+  [script keys args]
+  (let [[key-vars arg-vars var-vals] (script-prep-vars keys args)]
+    (apply eval* (script-subst-vars script key-vars arg-vars) (count key-vars)
+           var-vals)))
 
-(comment
-  (wcar {} (lua "redis.call('set', _:my-key, _:my-val)
-                return redis.call('get', 'foo')"
+(comment (wcar {}
+           (lua "redis.call('set', _:my-key, _:my-val)
+                 return redis.call('get', 'foo')"
                 {:my-key "foo"}
                 {:my-val "bar"})))
+
+(def ^:private scripts-loaded-locally "#{[<conn-spec> <sha>]...}" (atom #{}))
+(defn lua-local
+  "Alpha - subject to change.
+  Like `lua`, but optimized for the single-server, single-client case: maintains
+  set of Lua scripts previously loaded by this client and will _not_ speculate
+  on script availability. CANNOT be used in environments where Redis servers may
+  go down and come back up again independently of application servers (clients)."
+  [script keys args]
+  (let [conn-spec (get-in protocol/*context* [:conn :spec])
+        [key-vars arg-vars var-vals] (script-prep-vars keys args)
+        script* (script-subst-vars script key-vars arg-vars)
+        sha     (script-hash script*)
+        evalsha (fn [] (apply evalsha sha (count key-vars) var-vals))]
+    (if (contains? @scripts-loaded-locally [conn-spec sha]) (evalsha)
+      (do (with-replies (parse nil (script-load script*)))
+          (swap! scripts-loaded-locally conj [conn-spec sha])
+          (evalsha)))))
+
+(comment (wcar {} (lua       "return redis.call('ping')" {:_ "_"} {}))
+         (wcar {} (lua-local "return redis.call('ping')" {:_ "_"} {}))
+
+         (clojure.core/time
+          (dotimes [_ 10000]
+            (wcar {} (ping) (lua "return redis.call('ping')" {:_ "_"} {})
+                     (ping) (ping) (ping))))
+
+         (clojure.core/time
+          (dotimes [_ 10000]
+            (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
+                     (ping) (ping) (ping)))))
+
+;;;
 
 (defn hmset* "Like `hmset` but takes a map argument."
   [key m] (apply hmset key (reduce concat m)))
@@ -448,6 +477,8 @@
      ~@subscription-commands))
 
 ;;;; Deprecated
+
+(def hash-script script-hash)
 
 (defn kname "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
   [& parts] (apply key (filter identity parts)))

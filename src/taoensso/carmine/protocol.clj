@@ -10,7 +10,7 @@
   (:import  [java.io DataInputStream BufferedOutputStream]
             [clojure.lang Keyword]))
 
-(defrecord Context [in-stream out-stream parser-queue])
+(defrecord Context [conn in-stream out-stream parser-queue])
 (def ^:dynamic *context* nil)
 (def ^:dynamic *parser*  nil)
 (def ^:private no-context-error
@@ -239,9 +239,10 @@
 (defmacro with-context
   "Evaluates body in the context of a thread-bound connection to a Redis server."
   [conn & body]
-  `(let [{spec# :spec in-stream# :in-stream out-stream# :out-stream} ~conn
+  `(let [conn# ~conn
+         {spec# :spec in-stream# :in-stream out-stream# :out-stream} conn#
          listener?# (:listener? spec#)]
-     (binding [*context* (->Context in-stream# out-stream#
+     (binding [*context* (->Context conn# in-stream# out-stream#
                                     (when-not listener?# (atom [])))
                *parser*  nil]
        ~@body)))
