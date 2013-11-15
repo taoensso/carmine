@@ -384,7 +384,7 @@
    :nthreads       - Number of synchronized worker threads to use.
    :throttle-ms    - Thread sleep period between each poll."
   [conn qname & [{:keys [handler monitor lock-ms eoq-backoff-ms nthreads
-                         throttle-ms auto-start?]
+                         throttle-ms auto-start] :as opts
                   :or   {handler (fn [args] (timbre/infof "%s" args)
                                            {:status :success})
                          monitor (monitor-fn qname 1000 (* 1000 60 60 6))
@@ -392,7 +392,7 @@
                          nthreads       1
                          throttle-ms    200
                          eoq-backoff-ms exp-backoff
-                         auto-start?    true}}]]
+                         auto-start     true}}]]
   (let [w (->Worker conn qname (atom false)
                     {:handler        handler
                      :monitor        monitor
@@ -400,7 +400,15 @@
                      :eoq-backoff-ms eoq-backoff-ms
                      :nthreads       nthreads
                      :throttle-ms    throttle-ms})]
-    (when auto-start? (start w)) w))
+
+    (let [;; For backwards-compatibility with old API:
+          auto-start (if-not (contains? opts :auto-start?) auto-start
+                       (:auto-start? opts))]
+      (when auto-start
+        (if (integer? auto-start)
+          (future (Thread/sleep auto-start) (start w))
+          (start w))))
+    w))
 
 ;;;; Renamed/deprecated
 
