@@ -1,7 +1,7 @@
 **[API docs](http://ptaoussanis.github.io/carmine/)** | **[CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "2.4.0-RC2"] ; Development
+[com.taoensso/carmine "2.4.0-RC3"] ; Development
 [com.taoensso/carmine "2.3.1"]     ; Stable
 ```
 
@@ -314,7 +314,7 @@ Redis is a beautifully designed datastore that makes some explicit engineering t
 
 That's it: two Redis commands, and a worker! Tundra uses Redis' own dump/restore mechanism for replication, and Carmine's own message queue to coordinate the replication worker.
 
-Tundra can be _very_ easily extended to **any K/V-capable datastore**. Implementations are provided out-the-box for: **Amazon S3** and **DynamoDB**.
+Tundra can be _very_ easily extended to **any K/V-capable datastore**. Implementations are provided out-the-box for: **Disk**, **Amazon S3** and **DynamoDB**.
 
 ```clojure
 (:require [taoensso.carmine.tundra :as tundra :refer (ensure-ks dirty)]
