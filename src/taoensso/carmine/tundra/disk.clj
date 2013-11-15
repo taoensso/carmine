@@ -15,7 +15,7 @@
 (comment (<fname-safe (>fname-safe "hello f8 8 93#**#\\// !!$")))
 
 (defn- path*  [path] (Paths/get "" (into-array String [path])))
-(defn- mkdirs [path] (.mkdirs (.toFile (path* path))))
+(defn- mkdirs [path] (.mkdirs ^java.io.File (.toFile ^Path (path* path))))
 (defn- mv [path-source path-dest]
   (Files/move (path* path-source) (path* path-dest)
     (into-array CopyOption [StandardCopyOption/ATOMIC_MOVE
