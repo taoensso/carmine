@@ -31,14 +31,14 @@
 
 (expect "hello world" ; Basic put & fetch
   (do (tundra/put-key dstore (tkey "foo") (s->ba "hello world"))
-      (-> (tundra/fetch-key dstore (tkey "foo")) (ba->s))))
+      (-> (tundra/fetch-keys dstore [(tkey "foo")]) (first) (ba->s))))
 
 (expect "hello world 2" ; Update val
   (do (tundra/put-key dstore (tkey "foo") (s->ba "hello world 1"))
       (tundra/put-key dstore (tkey "foo") (s->ba "hello world 2"))
-      (-> (tundra/fetch-key dstore (tkey "foo")) (ba->s))))
+      (-> (tundra/fetch-keys dstore [(tkey "foo")]) (first) (ba->s))))
 
-(expect AmazonS3Exception (tundra/fetch-key dstore (tkey "invalid")))
+(expect AmazonS3Exception (first (tundra/fetch-keys dstore [(tkey "invalid")])))
 
 ;;;; Tundra API
 

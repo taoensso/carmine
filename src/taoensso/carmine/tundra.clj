@@ -22,8 +22,8 @@
 ;;;; Public interfaces
 
 (defprotocol IDataStore "Extension point for additional datastores."
-  (put-key   [dstore k v] "(put-key dstore \"key\" <frozen-val>) => e/o #{true <ex>}")
-  (fetch-key [dstore k] "(fetch-key dstore \"key\") => e/o #{<frozen-val> <ex>}\""))
+  (put-key    [dstore k v] "(put-key dstore \"key\" <frozen-val>) => e/o #{true <ex>}")
+  (fetch-keys [dstore ks] "(fetch-keys dstore [\"key\" ...]) => [<e/o #{<frozen-val> <ex>}> ...]"))
 
 (defprotocol IFreezer "Extension point for compressors, encryptors, etc."
   (freeze [freezer x] "Returns datastore-ready key val.
@@ -119,12 +119,12 @@
 (comment (prep-ks [nil]) ; ex
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
-(defmacro ^:private catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
+(defmacro catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
 
-(def fetch-key-delayed
+(def fetch-keys-delayed
   "Used to prevent multiple threads from rushing the datastore to get the same
-  key, unnecessarily duplicating work."
-  (utils/memoize-ttl 5000 fetch-key))
+  keys, unnecessarily duplicating work."
+  (utils/memoize-ttl 5000 fetch-keys))
 
 (defrecord TundraStore [datastore freezer opts]
   ITundraStore
@@ -135,10 +135,10 @@
 
       (when-not (empty? ks-missing)
         (timbre/tracef "Fetching missing evictable keys: %s" ks-missing)
-
         (let [;;; [] e/o #{<dumpval> <throwable>}:
               throwable?    #(instance? Throwable %)
-              dvals-missing (->> ks-missing (mapv #(catcht (fetch-key-delayed datastore %))))
+              dvals-missing (try (fetch-keys-delayed datastore ks-missing)
+                              (catch Throwable t (mapv (constantly t) ks-missing)))
               dvals-missing (if (nil? freezer) dvals-missing
                                 (->> dvals-missing
                                      (mapv #(if (throwable? %) %

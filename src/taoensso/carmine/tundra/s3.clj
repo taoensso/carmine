@@ -3,7 +3,8 @@
   {:author "Peter Taoussanis"}
   (:require [clojure.string  :as str]
             [aws.sdk.s3      :as s3]
-            [taoensso.timbre :as timbre])
+            [taoensso.timbre :as timbre]
+            [taoensso.carmine.tundra :as tundra])
   (:import  [java.io ByteArrayInputStream DataInputStream]
             [taoensso.carmine.tundra IDataStore]
             [com.amazonaws.services.s3.model AmazonS3Exception PutObjectResult]))
@@ -32,11 +33,14 @@
        (instance? Exception reply) reply
        :else (Exception. (format "Unexpected reply: %s" reply)))))
 
-  (fetch-key [this k]
-    (let [obj (s3/get-object creds bucket k)
-          ba  (byte-array (-> obj :metadata :content-length))]
-      (.readFully (DataInputStream. (:content obj)) ba)
-      ba)))
+  (fetch-keys [this ks]
+    (let [fetch1
+          (fn [k]
+            (let [obj (s3/get-object creds bucket k)
+                  ba  (byte-array (-> obj :metadata :content-length))]
+              (.readFully (DataInputStream. (:content obj)) ba)
+              ba))]
+      (mapv #(tundra/catcht (fetch1 %)) ks))))
 
 (defn s3-datastore
   "Alpha - subject to change.
@@ -54,4 +58,4 @@
   (def dstore (s3-datastore creds "ensso-store/folder"))
   (s3/put-object creds "ensso-store/folder" "foo:bar:baz" "hello world")
   (tundra/put-key dstore "foo:bar:baz" (.getBytes "hello world"))
-  (String. (tundra/fetch-key dstore "foo:bar:baz")))
+  (String. (first (tundra/fetch-keys dstore ["foo:bar:baz"]))))

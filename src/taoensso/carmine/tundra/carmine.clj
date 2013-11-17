@@ -8,5 +8,5 @@
 
 ;; (defrecord CarmineDataStore [conn]
 ;;   IDataStore
-;;   (put-key   [dstore k v])
-;;   (fetch-key [dstore k]))
+;;   (put-key    [dstore k v])
+;;   (fetch-keys [dstore ks]))

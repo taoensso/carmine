@@ -5,7 +5,8 @@
   (there is a template pipeline for exactly this purpose)."
   {:author "Peter Taoussanis"}
   (:require [taoensso.faraday :as far]
-            [taoensso.timbre  :as timbre])
+            [taoensso.timbre  :as timbre]
+            [taoensso.carmine.tundra :as tundra])
   (:import  [taoensso.carmine.tundra IDataStore]))
 
 (def default-table :faraday.tundra.datastore.default.prod)
@@ -30,11 +31,14 @@
                                        :data      v})
     true)
 
-  (fetch-key [this k]
-    (-> (far/get-item creds (:table opts) {:key-ns (:key-ns opts)
-                                           :redis-key k}
-                      {:attrs [:data]})
-        :data)))
+  (fetch-keys [this ks]
+    (let [fetch1
+          (fn [k]
+            (-> (far/get-item creds (:table opts) {:key-ns (:key-ns opts)
+                                                   :redis-key k}
+                              {:attrs [:data]})
+                :data))]
+      (mapv #(tundra/catcht (fetch1 %)) ks))))
 
 (defn faraday-datastore
   "Alpha - subject to change.
@@ -58,4 +62,4 @@
   (require '[taoensso.carmine.tundra :as tundra])
   (def dstore (faraday-datastore creds))
   (tundra/put-key dstore "foo:bar:baz" (.getBytes "hello world"))
-  (String. (tundra/fetch-key dstore "foo:bar:baz")))
+  (String. (first (tundra/fetch-keys dstore ["foo:bar:baz"]))))
