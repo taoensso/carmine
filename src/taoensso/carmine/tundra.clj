@@ -147,7 +147,16 @@
         (let [;;; [] e/o #{<dumpval> <throwable>}:
               throwable?    #(instance? Throwable %)
               dvals-missing (try (fetch-keys-delayed datastore ks-missing)
-                              (catch Throwable t (mapv (constantly t) ks-missing)))
+                                 (catch Throwable t (mapv (constantly t) ks-missing)))
+              _ ; Sanity-check the fetch result
+              (when-not (= (count dvals-missing)
+                           (count ks-missing))
+                (-> (format (str "Bad `fetch-keys` result:"
+                                 " unexpected val count (got %s, expected %s)."
+                                 " Bad DataStore implementation?")
+                            (count dvals-missing)
+                            (count ks-missing))
+                    (Exception.) (throw)))
               dvals-missing (if (nil? freezer) dvals-missing
                                 (->> dvals-missing
                                      (mapv #(if (throwable? %) %
