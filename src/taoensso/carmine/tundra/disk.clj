@@ -4,17 +4,12 @@
   (:require [taoensso.timbre :as timbre]
             [taoensso.carmine.tundra :as tundra])
   (:import  [taoensso.carmine.tundra IDataStore]
-            [java.net URLDecoder URLEncoder]
             [java.nio.file CopyOption Files LinkOption OpenOption Path Paths
              StandardCopyOption StandardOpenOption NoSuchFileException]))
 
 ;;;; Utils
 
 (defn- uuid [] (java.util.UUID/randomUUID))
-(defn- >fname-safe [s] (URLEncoder/encode (str s) "ISO-8859-1"))
-(defn- <fname-safe [s] (URLDecoder/decode (str s) "ISO-8859-1"))
-(comment (<fname-safe (>fname-safe "hello f8 8 93#**#\\// !!$")))
-
 (defn- path*  [path] (Paths/get "" (into-array String [path])))
 (defn- mkdirs [path] (.mkdirs ^java.io.File (.toFile ^Path (path* path))))
 (defn- mv [path-source path-dest]
@@ -35,12 +30,14 @@
 (defrecord DiskDataStore [path]
   IDataStore
   (fetch-keys [this ks]
-    (let [fetch1 (fn [k] (read-ba (format "%s/%s" (path* path) (>fname-safe k))))]
+    (let [fetch1 (fn [k] (read-ba (format "%s/%s" (path* path)
+                                   (tundra/>safe-keyname k))))]
       (mapv #(tundra/catcht (fetch1 %)) ks)))
   (put-key  [this k v]
     (let [result
           (try (let [path-full-temp (format "%s/tmp-%s" (path* path) (uuid))
-                     path-full      (format "%s/%s"     (path* path) (>fname-safe k))]
+                     path-full      (format "%s/%s"     (path* path)
+                                      (tundra/>safe-keyname k))]
                  (write-ba path-full-temp v)
                  (mv       path-full-temp path-full))
                (catch Exception e e))]

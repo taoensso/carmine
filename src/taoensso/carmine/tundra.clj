@@ -12,7 +12,8 @@
             [taoensso.carmine.utils :as utils]
             [taoensso.nippy         :as nippy]
             [taoensso.nippy.tools   :as nippy-tools]
-            [taoensso.timbre        :as timbre]))
+            [taoensso.timbre        :as timbre])
+  (:import  [java.net URLDecoder URLEncoder]))
 
 ;;;; TODO
 ;; * Redis 2.8+ http://redis.io/topics/notifications
@@ -119,7 +120,15 @@
 (comment (prep-ks [nil]) ; ex
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
+;;;; Public utils (useful for DataStore implementations)
+
 (defmacro catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
+
+(defn >safe-keyname [s] (URLEncoder/encode (str s) "ISO-8859-1"))
+(defn <safe-keyname [s] (URLDecoder/decode (str s) "ISO-8859-1"))
+(comment (<safe-keyname (>safe-keyname "hello f8 8 93#**#\\// !!$")))
+
+;;;;
 
 (def fetch-keys-delayed
   "Used to prevent multiple threads from rushing the datastore to get the same
