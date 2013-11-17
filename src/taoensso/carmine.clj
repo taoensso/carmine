@@ -162,7 +162,6 @@
              (zipmap (map #(str "_:" (name %)) vars)
                      (map #(str array-name "[" % "]")
                           (map inc (range)))))]
-
        (reduce (fn [s [match replacement]] (str/replace s match replacement))
                (str script)
                (->> (merge (subst-map key-vars "KEYS")
@@ -193,7 +192,8 @@
   purposes (keys need to all be on same shard)."
   [script keys args]
   (let [[key-vars arg-vars var-vals] (script-prep-vars keys args)]
-    (apply eval* (script-subst-vars script key-vars arg-vars) (count key-vars)
+    (apply eval* (script-subst-vars script key-vars arg-vars)
+           (count keys) ; Not key-vars!
            var-vals)))
 
 (comment (wcar {}

@@ -98,7 +98,7 @@
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
 
 (def ^:private k-evictable "carmine:tundra:evictable")
-(defn- extend-exists-missing-ks [ttl-ms ks & [only-evictable?]]
+(defn extend-exists-missing-ks [ttl-ms ks & [only-evictable?]]
   (let [existance-replies (->> (extend-exists ttl-ms ks)
                                (car/with-replies) ; Single bulk reply
                                (car/parse #(mapv car/as-bool %)))
