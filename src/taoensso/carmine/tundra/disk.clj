@@ -1,7 +1,7 @@
 (ns taoensso.carmine.tundra.disk
   "Simple disk-based DataStore implementation for Tundra."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.timbre :as timbre]
+  (:require [taoensso.timbre         :as timbre]
             [taoensso.carmine.tundra :as tundra])
   (:import  [taoensso.carmine.tundra IDataStore]
             [java.nio.file CopyOption Files LinkOption OpenOption Path Paths
@@ -30,10 +30,12 @@
 (defrecord DiskDataStore [path]
   IDataStore
   (fetch-keys [this ks]
-    (let [fetch1 (fn [k] (read-ba (format "%s/%s" (path* path)
-                                   (tundra/>safe-keyname k))))]
-      (mapv #(tundra/catcht (fetch1 %)) ks)))
-  (put-key  [this k v]
+    (let [fetch1 (fn [k] (tundra/catcht
+                         (read-ba (format "%s/%s" (path* path)
+                                          (tundra/>safe-keyname k)))))]
+      (mapv fetch1 ks)))
+
+  (put-key [this k v]
     (let [result
           (try (let [path-full-temp (format "%s/tmp-%s" (path* path) (uuid))
                      path-full      (format "%s/%s"     (path* path)
@@ -41,7 +43,6 @@
                  (write-ba path-full-temp v)
                  (mv       path-full-temp path-full))
                (catch Exception e e))]
-
       (cond
        (instance? Path result) true
        (instance? NoSuchFileException result)

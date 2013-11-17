@@ -1,9 +1,9 @@
 (ns taoensso.carmine.tundra.s3
   "AWS S3 (clj-aws-s3) DataStore implementation for Tundra."
   {:author "Peter Taoussanis"}
-  (:require [clojure.string  :as str]
-            [aws.sdk.s3      :as s3]
-            [taoensso.timbre :as timbre]
+  (:require [clojure.string          :as str]
+            [aws.sdk.s3              :as s3]
+            [taoensso.timbre         :as timbre]
             [taoensso.carmine.tundra :as tundra])
   (:import  [java.io ByteArrayInputStream DataInputStream]
             [taoensso.carmine.tundra IDataStore]
@@ -36,11 +36,13 @@
   (fetch-keys [this ks]
     (let [fetch1
           (fn [k]
-            (let [obj (s3/get-object creds bucket k)
-                  ba  (byte-array (-> obj :metadata :content-length))]
-              (.readFully (DataInputStream. (:content obj)) ba)
-              ba))]
-      (mapv #(tundra/catcht (fetch1 %)) ks))))
+            (tundra/catcht
+             (let [obj (s3/get-object creds bucket k)
+                   ba  (byte-array (-> obj :metadata :content-length))]
+               (.readFully (DataInputStream. (:content obj)) ba)
+               ba)))]
+      (->> (mapv #(future (fetch1 %)) ks)
+           (mapv deref)))))
 
 (defn s3-datastore
   "Alpha - subject to change.

@@ -4,9 +4,10 @@
   Use AWS Data Pipeline to setup scheduled backups of DynamoDB table(s) to S3
   (there is a template pipeline for exactly this purpose)."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.faraday :as far]
-            [taoensso.timbre  :as timbre]
-            [taoensso.carmine.tundra :as tundra])
+  (:require [taoensso.timbre         :as timbre]
+            [taoensso.carmine.tundra :as tundra]
+            [taoensso.faraday        :as far]
+            [taoensso.faraday.utils  :as futils])
   (:import  [taoensso.carmine.tundra IDataStore]))
 
 (def default-table :faraday.tundra.datastore.default.prod)
@@ -32,13 +33,20 @@
     true)
 
   (fetch-keys [this ks]
-    (let [fetch1
-          (fn [k]
-            (-> (far/get-item creds (:table opts) {:key-ns (:key-ns opts)
-                                                   :redis-key k}
-                              {:attrs [:data]})
-                :data))]
-      (mapv #(tundra/catcht (fetch1 %)) ks))))
+    (let [{:keys [table key-ns]} opts
+          kparts (partition-all 100 ks) ; API limit
+          fetch1-partition ; {<redis-key> <frozen-val> ...}
+          (fn [pks] (try (->> (far/batch-get-item creds
+                               {table {:prim-kvs {:key-ns key-ns
+                                                  :redis-key pks}
+                                       :attrs [:redis-key :data]}})
+                             (table) ; [{:data _ :redis-key _} ...]
+                             (far/items-by-attrs :redis-key)
+                             (futils/map-kvs nil :data))
+                        (catch Throwable t
+                          (zipmap pks (repeat t)))))
+          vals-map (reduce merge {} (mapv fetch1-partition kparts))]
+      (mapv #(get vals-map % (Exception. "Missing value")) ks))))
 
 (defn faraday-datastore
   "Alpha - subject to change.

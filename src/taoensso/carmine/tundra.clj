@@ -228,7 +228,6 @@
                    (cond
                     (nil? put-reply) (ex-info "Key doesn't exist" {:k k})
                     :else (ex-info "Bad put-reply" {:k k :put-reply put-reply}))})))))))))
-
 ;;;;
 
 (defn tundra-store

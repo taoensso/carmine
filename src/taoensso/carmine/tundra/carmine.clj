@@ -1,7 +1,8 @@
 (ns taoensso.carmine.tundra.carmine
   "Secondary Redis server DataStore implementation for Tundra."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.timbre :as timbre])
+  (:require [taoensso.timbre         :as timbre]
+            [taoensso.carmine.tundra :as tundra])
   (:import  [taoensso.carmine.tundra IDataStore]))
 
 ;; TODO
