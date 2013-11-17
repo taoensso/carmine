@@ -99,18 +99,18 @@
  (let [tstore  (tundra/tundra-store dstore {:redis-ttl-ms (* 1000 60 60 24)
                                             :qname qname})
        tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100
-                                         :auto-start? false})]
+                                         :auto-start false})]
    (wcar* (car/set (tkey 0) "0") ; Clears timeout
           (tundra/dirty tstore (tkey 0)))
 
-   (wcar* (car/ttl (tkey 0))
+   (wcar* (car/pttl (tkey 0))
           (mq/start tworker)
           (Thread/sleep 3000) ; Wait for replication
           (mq/stop tworker)
-          (car/ttl (tkey 0))
+          (car/pttl (tkey 0))
           (Thread/sleep 1000)
           (tundra/ensure-ks tstore (tkey 0))
-          (car/ttl (tkey 0)))))
+          (car/pttl (tkey 0)))))
 
 (comment (clean-up!)
          (mq/queue-status {} qname))

@@ -5,13 +5,14 @@
   (there is a template pipeline for exactly this purpose)."
   {:author "Peter Taoussanis"}
   (:require [taoensso.timbre         :as timbre]
+            [taoensso.carmine.utils  :as utils]
             [taoensso.carmine.tundra :as tundra]
             [taoensso.faraday        :as far]
             [taoensso.faraday.utils  :as futils])
   (:import  [taoensso.carmine.tundra IDataStore]))
 
 (def default-table :faraday.tundra.datastore.default.prod)
-(defn ensure-table
+(defn ensure-table ; Slow, so we won't do automatically
   "Creates an appropriate Faraday Tundra table iff it doesn't already exist.
   Options:
     :name       - Default is :faraday.tundra.datastore.default.prod. You may
@@ -27,37 +28,37 @@
 (defrecord FaradayDataStore [creds opts]
   IDataStore
   (put-key [this k v]
+    (assert (utils/bytes? v))
     (far/put-item creds (:table opts) {:key-ns (:key-ns opts)
-                                       :redis-key k
-                                       :data      v})
+                                       :redis-key  k
+                                       :frozen-val v})
     true)
 
   (fetch-keys [this ks]
+    (assert (<= (count ks) 100)) ; API limit
     (let [{:keys [table key-ns]} opts
-          kparts (partition-all 100 ks) ; API limit
-          fetch1-partition ; {<redis-key> <frozen-val> ...}
-          (fn [pks] (try (->> (far/batch-get-item creds
-                               {table {:prim-kvs {:key-ns key-ns
-                                                  :redis-key pks}
-                                       :attrs [:redis-key :data]}})
-                             (table) ; [{:data _ :redis-key _} ...]
-                             (far/items-by-attrs :redis-key)
-                             (futils/map-kvs nil :data))
-                        (catch Throwable t
-                          (zipmap pks (repeat t)))))
-          vals-map (reduce merge {} (mapv fetch1-partition kparts))]
+          vals-map ; {<redis-key> <frozen-val>}
+          (try
+            (->> (far/batch-get-item creds
+                   {table {:prim-kvs {:key-ns key-ns
+                                      :redis-key ks}
+                           :attrs [:redis-key :frozen-val]}})
+                 (table) ; [{:frozen-val _ :redis-key _} ...]
+                 (far/items-by-attrs :redis-key)
+                 (futils/map-kvs nil :frozen-val)
+                 (reduce merge {}))
+            (catch Throwable t (zipmap ks (repeat t))))]
       (mapv #(get vals-map % (Exception. "Missing value")) ks))))
 
 (defn faraday-datastore
   "Alpha - subject to change.
   Returns a Faraday DataStore with options:
-    :table            - Tundra table name. Useful for different apps/environments
-                        with individually provisioned throughput.
-    :key-ns           - Optional key namespacing mechanism useful for different
-                        apps/environments under a single table (i.e. shared
-                        provisioned throughput).
-
-  Supported Freezer io types: byte[]s, strings."
+    :table  - Tundra table name. Useful for different apps/environments with
+              individually provisioned throughput.
+    :key-ns - Optional key namespacing mechanism useful for different
+              apps/environments under a single table (i.e. shared provisioned
+              throughput).
+  Supported Freezer io types: byte[]s."
   [creds & [{:keys [table key-ns]
              :or   {table default-table
                     key-ns :default}}]]
@@ -67,7 +68,7 @@
 (comment
   (ensure-table creds {:throughput {:read 1 :write 1}})
   (far/describe-table creds default-table)
-  (require '[taoensso.carmine.tundra :as tundra])
-  (def dstore (faraday-datastore creds))
-  (tundra/put-key dstore "foo:bar:baz" (.getBytes "hello world"))
-  (String. (first (tundra/fetch-keys dstore ["foo:bar:baz"]))))
+  (def dstore  (faraday-datastore creds))
+  (def hardkey (tundra/>safe-keyname "foo:bar /♡\\:baz "))
+  (tundra/put-key dstore hardkey (.getBytes "hello world"))
+  (String. (first (tundra/fetch-keys dstore [hardkey]))))

@@ -4,19 +4,20 @@
   (:require [clojure.string          :as str]
             [aws.sdk.s3              :as s3]
             [taoensso.timbre         :as timbre]
+            [taoensso.carmine.utils  :as utils]
             [taoensso.carmine.tundra :as tundra])
   (:import  [java.io ByteArrayInputStream DataInputStream]
             [taoensso.carmine.tundra IDataStore]
             [com.amazonaws.services.s3.model AmazonS3Exception PutObjectResult]))
 
 (defn- base64-md5 [^bytes x]
-  (-> x
-      (org.apache.commons.codec.digest.DigestUtils/md5)
-      (org.apache.commons.codec.binary.Base64/encodeBase64String)))
+  (-> x (org.apache.commons.codec.digest.DigestUtils/md5)
+        (org.apache.commons.codec.binary.Base64/encodeBase64String)))
 
 (defrecord S3DataStore [creds bucket]
   IDataStore
   (put-key [this k v]
+    (assert (utils/bytes? v))
     (let [reply (try (s3/put-object creds bucket k (ByteArrayInputStream. v)
                        {:content-length (count v)
                         ;; Nb! Prevents overwriting with corrupted data:
@@ -52,12 +53,11 @@
                 \"my-bucket/my-folder\")
 
   Supported Freezer io types: byte[]s."
-  [creds bucket]
-  (->S3DataStore creds (name bucket)))
+  [creds bucket] {:pre [(string? bucket)]}
+  (->S3DataStore creds bucket))
 
 (comment
-  (require '[taoensso.carmine.tundra :as tundra])
-  (def dstore (s3-datastore creds "ensso-store/folder"))
-  (s3/put-object creds "ensso-store/folder" "foo:bar:baz" "hello world")
-  (tundra/put-key dstore "foo:bar:baz" (.getBytes "hello world"))
-  (String. (first (tundra/fetch-keys dstore ["foo:bar:baz"]))))
+  (def dstore  (s3-datastore creds "ensso-store/folder"))
+  (def hardkey (tundra/>safe-keyname "foo:bar /♡\\:baz "))
+  (tundra/put-key dstore hardkey (.getBytes "hello world"))
+  (String. (first (tundra/fetch-keys dstore [hardkey]))))

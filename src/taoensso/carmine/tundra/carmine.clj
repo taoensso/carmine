@@ -2,6 +2,7 @@
   "Secondary Redis server DataStore implementation for Tundra."
   {:author "Peter Taoussanis"}
   (:require [taoensso.timbre         :as timbre]
+            [taoensso.carmine.utils  :as utils]
             [taoensso.carmine.tundra :as tundra])
   (:import  [taoensso.carmine.tundra IDataStore]))
 

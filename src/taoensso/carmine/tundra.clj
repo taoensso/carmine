@@ -17,14 +17,12 @@
 
 ;;;; TODO
 ;; * Redis 2.8+ http://redis.io/topics/notifications
-;; * Consider possible methods of lowering 'evictable' set overhead:
-;;   making optional, recent uncompressed set + old compressed set, ...?
 
 ;;;; Public interfaces
 
 (defprotocol IDataStore "Extension point for additional datastores."
-  (put-key    [dstore k v] "(put-key dstore \"key\" <frozen-val>) => e/o #{true <ex>}")
-  (fetch-keys [dstore ks] "(fetch-keys dstore [\"key\" ...]) => [<e/o #{<frozen-val> <ex>}> ...]"))
+  (put-key    [dstore k v] "(put-key dstore \"key\" <frozen-val>) => <#{true <ex>}>")
+  (fetch-keys [dstore ks] "(fetch-keys dstore [\"key\" ...]) => [<#{<frozen-val> <ex>}> ...]"))
 
 (defprotocol IFreezer "Extension point for compressors, encryptors, etc."
   (freeze [freezer x] "Returns datastore-ready key val.
@@ -49,7 +47,7 @@
       :retry-backoff-ms - Amount of time (msecs) to backoff before retrying a
                           failed key freeze. >=0. Can be a (fn [attempt]) -> ms.
 
-      :montior, :eoq-backoff-ms, :nthreads, :throttle-ms, :auto-start?
+      :montior, :eoq-backoff-ms, :nthreads, :throttle-ms, :auto-start
       - Standard `taoensso.carmine.message-queue/worker` opts."))
 
 (defn ensure-ks
@@ -57,7 +55,8 @@
   fetching them from datastore as necessary. Throws an exception if any keys
   couldn't be made available. Acts as a Redis command: call within a `wcar`
   context."
-  [tstore & ks] (ensure-ks* tstore ks))
+  [tstore & ks] {:pre [(<= (count ks) 10)] :post [(nil? %)]}
+  (ensure-ks* tstore ks))
 
 (defn dirty
   "Queues given keys for freezing to datastore. Throws an exception if any keys
@@ -65,7 +64,8 @@
 
   If TundraStore has a :redis-ttl-ms option, **MARKS GIVEN KEYS FOR EXPIRY**!!
   ** Worker MUST be running AND FUNCTIONING CORRECTLY or DATA WILL BE LOST! **"
-  [tstore & ks] (dirty* tstore ks))
+  [tstore & ks] {:pre [(<= (count ks) 100)] :post [(nil? %)]}
+  (dirty* tstore ks))
 
 ;;;; Default implementations
 
@@ -105,8 +105,7 @@
                                (car/parse #(mapv car/as-bool %)))
         ks-missing        (->> (mapv #(when-not %2 %1) ks existance-replies)
                                (filterv identity))]
-    (if-not only-evictable?
-      ks-missing
+    (if-not only-evictable? ks-missing
       (let [evictable-replies
             (->> ks-missing
                  (mapv #(car/sismember k-evictable %))
@@ -115,25 +114,21 @@
         (->> (mapv #(when %2 %1) ks-missing evictable-replies)
              (filterv identity))))))
 
-(defn- prep-ks [ks] (assert (and (coll? ks) (not (map? ks))))
-  (vec (distinct (mapv name ks))))
-(comment (prep-ks [nil]) ; ex
-         (prep-ks [:a "a" :b :foo.bar/baz]))
-
-;;;; Public utils (useful for DataStore implementations)
-
-(defmacro catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
-
-(defn >safe-keyname [s] (URLEncoder/encode (str s) "ISO-8859-1"))
-(defn <safe-keyname [s] (URLDecoder/decode (str s) "ISO-8859-1"))
-(comment (<safe-keyname (>safe-keyname "hello f8 8 93#**#\\// !!$")))
-
 ;;;;
 
 (def fetch-keys-delayed
   "Used to prevent multiple threads from rushing the datastore to get the same
   keys, unnecessarily duplicating work."
   (utils/memoize-ttl 5000 fetch-keys))
+
+(defn- prep-ks [ks] (vec (distinct (mapv utils/fq-name ks))))
+(comment (prep-ks [nil]) ; Throws
+         (prep-ks [:a "a" :b :foo.bar/baz]))
+
+(defmacro catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
+(defn >urlsafe-str [s] (URLEncoder/encode s "ISO-8859-1"))
+(defn <urlsafe-str [s] (URLDecoder/decode s "ISO-8859-1"))
+(comment (<urlsafe-str (>urlsafe-str "hello f8 8 93#**#\\// !!$")))
 
 (defrecord TundraStore [datastore freezer opts]
   ITundraStore
@@ -146,9 +141,10 @@
         (timbre/tracef "Fetching missing evictable keys: %s" ks-missing)
         (let [;;; [] e/o #{<dumpval> <throwable>}:
               throwable?    #(instance? Throwable %)
-              dvals-missing (try (fetch-keys-delayed datastore ks-missing)
+              dvals-missing (try (fetch-keys-delayed datastore
+                                   (mapv >urlsafe-str ks-missing))
                                  (catch Throwable t (mapv (constantly t) ks-missing)))
-              _ ; Sanity-check the fetch result
+              _
               (when-not (= (count dvals-missing)
                            (count ks-missing))
                 (-> (format (str "Bad `fetch-keys` result:"
@@ -157,10 +153,12 @@
                             (count dvals-missing)
                             (count ks-missing))
                     (Exception.) (throw)))
+
               dvals-missing (if (nil? freezer) dvals-missing
                                 (->> dvals-missing
                                      (mapv #(if (throwable? %) %
                                                 (catcht (thaw freezer %))))))
+
               restore-replies ; [] e/o #{"OK" <throwable>}
               (->> dvals-missing
                    (mapv (fn [k dv]
@@ -182,6 +180,7 @@
                                  m ; Already restored
                                  (assoc m k v))))
                            {}))]
+
           (when-not (empty? errors)
             (let [ex (ex-info "Failed to ensure some key(s)" errors)]
               (timbre/error ex) (throw ex)))
@@ -189,7 +188,7 @@
 
   (dirty* [tstore ks]
     (let [{:keys [tqname redis-ttl-ms]} opts
-          ks             (prep-ks ks)
+          ks (prep-ks ks)
           ks-missing     (extend-exists-missing-ks redis-ttl-ms ks)
           ks-not-missing (->> ks (filterv (complement (set ks-missing))))]
 
@@ -212,13 +211,13 @@
         (assoc wopts :handler
           (fn [{:keys [mid message attempt]}]
             (let [k message
-                  put-reply ; #{true nil <throwable>}
+                  put-reply ; #{true nil <throwable>}, nb inclusion of nil!
                   (catcht (->> (wcar conn (car/parse-raw (car/dump k)))
                                (#(if (or (nil? %) ; Key doesn't exist
                                          (nil? freezer)) %
-                                         (freeze freezer %)))
+                                   (freeze freezer %)))
                                (#(if (nil? %) nil
-                                     (put-key datastore k %)))))]
+                                   (put-key datastore (>urlsafe-str k) %)))))]
 
               (if (= put-reply true)
                 (do (wcar conn (car/sadd k-evictable k)
@@ -258,13 +257,17 @@
 
   See `ensure-ks`, `dirty`, `worker` for TundraStore API."
   [datastore & [{:keys [qname freezer redis-ttl-ms]
-                 :or   {qname "default" freezer nippy-freezer}}]]
-
-  (assert (or (nil? freezer) (satisfies? IFreezer freezer)))
-  (assert (satisfies? IDataStore datastore))
-  (assert (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))
-          (str "Bad TTL (< 10 hours): " redis-ttl-ms))
+                 :or   {qname :default freezer nippy-freezer}}]]
+  {:pre [(satisfies? IDataStore datastore)
+         (or (nil? freezer) (satisfies? IFreezer freezer))
+         (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))]}
 
   (->TundraStore datastore freezer
     {:tqname (format "carmine-tundra-%s" (name qname))
      :redis-ttl-ms redis-ttl-ms}))
+
+(comment
+  (require '[taoensso.carmine.tundra.disk :as tundra-disk])
+  (def tstore (tundra-store (tundra-disk/disk-datastore "./tundra/")))
+  (car/wcar {} (ensure-ks tstore "invalid"))
+  (car/wcar {} (dirty tstore "invalid")))
