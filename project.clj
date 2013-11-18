@@ -9,10 +9,10 @@
                  [commons-codec/commons-codec "1.8"]
                  [org.clojure/data.json       "0.2.3"]
                  [com.taoensso/timbre         "2.7.1"]
-                 [com.taoensso/nippy          "2.5.0-RC2"]]
+                 [com.taoensso/nippy          "2.5.0"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure  "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure  "1.5.1"]]}
-             :1.6   {:dependencies [[org.clojure/clojure  "1.6.0-master-SNAPSHOT"]]}
+             :1.6   {:dependencies [[org.clojure/clojure  "1.6.0-alpha2"]]}
              :dev   {:dependencies [[ring/ring-core       "1.2.1"]
                                     [com.taoensso/faraday "0.13.0"]]}
              :test  {:dependencies [[expectations         "1.4.56"]
@@ -26,7 +26,7 @@
             "codox"       ["with-profile" "+test,+1.5" "doc"]}
   :plugins [[lein-expectations "0.0.8"]
             [lein-autoexpect   "1.0"]
-            [lein-ancient      "0.5.3"]
+            [lein-ancient      "0.5.4"]
             [codox             "0.6.6"]]
   :min-lein-version "2.0.0"
   :global-vars {*warn-on-reflection* true}
