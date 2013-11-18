@@ -2,24 +2,16 @@
   "Carmine-backed Ring session store. Adapted from clj-redis-session."
   {:author "Peter Taoussanis"}
   (:require [ring.middleware.session.store :as session-store]
-            [taoensso.carmine :as car])
-  (:import  [java.util UUID]))
+            [taoensso.carmine :as car :refer (wcar)]))
 
-(defn new-session-key [prefix] (str prefix ":" (UUID/randomUUID)))
-(defmacro wcar* [& body] `(car/wcar @~'conn-atom ~@body))
-
-(defprotocol ICarmineSessionStore (reset-conn [this conn]))
-
-(defrecord CarmineSessionStore [conn-atom prefix expiration]
-  ICarmineSessionStore (reset-conn [_ conn] (reset! conn-atom conn))
+(defrecord CarmineSessionStore [conn prefix ttl-secs]
   session-store/SessionStore
-  (read-session   [_ key] (or (when key (wcar* (car/get key))) {}))
-  (delete-session [_ key] (wcar* (car/del key)) nil)
+  (read-session   [_ key] (or (when key (wcar conn (car/get key))) {}))
+  (delete-session [_ key] (wcar conn (car/del key)) nil)
   (write-session  [_ key data]
-    (let [key (or key (new-session-key prefix))]
-      (if expiration
-        (wcar* (car/setex key expiration data))
-        (wcar* (car/set key data)))
+    (let [key (or key (str prefix ":" (java.util.UUID/randomUUID)))]
+      (wcar conn (if ttl-secs (car/setex key ttl-secs data)
+                              (car/set   key          data)))
       key)))
 
 (defn carmine-store
@@ -27,9 +19,9 @@
   to specify how long session data will survive after last write. When nil,
   sessions will never expire."
   [conn & [{:keys [key-prefix expiration-secs]
-            :or   {key-prefix       "carmine:session"
-                   expiration-secs  (str (* 60 60 24 30))}}]]
-  (->CarmineSessionStore (atom conn) key-prefix (str expiration-secs)))
+            :or   {key-prefix      "carmine:session"
+                   expiration-secs (* 60 60 24 30)}}]]
+  (->CarmineSessionStore conn key-prefix expiration-secs))
 
 (defn make-carmine-store ; 1.x backwards compatiblity
   "DEPRECATED. Use `carmine-store` instead."
