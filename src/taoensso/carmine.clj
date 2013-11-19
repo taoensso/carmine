@@ -217,7 +217,7 @@
         [key-vars arg-vars var-vals] (script-prep-vars keys args)
         script* (script-subst-vars script key-vars arg-vars)
         sha     (script-hash script*)
-        evalsha (fn [] (apply evalsha sha (count key-vars) var-vals))]
+        evalsha (fn [] (apply evalsha sha (count keys) var-vals))]
     (if (contains? @scripts-loaded-locally [conn-spec sha]) (evalsha)
       (do (with-replies (parse nil (script-load script*)))
           (swap! scripts-loaded-locally conj [conn-spec sha])
