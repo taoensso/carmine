@@ -76,7 +76,7 @@
 (defn as-map [coll & [kf vf]]
   {:pre  [(coll? coll) (or (nil? kf) (fn? kf) (identical? kf :keywordize))
                        (or (nil? vf) (fn? vf))]
-   :post [(map? %)]}
+   :post [(or (nil? %) (map? %))]}
   (when-let [s' (seq coll)]
     (let [kf (if-not (identical? kf :keywordize) kf
                      (fn [k _] (keyword k)))]
