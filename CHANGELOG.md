@@ -1,3 +1,18 @@
+## v2.5.0-SNAPSHOT / 2013-??-?? / UNRELEASED
+
+TODO Summary.
+
+### Features
+ * Updated `commands.json` to bring in Redis 2.8 SCAN commands.
+
+### Changes
+ *
+
+### Fixes
+ * [unreported] `as-map` (and by extension `parse-map`) post condition bug: should allow nils.
+ * [unreported] `lua-local` vector-args bug.
+
+
 ## v2.3.1 → v2.4.0 (major update!)
 
   * **IMPORTANT** Message queues: pre-2.4.0-beta1 queues *should* be compatible with 2.4.0-beta1+, but I would recommend **draining your old queues before upgrading** to 2.4.0-beta1+ to be on the safe side. That is: if you have any queued work outstanding - finish processing the work **before upgrading Carmine**.
@@ -175,7 +190,7 @@
   * Add URI support to `make-conn-spec`.
 
 
-## For older versions please see the [commit history][]
+### For older versions please see the [commit history][]
 
 [commit history]: https://github.com/ptaoussanis/carmine/commits/master
 [API docs]: http://ptaoussanis.github.io/carmine
