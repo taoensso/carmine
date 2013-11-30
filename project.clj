@@ -14,7 +14,7 @@
              :1.5   {:dependencies [[org.clojure/clojure  "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure  "1.6.0-alpha2"]]}
              :dev   {:dependencies [[ring/ring-core       "1.2.1"]
-                                    [com.taoensso/faraday "0.13.0"]]}
+                                    [com.taoensso/faraday "1.0.0"]]}
              :test  {:dependencies [[expectations         "1.4.56"]
                                     [clj-aws-s3           "0.3.7"]]}
              :bench {:dependencies [] :jvm-opts ["-server"]}}
