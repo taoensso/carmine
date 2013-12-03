@@ -1,7 +1,7 @@
 **[API docs](http://ptaoussanis.github.io/carmine/)** | **[CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "2.4.1"] ; Stable
+[com.taoensso/carmine "2.4.2"] ; Stable
 ```
 
 v2.4 is a major, backwards-compatible update which adds significant improvements to reply parsing, message queues, and [Tundra](#tundra-beta). See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for details.
@@ -39,7 +39,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Add the necessary dependency to your [Leiningen](http://leiningen.org/) `project.clj` and `require` the library in your ns:
 
 ```clojure
-[com.taoensso/carmine "2.4.1"] ; project.clj
+[com.taoensso/carmine "2.4.2"] ; project.clj
 (ns my-app (:require [taoensso.carmine :as car :refer (wcar)])) ; ns
 ```
 
