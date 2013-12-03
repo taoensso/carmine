@@ -11,6 +11,7 @@ TODO Summary.
 ### Fixes
  * [unreported] `as-map` (and by extension `parse-map`) post condition bug: should allow nils.
  * [unreported] `lua-local` vector-args bug.
+ * [unreported] fix Tundra message queue name formatting.
 
 
 ## v2.3.1 → v2.4.0 (major update!)

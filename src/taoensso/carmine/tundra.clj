@@ -244,7 +244,7 @@
     datastore     - Storage for frozen key data. Default datastores:
                     `taoensso.carmine.tundra.faraday/faraday-datastore`
                     `taoensso.carmine.tundra.s3/s3-datastore`.
-    :qname        - Optional. Worker message queue name.
+    :tqname       - Optional. Worker message queue name.
     :freezer      - Optional. Preps key data to/from datastore. May provide
                     services like compression and encryption, etc. Defaults to
                     Nippy with default options (Snappy compression and no
@@ -256,14 +256,14 @@
                     Otherwise YOU WILL IRREVOCABLY **LOSE DATA**.
 
   See `ensure-ks`, `dirty`, `worker` for TundraStore API."
-  [datastore & [{:keys [qname freezer redis-ttl-ms]
-                 :or   {qname :default freezer nippy-freezer}}]]
+  [datastore & [{:keys [tqname freezer redis-ttl-ms]
+                 :or   {tqname :default freezer nippy-freezer}}]]
   {:pre [(satisfies? IDataStore datastore)
          (or (nil? freezer) (satisfies? IFreezer freezer))
          (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))]}
 
   (->TundraStore datastore freezer
-    {:tqname (format "carmine-tundra-%s" (name qname))
+    {:tqname (format "tundra:%s" (name tqname))
      :redis-ttl-ms redis-ttl-ms}))
 
 (comment
