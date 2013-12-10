@@ -441,14 +441,16 @@
               (catch Throwable t#
                 (timbre/error t# "Listener handler exception")))))))
 
-     (protocol/with-context conn# ~@body)
+     (protocol/with-context conn#
+       (protocol/with-listener-req-mode ~@body))
      (->Listener conn# handler-atom# state-atom#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent
   connection."
   [listener & body]
-  `(protocol/with-context (:connection ~listener) ~@body))
+  `(protocol/with-context (:connection ~listener)
+     (protocol/with-listener-req-mode ~@body)))
 
 (defn close-listener [listener] (conns/close-conn (:connection listener)))
 
