@@ -9,6 +9,7 @@ TODO Summary.
  *
 
 ### Fixes
+ * [#68] Pub/Sub bug preventing use with passwords & db selects (sritchie).
  * [unreported] `as-map` (and by extension `parse-map`) post condition bug: should allow nils.
  * [unreported] `lua-local` vector-args bug.
  * [unreported] fix Tundra message queue name formatting.
