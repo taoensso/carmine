@@ -2,6 +2,7 @@
   (:require [clojure.string :as str]
             [expectations     :as test :refer :all]
             [taoensso.carmine :as car  :refer (wcar)]
+            [taoensso.carmine.utils :as utils]
             [taoensso.carmine.protocol   :as protocol]
             [taoensso.carmine.benchmarks :as benchmarks]))
 
@@ -61,6 +62,10 @@
 
 ;; Lua (`with-replies`) errors bypass normal parsers
 (expect Exception (wcar {} (->> (car/lua "invalid" {:_ :_} {}) (car/parse keyword))))
+(expect utils/bytes-class ; But _do_ maintain raw parsing metadata:
+  (do (wcar {} (car/set (tkey "binkey") (.getBytes "Foobar" "UTF-8")))
+      (wcar {} (-> (car/lua "return redis.call('get', _:k)" {:k (tkey "binkey")} {})
+                   (car/parse-raw)))))
 
 ;; Parsing passes `with-replies` barrier
 (expect [["ONE" "three"] "two"]

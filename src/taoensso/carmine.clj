@@ -149,8 +149,13 @@
   [script numkeys key & args]
   (let [[r & _] (->> (apply evalsha* script numkeys key args)
                      (with-replies :as-pipeline)
-                     (parse nil) ; Nb
-                     )]
+                     ;; (parse nil) ; Nb
+                     ;; This is an unusual case - we want to ignore general
+                     ;; enclosing parsers, but _keep_ raw parsing metadata when
+                     ;; present (this doesn't affect exception handling):
+                     (#(if (:raw? (meta protocol/*parser*))
+                         (parse-raw %)
+                         (parse nil %))))]
     (if (and (instance? Exception r)
              (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
       (apply eval script numkeys key args)
