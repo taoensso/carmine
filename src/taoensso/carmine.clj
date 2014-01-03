@@ -76,7 +76,7 @@
 (defn as-map [coll & [kf vf]]
   {:pre  [(coll? coll) (or (nil? kf) (fn? kf) (identical? kf :keywordize))
                        (or (nil? vf) (fn? vf))]
-   :post [(map? %)]}
+   :post [(or (nil? %) (map? %))]}
   (when-let [s' (seq coll)]
     (let [kf (if-not (identical? kf :keywordize) kf
                      (fn [k _] (keyword k)))]
@@ -149,8 +149,13 @@
   [script numkeys key & args]
   (let [[r & _] (->> (apply evalsha* script numkeys key args)
                      (with-replies :as-pipeline)
-                     (parse nil) ; Nb
-                     )]
+                     ;; (parse nil) ; Nb
+                     ;; This is an unusual case - we want to ignore general
+                     ;; enclosing parsers, but _keep_ raw parsing metadata when
+                     ;; present (this doesn't affect exception handling):
+                     (#(if (:raw? (meta protocol/*parser*))
+                         (parse-raw %)
+                         (parse nil %))))]
     (if (and (instance? Exception r)
              (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
       (apply eval script numkeys key args)
@@ -217,7 +222,7 @@
         [key-vars arg-vars var-vals] (script-prep-vars keys args)
         script* (script-subst-vars script key-vars arg-vars)
         sha     (script-hash script*)
-        evalsha (fn [] (apply evalsha sha (count key-vars) var-vals))]
+        evalsha (fn [] (apply evalsha sha (count keys) var-vals))]
     (if (contains? @scripts-loaded-locally [conn-spec sha]) (evalsha)
       (do (with-replies (parse nil (script-load script*)))
           (swap! scripts-loaded-locally conj [conn-spec sha])
@@ -441,14 +446,16 @@
               (catch Throwable t#
                 (timbre/error t# "Listener handler exception")))))))
 
-     (protocol/with-context conn# ~@body)
+     (protocol/with-context conn#
+       (protocol/with-listener-req-mode ~@body))
      (->Listener conn# handler-atom# state-atom#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent
   connection."
   [listener & body]
-  `(protocol/with-context (:connection ~listener) ~@body))
+  `(protocol/with-context (:connection ~listener)
+     (protocol/with-listener-req-mode ~@body)))
 
 (defn close-listener [listener] (conns/close-conn (:connection listener)))
 

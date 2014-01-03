@@ -14,6 +14,7 @@ else
       lein test-auto
    else
       # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.tundra"
+      # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.main"
       lein test-all
     fi
 fi

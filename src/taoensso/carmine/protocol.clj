@@ -91,6 +91,10 @@
      (.write out# ba# 0 payload-size#)
      (send-crlf out#)))
 
+(def ^:dynamic *listener-req-mode?* "Implementation detail." nil)
+(defmacro with-listener-req-mode "Implementation detail." [& body]
+  `(binding [*listener-req-mode?* true] ~@body))
+
 (defn send-request
   "Sends a command to Redis server using its byte string protocol:
       *<no. of args>     crlf
@@ -104,7 +108,8 @@
     (doseq [arg args] (send-arg out arg))
     (.flush out)
 
-    (when-let [pq (:parser-queue *context*)] (swap! pq conj *parser*))))
+    (when-not *listener-req-mode?*
+      (swap! (:parser-queue *context*) conj *parser*))))
 
 (defn get-basic-reply
   "BLOCKS to receive a single reply from Redis server. Applies basic parsing
@@ -240,9 +245,7 @@
   "Evaluates body in the context of a thread-bound connection to a Redis server."
   [conn & body]
   `(let [conn# ~conn
-         {spec# :spec in-stream# :in-stream out-stream# :out-stream} conn#
-         listener?# (:listener? spec#)]
-     (binding [*context* (->Context conn# in-stream# out-stream#
-                                    (when-not listener?# (atom [])))
+         {spec# :spec in-stream# :in-stream out-stream# :out-stream} conn#]
+     (binding [*context* (->Context conn# in-stream# out-stream# (atom []))
                *parser*  nil]
        ~@body)))

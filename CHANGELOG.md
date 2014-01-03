@@ -1,3 +1,21 @@
+## v2.4.4 / 2014-Jan-03
+
+This is a **backwards compatible bug fix release**. Recommended upgrade.
+
+### Features
+ * Updated `commands.json` to bring in Redis 2.8 SCAN commands.
+
+### Changes
+ None
+
+### Fixes
+ * [#68] Pub/Sub bug preventing use with passwords & db selects (sritchie).
+ * [unreported] `as-map` (and by extension `parse-map`) post condition bug: should allow nils.
+ * [unreported] `lua-local` vector-args bug.
+ * [unreported] fix Tundra message queue name formatting.
+ * [#70] fix `lua` + `parse-raw` support (chenfisher).
+
+
 ## v2.3.1 → v2.4.0 (major update!)
 
   * **IMPORTANT** Message queues: pre-2.4.0-beta1 queues *should* be compatible with 2.4.0-beta1+, but I would recommend **draining your old queues before upgrading** to 2.4.0-beta1+ to be on the safe side. That is: if you have any queued work outstanding - finish processing the work **before upgrading Carmine**.
@@ -175,7 +193,7 @@
   * Add URI support to `make-conn-spec`.
 
 
-## For older versions please see the [commit history][]
+### For older versions please see the [commit history][]
 
 [commit history]: https://github.com/ptaoussanis/carmine/commits/master
 [API docs]: http://ptaoussanis.github.io/carmine

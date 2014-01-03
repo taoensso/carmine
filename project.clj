@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.4.0"
+(defproject com.taoensso/carmine "2.4.4"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
   :license {:name "Eclipse Public License"
@@ -6,15 +6,15 @@
   :dependencies [[org.clojure/clojure         "1.4.0"]
                  [org.clojure/tools.macro     "0.1.5"]
                  [commons-pool/commons-pool   "1.6"]
-                 [commons-codec/commons-codec "1.8"]
+                 [commons-codec/commons-codec "1.9"]
                  [org.clojure/data.json       "0.2.3"]
                  [com.taoensso/timbre         "2.7.1"]
-                 [com.taoensso/nippy          "2.5.0"]]
+                 [com.taoensso/nippy          "2.5.2"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure  "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure  "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure  "1.6.0-alpha2"]]}
              :dev   {:dependencies [[ring/ring-core       "1.2.1"]
-                                    [com.taoensso/faraday "0.13.0"]]}
+                                    [com.taoensso/faraday "1.0.1"]]}
              :test  {:dependencies [[expectations         "1.4.56"]
                                     [clj-aws-s3           "0.3.7"]]}
              :bench {:dependencies [] :jvm-opts ["-server"]}}
@@ -25,7 +25,7 @@
             "start-bench" ["trampoline" "start-dev"]
             "codox"       ["with-profile" "+test,+1.5" "doc"]}
   :plugins [[lein-expectations "0.0.8"]
-            [lein-autoexpect   "1.0"]
+            [lein-autoexpect   "1.2.1"]
             [lein-ancient      "0.5.4"]
             [codox             "0.6.6"]]
   :min-lein-version "2.0.0"
