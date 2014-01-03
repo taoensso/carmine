@@ -1,18 +1,19 @@
-## v2.5.0-SNAPSHOT / 2013-??-?? / UNRELEASED
+## v2.4.4 / 2014-Jan-03
 
-TODO Summary.
+This is a **backwards compatible bug fix release**. Recommended upgrade.
 
 ### Features
  * Updated `commands.json` to bring in Redis 2.8 SCAN commands.
 
 ### Changes
- *
+ None
 
 ### Fixes
  * [#68] Pub/Sub bug preventing use with passwords & db selects (sritchie).
  * [unreported] `as-map` (and by extension `parse-map`) post condition bug: should allow nils.
  * [unreported] `lua-local` vector-args bug.
  * [unreported] fix Tundra message queue name formatting.
+ * [#70] fix `lua` + `parse-raw` support (chenfisher).
 
 
 ## v2.3.1 → v2.4.0 (major update!)
