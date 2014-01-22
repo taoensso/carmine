@@ -153,9 +153,10 @@
                      ;; This is an unusual case - we want to ignore general
                      ;; enclosing parsers, but _keep_ raw parsing metadata when
                      ;; present (this doesn't affect exception handling):
-                     (#(if (:raw? (meta protocol/*parser*))
-                         (parse-raw %)
-                         (parse nil %))))]
+                     (parse
+                      (if (:raw? (meta protocol/*parser*))
+                        (with-meta identity {:raw? true}) ; parse-raw
+                        nil)))]
     (if (and (instance? Exception r)
              (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
       (apply eval script numkeys key args)
