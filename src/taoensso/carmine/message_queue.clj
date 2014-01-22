@@ -336,23 +336,36 @@
             qk (partial qkey qname)
             start-polling-loop!
             (fn []
-              (try
-                (while @running?
-                  (let [[poll-reply ndruns mid-circle-size]
-                        (wcar conn (dequeue qname opts)
-                                   (car/get  (qk :ndry-runs))
-                                   (car/llen (qk :mid-circle)))]
+              (loop [nerrors 0]
+                (when @running?
+                  (let [?error
+                        (try
+                          (let [[poll-reply ndruns mid-circle-size]
+                                (wcar conn (dequeue qname opts)
+                                           (car/get  (qk :ndry-runs))
+                                           (car/llen (qk :mid-circle)))]
 
-                    (when monitor (monitor {:mid-circle-size mid-circle-size
-                                            :ndry-runs       (or ndruns 0)
-                                            :poll-reply      poll-reply}))
+                            (when monitor
+                              (monitor {:mid-circle-size mid-circle-size
+                                        :ndry-runs       (or ndruns 0)
+                                        :poll-reply      poll-reply}))
 
-                    (if (= poll-reply "eoq-backoff")
-                      (Thread/sleep (max (wcar conn (car/pttl (qk :eoq-backoff?)))
-                                         10))
-                      (handle1 conn qname handler poll-reply)))
-                  (when throttle-ms (Thread/sleep throttle-ms)))
-                (catch Throwable t (timbre/fatalf t "Worker error!") (throw t))))]
+                            (if (= poll-reply "eoq-backoff")
+                              (Thread/sleep
+                               (max (wcar conn (car/pttl (qk :eoq-backoff?)))
+                                    10))
+                              (handle1 conn qname handler poll-reply))
+
+                            (when throttle-ms (Thread/sleep throttle-ms)))
+                          nil ; Successful worker loop
+                          (catch Throwable t t))]
+
+                    (if-not ?error (recur 0)
+                      (let [t ?error]
+                        (timbre/errorf t "Worker error! Will backoff & retry.")
+                        (Thread/sleep (exp-backoff (inc nerrors)))
+                        (recur (inc nerrors))))))))]
+
         (dorun (repeatedly nthreads (fn [] (future (start-polling-loop!))))))
       true)))
 
