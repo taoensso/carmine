@@ -1,4 +1,4 @@
-## v2.4.4 / 2014-Jan-03
+## v2.4.5 / 2014-Jan-22
 
 This is a **backwards compatible bug fix release**. Recommended upgrade.
 
@@ -14,6 +14,8 @@ This is a **backwards compatible bug fix release**. Recommended upgrade.
  * [unreported] `lua-local` vector-args bug.
  * [unreported] fix Tundra message queue name formatting.
  * [#70] fix `lua` + `parse-raw` support (chenfisher).
+ * [#71] message queue workers no longer terminate on errors (notably connection errors) but will retry after backoff.
+ * [unreported] fix regression introduced by #70.
 
 
 ## v2.3.1 → v2.4.0 (major update!)
