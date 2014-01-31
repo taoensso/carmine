@@ -2,6 +2,7 @@
 
 ### Fixes
  * [#71] Fix bad `atomic` arg order (neilmock).
+ * [#72] Fix bad mq handler connection arg (neilmock).
 
 
 ## v2.4.5 / 2014-Jan-22

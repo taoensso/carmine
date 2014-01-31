@@ -282,8 +282,8 @@
                  (car/atomic conn 100
                    (car/watch (qk :requeue))
                    (let [requeue?
-                         (wcar {} (->> (car/sismember (qk :requeue) mid)
-                                       (car/parse-bool)))
+                         (wcar conn (->> (car/sismember (qk :requeue) mid)
+                                         (car/parse-bool)))
                          status (if (and (= status :success) requeue?)
                                   :requeue status)]
                      (car/multi)
