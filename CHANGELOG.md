@@ -1,3 +1,9 @@
+## v2.4.6 / 2014-Jan-31
+
+### Fixes
+ * [#71] Fix bad `atomic` arg order (neilmock).
+
+
 ## v2.4.5 / 2014-Jan-22
 
 This is a **backwards compatible bug fix release**. Recommended upgrade.
