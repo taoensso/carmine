@@ -1,7 +1,7 @@
 **[API docs](http://ptaoussanis.github.io/carmine/)** | **[CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md)** | [contact & contributing](#contact--contributing) | [other Clojure libs](https://www.taoensso.com/clojure-libraries) | [Twitter](https://twitter.com/#!/ptaoussanis) | current [semantic](http://semver.org/) version:
 
 ```clojure
-[com.taoensso/carmine "2.4.5"] ; Stable
+[com.taoensso/carmine "2.4.6"] ; Stable
 ```
 
 v2.4 is a major, backwards-compatible update which adds significant improvements to reply parsing, message queues, and [Tundra](#tundra-beta). See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for details.
