@@ -344,8 +344,8 @@
          max-idx#    ~max-cas-attempts
          prelude-result# (atom nil)
          exec-result#
-         (wcar :as-pipeline ; To ensure `peek` is always valid
-           conn# ; Hold 1 conn for all attempts
+         (wcar conn# ; Hold 1 conn for all attempts
+           :as-pipeline ; To ensure `peek` is always valid
            (loop [idx# 1]
              (try (do ~@body)
                   (catch Exception e#
