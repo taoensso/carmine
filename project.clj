@@ -7,14 +7,14 @@
                  [org.clojure/tools.macro     "0.1.5"]
                  [commons-pool/commons-pool   "1.6"]
                  [commons-codec/commons-codec "1.9"]
-                 [org.clojure/data.json       "0.2.3"]
-                 [com.taoensso/timbre         "2.7.1"]
+                 [org.clojure/data.json       "0.2.4"]
+                 [com.taoensso/timbre         "3.0.0"]
                  [com.taoensso/nippy          "2.5.2"]]
   :profiles {:1.4   {:dependencies [[org.clojure/clojure  "1.4.0"]]}
              :1.5   {:dependencies [[org.clojure/clojure  "1.5.1"]]}
              :1.6   {:dependencies [[org.clojure/clojure  "1.6.0-alpha2"]]}
              :dev   {:dependencies [[ring/ring-core       "1.2.1"]
-                                    [com.taoensso/faraday "1.0.1"]]}
+                                    [com.taoensso/faraday "1.0.2"]]}
              :test  {:dependencies [[expectations         "1.4.56"]
                                     [clj-aws-s3           "0.3.7"]]}
              :bench {:dependencies [] :jvm-opts ["-server"]}}
