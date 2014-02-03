@@ -95,7 +95,7 @@
 (defmacro with-listener-req-mode "Implementation detail." [& body]
   `(binding [*listener-req-mode?* true] ~@body))
 
-(defn send-request
+(defn send-request*
   "Sends a command to Redis server using its byte string protocol:
       *<no. of args>     crlf
       [$<size of arg N>  crlf
@@ -110,6 +110,8 @@
 
     (when-not *listener-req-mode?*
       (swap! (:parser-queue *context*) conj *parser*))))
+
+(def ^:dynamic send-request send-request*)
 
 (defn get-basic-reply
   "BLOCKS to receive a single reply from Redis server. Applies basic parsing
