@@ -94,7 +94,9 @@
     [(car/as-long slot) (parse-spec address)]))
 
 (defn moved? [^Exception exception]
-  (.startsWith (.getMessage exception) "MOVED"))
+  (if-let [error (.getMessage exception)]
+    (.startsWith error "MOVED")
+    false))
 
 (defn try-request [conn args]
   (try
