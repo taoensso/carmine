@@ -335,6 +335,21 @@ Note that this API makes it convenient to use several different datastores simul
 
 See the relevant [docstrings](http://ptaoussanis.github.io/carmine/taoensso.carmine.tundra.html) for details.
 
+## Redis Cluster (EXPERIMENTAL)
+
+Sending commands to a Redis Cluster requires replacing taoensso.carmine/wcar with taoensso.carmine.cluster/ccar:
+
+```clojure
+(require '[taoensso.carmine :as car])
+(require '[taoensso.carmine.cluster :as ccar])
+(ccar/ccar {:spec {:host "127.0.0.1" :port 7000} :cluster "my-cluster}
+           (car/set "foo" "bar")
+           (car/get "foo"))
+=> ["OK" "bar"]
+```
+
+See the relevant [tutorial](http://redis.io/topics/cluster-tutorial) for details on how to setup a cluster.
+
 ## Performance
 
 Redis is probably most famous for being [fast](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently performs well:
@@ -343,7 +358,7 @@ Redis is probably most famous for being [fast](http://redis.io/topics/benchmarks
 
 [Detailed benchmark information](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs. Note that these numbers are for _unpipelined_ requests: you could do a _lot_ more with pipelining.
 
-In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort but please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again for composable commands. 
+In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort but please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again for composable commands.
 
 Likewise, I'll happily trade a little less throughput for simpler code.
 
