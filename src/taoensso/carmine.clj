@@ -345,7 +345,6 @@
          prelude-result# (atom nil)
          exec-result#
          (wcar conn# ; Hold 1 conn for all attempts
-           :as-pipeline ; To ensure `peek` is always valid
            (loop [idx# 1]
              (try (do ~@body)
                   (catch Exception e#
@@ -366,8 +365,8 @@
       ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
       (let [r# exec-result#]
         (if (next r#) r#
-            (let [r# (nth r# 0)]
-              (if (instance? Exception r#) (throw r#) r#))))]))
+          (let [r# (nth r# 0)]
+            (if (instance? Exception r#) (throw r#) r#))))]))
 
 (comment
   ;; Error before exec (=> syntax, etc.)
