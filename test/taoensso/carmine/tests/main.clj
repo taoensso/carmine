@@ -75,6 +75,23 @@
                                  (car/echo "THREE")))
      @p]))
 
+;;;; Request queues (experimental, for Carmine v3)
+;; Pre v3, Redis command fns used to immediately trigger writes to their
+;; context's io stream. v3 introduced lazy writing to allow request planning in
+;; Cluster mode. This is a trade-off: we now have to be careful to realize
+;; queued requests any time a nested connection occurs.
+
+(expect ["OK" "echo"] (wcar {} (car/set (tkey "rq1") (wcar {} (car/echo "echo")))
+                              (car/get (tkey "rq1"))))
+(expect "rq2-val"
+  (let [p (promise)]
+    (wcar {} (car/del (tkey "rq2")))
+    (wcar {} (car/set (tkey "rq2") "rq2-val")
+          ;; Nested `wcar` here should trigger eager sending of queued writes
+          ;; above (to simulate immediate-write commands):
+          (deliver p (wcar {} (car/get (tkey "rq2")))))
+    @p))
+
 ;;;; `atomic`
 
 (expect Exception (car/atomic {} 1)) ; Missing multi
@@ -112,6 +129,13 @@
                     (car/set (tkey :watched) (rand))
                     (car/multi)
                     (car/ping))) ; Contending changes to watched key
+
+;; As above, with contending write by different connection:
+(expect Exception (car/atomic {} 5
+                    (car/watch (tkey :watched))
+                    (wcar {} (car/set (tkey :watched) (rand)))
+                    (car/multi)
+                    (car/ping)))
 
 (expect [[["OK" "OK" "QUEUED"] "PONG"] 3]
         (let [idx (atom 1)]

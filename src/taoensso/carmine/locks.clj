@@ -16,10 +16,10 @@
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
   ;; TODO Waiting on http://goo.gl/YemR7 for simpler (non-Lua) solution
-  [conn lock-name timeout-ms wait-ms]
+  [conn-opts lock-name timeout-ms wait-ms]
   (let [max-udt (+ wait-ms (System/currentTimeMillis))
         uuid    (str (java.util.UUID/randomUUID))]
-    (wcar conn ; Hold one connection for all attempts
+    (wcar conn-opts ; Hold one connection for all attempts
      (loop []
        (when (> max-udt (System/currentTimeMillis))
          (if (-> (car/lua
@@ -40,8 +40,8 @@
 
 (defn release-lock
   "Attempts to release a distributed lock, returning true iff successful."
-  [conn lock-name owner-uuid]
-  (wcar conn
+  [conn-opts lock-name owner-uuid]
+  (wcar conn-opts
     (car/parse-bool
      (car/lua
       "if redis.call('get', _:lkey) == _:uuid then
@@ -59,8 +59,8 @@
      (release-lock {} "my-lock" uuid)
      (release-lock {} "my-lock" uuid)]))
 
-(defn have-lock? [conn lock-name owner-uuid]
-  (= (wcar conn (car/get (lkey lock-name))) owner-uuid))
+(defn have-lock? [conn-opts lock-name owner-uuid]
+  (= (wcar conn-opts (car/get (lkey lock-name))) owner-uuid))
 
 (comment
   (when-let [uuid (acquire-lock {} "my-lock" 2000 500)]
@@ -74,14 +74,14 @@
   lock when successful. Returns {:result <body's result>} on successful release,
   or nil if the lock could not be acquired. If the lock is successfully acquired
   but expires before being released, throws an exception."
-  [conn lock-name timeout-ms wait-ms & body]
-  `(let [conn# ~conn]
-     (when-let [uuid# (acquire-lock conn# ~lock-name ~timeout-ms ~wait-ms)]
+  [conn-opts lock-name timeout-ms wait-ms & body]
+  `(let [conn-opts# ~conn-opts]
+     (when-let [uuid# (acquire-lock conn-opts# ~lock-name ~timeout-ms ~wait-ms)]
        (try
          {:result (do ~@body)} ; Wrapped to distinguish nil body result
          (catch Throwable t# (throw t#))
          (finally
-          (when-not (release-lock conn# ~lock-name uuid#)
+          (when-not (release-lock conn-opts# ~lock-name uuid#)
             (throw (RuntimeException. (str "Lock expired before it was released: "
                                            ~lock-name)))))))))
 
@@ -94,8 +94,8 @@
       (future (with-lock {} "my-lock" 2000 500  (Thread/sleep 1000) (println "m")))
       (future (with-lock {} "my-lock" 2000 2000 (Thread/sleep 1000) (println "m")))))
 
-(defn- release-all-locks! [conn]
-  (when-let [lkeys (seq (wcar conn (car/keys (lkey :*))))]
-    (wcar conn (apply car/del lkeys))))
+(defn- release-all-locks! [conn-opts]
+  (when-let [lkeys (seq (wcar conn-opts (car/keys (lkey :*))))]
+    (wcar conn-opts (apply car/del lkeys))))
 
 (comment (release-all-locks! {}))
