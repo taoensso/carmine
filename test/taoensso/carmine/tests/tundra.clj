@@ -10,9 +10,9 @@
 
 (defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
 (def tkey (partial car/key :carmine :tundra :test))
-(def qname "carmine-tundra-tests")
+(def tqname "carmine-tundra-tests")
 (defn clean-up! []
-  (mq/clear-queues {} qname)
+  (mq/clear-queues {} tqname)
   (when-let [ks (seq (wcar* (car/keys (tkey :*))))]
     (wcar* (apply car/del ks))))
 
@@ -57,7 +57,7 @@
                                  (car/del (tkey 0) "0"))))
 
 (expect [[:clj-val] [:clj-val] [:clj-val-new]]
-  (let [tstore  (tundra/tundra-store dstore {:qname qname})
+  (let [tstore  (tundra/tundra-store dstore {:tqname tqname})
         tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100})]
     (wcar* (car/mset (tkey 0) [:clj-val]
                      (tkey 1) [:clj-val]
@@ -81,7 +81,7 @@
     (wcar* (car/mget (tkey 0) (tkey 1) (tkey 2)))))
 
 (expect [-1 -1 -1] ; nil eviction timeout (default) is respected!
-  (let [tstore  (tundra/tundra-store dstore {:qname qname})
+  (let [tstore  (tundra/tundra-store dstore {:tqname tqname})
         tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100})]
     (wcar* (car/mset (tkey 0) "0" (tkey 1) "1" (tkey 2) "1") ; Clears timeouts
            (tundra/dirty tstore (tkey 0) (tkey 1) (tkey 2))
@@ -97,7 +97,7 @@
         (> t2  t1)))
 
  (let [tstore  (tundra/tundra-store dstore {:redis-ttl-ms (* 1000 60 60 24)
-                                            :qname qname})
+                                            :tqname tqname})
        tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100
                                          :auto-start false})]
    (wcar* (car/set (tkey 0) "0") ; Clears timeout
@@ -113,4 +113,4 @@
           (car/pttl (tkey 0)))))
 
 (comment (clean-up!)
-         (mq/queue-status {} qname))
+         (mq/queue-status {} tqname))
