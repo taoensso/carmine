@@ -14,7 +14,9 @@
 (defn clean-up! []
   (mq/clear-queues {} tqname)
   (when-let [ks (seq (wcar* (car/keys (tkey :*))))]
-    (wcar* (apply car/del ks))))
+    (wcar* (apply car/del ks)
+           (apply car/srem @#'tundra/k-evictable ks)))
+  (wcar* (car/srem @#'tundra/k-evictable (tkey "invalid-evictable"))))
 
 (defn- before-run {:expectations-options :before-run} [] (clean-up!))
 (defn- after-run  {:expectations-options :after-run}  [] (clean-up!))
@@ -52,7 +54,9 @@
   ;; API never pollutes enclosing pipeline
   (expect ["OK" "PONG" 1] (wcar* (car/set (tkey 0) "0")
                                  (car/ping)
-                                 (tundra/ensure-ks tstore (tkey 0) (tkey "invalid") )
+                                 ;; BTW won't throw since `(tkey "invalid")` is
+                                 ;; not part of tundra/k-evictable set:
+                                 (tundra/ensure-ks tstore (tkey 0) (tkey "invalid"))
                                  (tundra/dirty     tstore (tkey 0))
                                  (car/del (tkey 0) "0"))))
 
@@ -63,32 +67,34 @@
                      (tkey 1) [:clj-val]
                      (tkey 2) [:clj-val])) ; Reset vals
 
-    ;; Invalid keys don't prevent valid keys from being processed
+    ;; Invalid keys don't prevent valid keys from being processed (will still
+    ;; throw, but only _after_ all possible dirtying)
     (wcar* (try (tundra/dirty tstore (tkey "invalid") (tkey "invalid-evictable")
                                      (tkey 0) (tkey 1) (tkey 2))
-                  (catch Exception _ nil)))
+                (catch Exception _ nil)))
 
     (Thread/sleep 8000) ; Wait for replication
     (mq/stop tworker)
     (wcar* (car/del (tkey 0))
-           (car/set (tkey 2) [:clj-val-new])
-           (car/with-replies)) ; Make some local modifications
+           (car/set (tkey 2) [:clj-val-new])) ; Make some local modifications
 
-    ;; Invalid keys don't prevent valid keys from being processed
+    ;; Invalid keys don't prevent valid keys from being processed (will still
+    ;; throw, but only _after_ all possible fetches)
     (wcar* (try (tundra/ensure-ks tstore (tkey "invalid") (tkey "invalid-evictable")
                                          (tkey 0) (tkey 1) (tkey 2))
                 (catch Exception _ nil)))
+
     (wcar* (car/mget (tkey 0) (tkey 1) (tkey 2)))))
 
 (expect [-1 -1 -1] ; nil eviction timeout (default) is respected!
   (let [tstore  (tundra/tundra-store dstore {:tqname tqname})
         tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100})]
     (wcar* (car/mset (tkey 0) "0" (tkey 1) "1" (tkey 2) "1") ; Clears timeouts
-           (tundra/dirty tstore (tkey 0) (tkey 1) (tkey 2))
-           (Thread/sleep 8000) ; Wait for replication
-           (mq/stop tworker)
-           (tundra/ensure-ks tstore (tkey 0) (tkey 1) (tkey 2)))
-    (wcar* (mapv #(car/ttl (tkey %)) [0 1 2]))))
+           (tundra/dirty tstore (tkey 0) (tkey 1) (tkey 2)))
+    (Thread/sleep 8000) ; Wait for replication
+    (mq/stop tworker)
+    (wcar* (tundra/ensure-ks tstore (tkey 0) (tkey 1) (tkey 2))
+           (mapv #(car/ttl (tkey %)) [0 1 2]))))
 
 (expect ; nnil eviction timeout is applied & extended correctly
  (fn [[t0 t1 t2]]
@@ -103,14 +109,14 @@
    (wcar* (car/set (tkey 0) "0") ; Clears timeout
           (tundra/dirty tstore (tkey 0)))
 
-   (wcar* (car/pttl (tkey 0))
-          (mq/start tworker)
-          (Thread/sleep 3000) ; Wait for replication
-          (mq/stop tworker)
-          (car/pttl (tkey 0))
-          (Thread/sleep 1000)
-          (tundra/ensure-ks tstore (tkey 0))
-          (car/pttl (tkey 0)))))
+   [(wcar* (car/pttl (tkey 0)))
+    (do (mq/start tworker)
+        (Thread/sleep 3000) ; Wait for replication
+        (mq/stop tworker)
+        (wcar* (car/pttl (tkey 0))))
+    (do (Thread/sleep 1000)
+        (wcar* (tundra/ensure-ks tstore (tkey 0))
+               (car/pttl (tkey 0))))]))
 
 (comment (clean-up!)
          (mq/queue-status {} tqname))

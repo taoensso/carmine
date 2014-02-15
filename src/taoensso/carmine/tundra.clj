@@ -52,9 +52,9 @@
 
 (defn ensure-ks
   "BLOCKS to ensure given keys (previously created) are available in Redis,
-  fetching them from datastore as necessary. Throws an exception if any keys
-  couldn't be made available. Acts as a Redis command: call within a `wcar`
-  context."
+  fetching them from datastore as necessary. Throws an exception if any
+  previously evicted keys couldn't be made available. Acts as a Redis command:
+  call within a `wcar` context."
   [tstore & ks] {:pre [(<= (count ks) 10)] :post [(nil? %)]}
   (ensure-ks* tstore ks))
 
