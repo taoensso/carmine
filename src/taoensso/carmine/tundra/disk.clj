@@ -58,7 +58,7 @@
 
 (comment
   (def dstore  (disk-datastore "./tundra"))
-  (def hardkey (tundra/>safe-keyname "foo:bar /♡\\:baz "))
+  (def hardkey (tundra/>urlsafe-str "foo:bar /♡\\:baz "))
   (tundra/put-key dstore hardkey (.getBytes "hello world"))
   (String. (first (tundra/fetch-keys dstore [hardkey])))
   (time (dotimes [_ 10000]

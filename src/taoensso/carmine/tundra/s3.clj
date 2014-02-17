@@ -58,6 +58,6 @@
 
 (comment
   (def dstore  (s3-datastore creds "ensso-store/folder"))
-  (def hardkey (tundra/>safe-keyname "foo:bar /♡\\:baz "))
+  (def hardkey (tundra/>urlsafe-str "foo:bar /♡\\:baz "))
   (tundra/put-key dstore hardkey (.getBytes "hello world"))
   (String. (first (tundra/fetch-keys dstore [hardkey]))))
