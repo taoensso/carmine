@@ -92,6 +92,12 @@
              {:parser parser# ; Parser metadata will be used as req-opts
               :expected-keyslot cluster-keyslot#}))]
 
+     ;; We could also choose to throw here for non-Cluster commands being used
+     ;; in Cluster mode. For the moment choosing to let Redis server reply with
+     ;; relevant errors since: 1. There's no command spec info on non/cluster
+     ;; keys yet, and 2. The list of supported commands will probably be
+     ;; evolving rapidly for the foreseeable future.
+
      ;; (println "Enqueue request: " request#)
      (swap! req-queue# (fn [[_# q#]] [nil (conj q# request#)]))))
 
