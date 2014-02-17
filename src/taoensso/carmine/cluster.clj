@@ -64,7 +64,7 @@
   ;; to our handling here.
 
   ;; Step 3:
-  ;; Does our cache know which servers serve each of the above slots?
+  ;; Does our cache know which servers serve each of the above slots?[1]
   ;; Group requests per server + `execute-requests` in parallel with
   ;; appropriate Connections specified (will override the dynamic args).
 
@@ -82,4 +82,14 @@
   ;; Step 7:
   ;; Return all replies in order as a single vector (i.e. the consumer won't be
   ;; aware which nodes served which replies).
+
+  ;; [1]
+  ;; Since slots are distributed to servers in _ranges_, we can do this quite
+  ;; efficiently.
+  ;; Let's say we request a key at slot 42 and determine that it's at
+  ;; 127.0.0.1:6379 so we cache {42 <server 127.0.0.1:6379>}.
+  ;;
+  ;; Now we want a key at slot 78 but we have no idea where it is. We can scan
+  ;; our cache and find the nearest known slot to 78 and use that for our first
+  ;; attempt. So with n nodes, we'll have at most n-1 expected-slot misses.
   )
