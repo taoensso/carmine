@@ -44,6 +44,28 @@
            s)]
     (str/join " " (map parse args))))
 
+(def ^:private ^:const num-keyslots 16384)
+(defn keyslot
+  "Returns the Redis Cluster key slot ℕ∈[0,num-keyslots) for given key arg using
+  the CRC16 algorithm, Ref. http://redis.io/topics/cluster-spec Appendix A."
+  ;; TODO Currently returns `nil` for non-string args. If we ran
+  ;; `protocol/coerce-bs` at request-enqueuing time, it'd be possible to
+  ;; support accurate key-slotting for all arg types. Easy but low priority.
+  [x]
+  (if-not (string? x) nil ; TODO
+    (let [;; Hash only *first* '{<part>}' when present + non-empty:
+          tag     (nth (re-find #"\{(.*?)\}" x) 1)
+          to-hash (if (and tag (not= tag "")) tag x)]
+      (mod (utils/crc16 (.getBytes ^String to-hash "UTF-8"))
+           num-keyslots))))
+
+(comment (keyslot "foobar")
+         (keyslot "ignore-this{foobar}")
+         (time (dotimes [_ 10000] (keyslot "hello")))
+         (time (dotimes [_ 10000] (keyslot "hello{world}"))))
+
+;;;;
+
 (defmacro enqueue-request
   "Implementation detail.
   Takes a request like [\"SET\" \"my-key\" \"my-val\"] and adds it to context's
@@ -62,7 +84,7 @@
            (let [cluster-key-idx# ~cluster-key-idx
                  _# (assert (pos? cluster-key-idx#))
                  cluster-key# (nth request# cluster-key-idx#)]
-             (utils/keyslot cluster-key#)))
+             (keyslot cluster-key#)))
 
          request#
          (if-not (or parser# cluster-keyslot#) request#

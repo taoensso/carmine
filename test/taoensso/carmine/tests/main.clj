@@ -3,6 +3,7 @@
             [expectations     :as test :refer :all]
             [taoensso.carmine :as car  :refer (wcar)]
             [taoensso.carmine.utils :as utils]
+            [taoensso.carmine.commands   :as commands]
             [taoensso.carmine.protocol   :as protocol]
             [taoensso.carmine.benchmarks :as benchmarks]))
 
@@ -147,5 +148,45 @@
              (car/multi)
              (car/ping))
            @idx]))
+
+;;;; Cluster key hashing
+
+(expect [12182 5061 4813] [(commands/keyslot "foo")
+                           (commands/keyslot "bar")
+                           (commands/keyslot "baz")]) ; Basic hashing
+
+(expect (= (commands/keyslot "{user1000}.following")
+           (commands/keyslot "{user1000}.followers"))) ; Both hash on "user1000"
+
+(expect (not= (commands/keyslot "foo{}{bar}")
+              (commands/keyslot "bar"))) ; Only first {}'s non-empty content used
+
+(expect (= (commands/keyslot "foo{{bar}}")
+           (commands/keyslot "{bar"))) ; Content of first {}
+
+(expect (= (commands/keyslot "foo{bar}{zap}")
+           (commands/keyslot "foo{bar}{zip}")
+           (commands/keyslot "baz{bar}{zip}"))) ; All hash on "bar"
+
+(expect (not= (commands/keyslot "foo")
+              (commands/keyslot "FOO"))) ; Hashing is case sensitive
+
+;;; Hashing works over arbitrary bin keys ; TODO
+;; (expect (= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
+;;            (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))))
+;; (expect (not= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
+;;               (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 21)]))))
+
+;;; Hashing works over other non-string-type keys ; TODO
+;; (expect (= (commands/keyslot 10)
+;;            (commands/keyslot 10)))
+;; (expect (not= (commands/keyslot 10)
+;;               (commands/keyslot 11)))
+;; (expect (= (commands/keyslot {:foo :this-will-be-serialized})
+;;            (commands/keyslot {:foo :this-will-be-serialized})))
+;; (expect (not= (commands/keyslot {:foo :this-will-be-serialized})
+;;               (commands/keyslot {:bar :this-will-be-serialized})))
+
+;;;; Benching
 
 (expect (benchmarks/bench {}))

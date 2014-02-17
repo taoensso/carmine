@@ -103,8 +103,6 @@
 
 ;;;; Cluster key hashing
 
-(def ^:private num-keyslots 16384)
-
 (def ^"[J" ^:private xmodem-crc16-lookup
   (long-array
    [0x0000,0x1021,0x2042,0x3063,0x4084,0x50a5,0x60c6,0x70e7,
@@ -140,14 +138,9 @@
     0xef1f,0xff3e,0xcf5d,0xdf7c,0xaf9b,0xbfba,0x8fd9,0x9ff8,
     0x6e17,0x7e36,0x4e55,0x5e74,0x2e93,0x3eb2,0x0ed1,0x1ef0]))
 
-(defn ^:private crc16
-  "CRC16 algorithm used by Redis Cluster,
-  Ref. http://redis.io/topics/cluster-spec Appendix A.
-
-  Thanks to Ben Poweski for our implementation."
-  [^String s]
-  (let [bytes (.getBytes s)
-        len   (alength bytes)]
+(defn crc16 "Thanks to Ben Poweski for our implementation!"
+  [^bytes ba]
+  (let [len (alength ba)]
     (loop [n   0
            crc 0]
       (if (>= n len) crc
@@ -155,16 +148,5 @@
                (bit-xor (bit-and (bit-shift-left crc 8) 0xffff)
                         (aget xmodem-crc16-lookup
                               (-> (bit-shift-right crc 8)
-                                  (bit-xor (aget bytes n))
+                                  (bit-xor (aget ba n))
                                   (bit-and 0xff)))))))))
-
-(defn keyslot "Calculates the keyslot of given string."
-  [s]
-  (let [;; Hash only '{<part>}' when present, Ref. http://goo.gl/Jd9qj5:
-        hash-part (or (nth (re-find #"\{(.+)\}" s) 1) s)]
-    (mod (crc16 hash-part) num-keyslots)))
-
-(comment (keyslot "foobar")
-         (keyslot "ignore-this{foobar}"))
-
-;;;;
