@@ -49,15 +49,16 @@
 ;;;
 
 (defn make-new-connection [{:keys [host port password timeout-ms db] :as spec}]
-  (let [socket (doto (Socket. ^String host ^Integer port)
+  (let [buff-size 16384 ; Err on the large size since we're pooling
+        socket (doto (Socket. ^String host ^Integer port)
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer (or timeout-ms 0)))
         conn (->Connection socket spec (-> (.getInputStream socket)
-                                           (BufferedInputStream.)
+                                           (BufferedInputStream. buff-size)
                                            (DataInputStream.))
                                        (-> (.getOutputStream socket)
-                                           (BufferedOutputStream.)))]
+                                           (BufferedOutputStream. buff-size)))]
     (when password (->> (taoensso.carmine/auth password)
                         (protocol/with-replies*)
                         (protocol/with-context conn)))
