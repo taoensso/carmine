@@ -1,28 +1,33 @@
-## v2.4.6 / 2014-Jan-31
+## Pending / unreleased
+
+ * Nothing here yet.
+
+
+## v2.4.6 / 2014 Jan 31
 
 ### Fixes
- * [#71] Fix bad `atomic` arg order (neilmock).
- * [#72] Fix bad mq handler connection arg (neilmock).
+
+ * #71 Fix bad `atomic` arg order (neilmock).
+ * #72 Fix bad mq handler connection arg (neilmock).
 
 
-## v2.4.5 / 2014-Jan-22
+## v2.4.5 / 2014 Jan 22
 
-This is a **backwards compatible bug fix release**. Recommended upgrade.
+> This is a **backwards compatible bug fix release**. Recommended upgrade.
 
-### Features
+### New
+
  * Updated `commands.json` to bring in Redis 2.8 SCAN commands.
 
-### Changes
- None
-
 ### Fixes
- * [#68] Pub/Sub bug preventing use with passwords & db selects (sritchie).
- * [unreported] `as-map` (and by extension `parse-map`) post condition bug: should allow nils.
- * [unreported] `lua-local` vector-args bug.
- * [unreported] fix Tundra message queue name formatting.
- * [#70] fix `lua` + `parse-raw` support (chenfisher).
- * [#71] message queue workers no longer terminate on errors (notably connection errors) but will retry after backoff.
- * [unreported] fix regression introduced by #70.
+
+ * #68 Pub/Sub bug preventing use with passwords & db selects (sritchie).
+ * `as-map` (and by extension `parse-map`) post condition bug: should allow nils.
+ * `lua-local` vector-args bug.
+ * Fix Tundra message queue name formatting.
+ * Fix `lua` + `parse-raw` support (chenfisher).
+ * #71 Message queue workers no longer terminate on errors (notably connection errors) but will retry after backoff.
+ * Fix regression introduced by #70.
 
 
 ## v2.3.1 → v2.4.0 (major update!)
@@ -98,7 +103,7 @@ This is a **backwards compatible bug fix release**. Recommended upgrade.
 ## v1.12.0 → v2.0.0
 
   * Refactored a bunch of code for simplicity+performance (~20% improved roundtrip times).
-  * Upgraded to [Nippy v2][Nippy GitHub] for pluggable compression+crypto. See the [Nippy CHANGELOG][] for details.
+  * Upgraded to [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto. See the [Nippy CHANGELOG](https://github.com/ptaoussanis/carmine/commits/master) for details.
   * Added early (alpha) Tundra API for semi-automatic cold data archiving. See the [README](https://github.com/ptaoussanis/carmine#tundra) for details.
 
   * **DEPRECATED**: `with-conn`, `make-conn-pool`, `make-conn-spec` -> `wcar`:
@@ -200,12 +205,3 @@ This is a **backwards compatible bug fix release**. Recommended upgrade.
 
   * Clean up Pub/sub listener thread (don't keep head!).
   * Add URI support to `make-conn-spec`.
-
-
-### For older versions please see the [commit history][]
-
-[commit history]: https://github.com/ptaoussanis/carmine/commits/master
-[API docs]: http://ptaoussanis.github.io/carmine
-[Taoensso libs]: https://www.taoensso.com/clojure-libraries
-[Nippy GitHub]: https://github.com/ptaoussanis/nippy
-[Nippy CHANGELOG]: https://github.com/ptaoussanis/nippy/blob/master/CHANGELOG.md
