@@ -45,17 +45,17 @@
 
 (def qkey "Prefixed queue key" (memoize (partial car/key :carmine :mq)))
 
-(defn clear-queues [conn & qnames]
-  (wcar conn
+(defn clear-queues [conn-opts & qnames]
+  (wcar conn-opts
     (doseq [qname qnames]
-      (when-let [qks (seq (wcar conn (car/keys (qkey qname :*))))]
+      (when-let [qks (seq (wcar conn-opts (car/keys (qkey qname :*))))]
         (apply car/del qks)))))
 
-(defn queue-status [conn qname]
+(defn queue-status [conn-opts qname]
   (let [qk (partial qkey qname)]
     (zipmap [:last-mid :next-mid :messages :locks :backoffs :nattempts
              :mid-circle :done :requeue :eoq-backoff? :ndry-runs]
-     (wcar conn
+     (wcar conn-opts
        (car/lindex        (qk :mid-circle)  0)
        (car/lindex        (qk :mid-circle) -1)
        (car/hgetall*      (qk :messages))
@@ -275,15 +275,15 @@
   (wcar {} (car/pttl (qkey :q1 :eoq-backoff?))))
 
 (defn handle1 "Implementation detail!"
-  [conn qname handler [mid mcontent attempt :as poll-reply]]
+  [conn-opts qname handler [mid mcontent attempt :as poll-reply]]
   (when (and poll-reply (not= poll-reply "eoq-backoff"))
     (let [qk   (partial qkey qname)
           done (fn [status mid & [backoff-ms]]
-                 (car/atomic conn 100
+                 (car/atomic conn-opts 100
                    (car/watch (qk :requeue))
                    (let [requeue?
-                         (wcar conn (->> (car/sismember (qk :requeue) mid)
-                                         (car/parse-bool)))
+                         (wcar conn-opts (->> (car/sismember (qk :requeue) mid)
+                                              (car/parse-bool)))
                          status (if (and (= status :success) requeue?)
                                   :requeue status)]
                      (car/multi)
@@ -319,7 +319,7 @@
 ;;;; Workers
 
 (defprotocol IWorker (start [this]) (stop [this]))
-(defrecord    Worker [conn qname running? opts]
+(defrecord    Worker [conn-opts qname running? opts]
   java.io.Closeable (close [this] (stop this))
   IWorker
   (stop [_]
@@ -341,9 +341,10 @@
                   (let [?error
                         (try
                           (let [[poll-reply ndruns mid-circle-size]
-                                (wcar conn (dequeue qname opts)
-                                           (car/get  (qk :ndry-runs))
-                                           (car/llen (qk :mid-circle)))]
+                                (wcar conn-opts
+                                  (dequeue qname opts)
+                                  (car/get  (qk :ndry-runs))
+                                  (car/llen (qk :mid-circle)))]
 
                             (when monitor
                               (monitor {:mid-circle-size mid-circle-size
@@ -352,9 +353,9 @@
 
                             (if (= poll-reply "eoq-backoff")
                               (Thread/sleep
-                               (max (wcar conn (car/pttl (qk :eoq-backoff?)))
+                               (max (wcar conn-opts (car/pttl (qk :eoq-backoff?)))
                                     10))
-                              (handle1 conn qname handler poll-reply))
+                              (handle1 conn-opts qname handler poll-reply))
 
                             (when throttle-ms (Thread/sleep throttle-ms)))
                           nil ; Successful worker loop
@@ -402,23 +403,24 @@
                      Sleep synchronized for all queue workers.
    :nthreads       - Number of synchronized worker threads to use.
    :throttle-ms    - Thread sleep period between each poll."
-  [conn qname & [{:keys [handler monitor lock-ms eoq-backoff-ms nthreads
-                         throttle-ms auto-start] :as opts
-                  :or   {handler (fn [args] (timbre/infof "%s" args)
-                                           {:status :success})
-                         monitor (monitor-fn qname 1000 (* 1000 60 60 6))
-                         lock-ms        (* 1000 60 60)
-                         nthreads       1
-                         throttle-ms    200
-                         eoq-backoff-ms exp-backoff
-                         auto-start     true}}]]
-  (let [w (->Worker conn qname (atom false)
-                    {:handler        handler
-                     :monitor        monitor
-                     :lock-ms        lock-ms
-                     :eoq-backoff-ms eoq-backoff-ms
-                     :nthreads       nthreads
-                     :throttle-ms    throttle-ms})]
+  [conn-opts qname &
+   [{:keys [handler monitor lock-ms eoq-backoff-ms nthreads
+            throttle-ms auto-start] :as opts
+     :or   {handler (fn [args] (timbre/infof "%s" args)
+                      {:status :success})
+            monitor (monitor-fn qname 1000 (* 1000 60 60 6))
+            lock-ms        (* 1000 60 60)
+            nthreads       1
+            throttle-ms    200
+            eoq-backoff-ms exp-backoff
+            auto-start     true}}]]
+  (let [w (->Worker conn-opts qname (atom false)
+            {:handler        handler
+             :monitor        monitor
+             :lock-ms        lock-ms
+             :eoq-backoff-ms eoq-backoff-ms
+             :nthreads       nthreads
+             :throttle-ms    throttle-ms})]
 
     (let [;; For backwards-compatibility with old API:
           auto-start (if-not (contains? opts :auto-start?) auto-start

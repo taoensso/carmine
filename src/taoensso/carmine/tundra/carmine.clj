@@ -8,7 +8,7 @@
 
 ;; TODO
 
-;; (defrecord CarmineDataStore [conn]
+;; (defrecord CarmineDataStore [conn-opts]
 ;;   IDataStore
 ;;   (put-key    [dstore k v])
 ;;   (fetch-keys [dstore ks]))

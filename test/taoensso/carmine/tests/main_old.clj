@@ -311,7 +311,7 @@
     ;;; This transaction will fail
     (wcar* (car/set k  k-val)
           (car/set wk wk-val))
-    (is (= []
+    (is (= nil ; []
            (wcar* (car/atomically
                   [wk]
                   (wcar* (car/set wk "CHANGE!")) ; Will break watch

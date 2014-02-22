@@ -7,6 +7,7 @@
   (:require [clojure.java.io   :as io]
             [clojure.string    :as str]
             [clojure.data.json :as json]
+            [taoensso.carmine.utils    :as utils]
             [taoensso.carmine.protocol :as protocol]))
 
 (defn- args->params-vec
@@ -43,56 +44,108 @@
            s)]
     (str/join " " (map parse args))))
 
-(defmacro defcommand
-  "Actually defines an appropriate function for Redis command given its name in
-  reference (\"CONFIG SET\") and its refspec.
+(def ^:private ^:const num-keyslots 16384)
+(defn keyslot
+  "Returns the Redis Cluster key slot ℕ∈[0,num-keyslots) for given key arg using
+  the CRC16 algorithm, Ref. http://redis.io/topics/cluster-spec Appendix A."
+  ;; TODO Currently returns `nil` for non-string args. If we ran
+  ;; `protocol/coerce-bs` at request-enqueuing time, it'd be possible to
+  ;; support accurate key-slotting for all arg types. Easy but low priority.
+  [x]
+  (if-not (string? x) nil ; TODO
+    (let [;; Hash only *first* '{<part>}' when present + non-empty:
+          tag     (nth (re-find #"\{(.*?)\}" x) 1)
+          to-hash (if (and tag (not= tag "")) tag x)]
+      (mod (utils/crc16 (.getBytes ^String to-hash "UTF-8"))
+           num-keyslots))))
 
-  Defined function will require a *context* binding to run."
-  [command-name {args :arguments :as refspec} debug-mode?]
-  (let [fn-name (-> command-name (str/replace #" " "-") str/lower-case)
-        fn-docstring (str command-name " "
-                          (args->params-docstring args)
-                          "\n\n" (:summary refspec) ".\n\n"
-                          "Available since: " (:since refspec) ".\n\n"
-                          "Time complexity: " (:complexity refspec))
-        fn-params      (args->params-vec args)
-        request-params (into (str/split command-name #" ")
-                             fn-params)
-        [ps [_ varps]] (split-with #(not= '& %) request-params)
-        ps             (vec ps)]
-    (if debug-mode?
-      `(println ~fn-name ":" \" ~(args->params-docstring args) \"
-                "->" ~(str fn-params))
-      (if-not varps
-        `(defn ~(symbol fn-name)
-           {:doc ~fn-docstring
-            :redis-api (or (:since ~refspec) true)}
-           ~fn-params
-           (protocol/send-request ~ps))
-        `(defn ~(symbol fn-name)
-           {:doc ~fn-docstring
-            :redis-api (or (:since ~refspec) true)}
-           ~fn-params
-           (protocol/send-request (into ~ps ~varps)))))))
+(comment (keyslot "foobar")
+         (keyslot "ignore-this{foobar}")
+         (time (dotimes [_ 10000] (keyslot "hello")))
+         (time (dotimes [_ 10000] (keyslot "hello{world}"))))
+
+;;;;
+
+(defmacro enqueue-request
+  "Implementation detail.
+  Takes a request like [\"SET\" \"my-key\" \"my-val\"] and adds it to context's
+  request queue with relevant metadata from dynamic environment."
+  [request
+   cluster-key-idx ; Since cmd may have multiple parts, etc.
+   ]
+  ;; {:pre [(vector? request) (or (nil? cluster-key-idx)
+  ;;                              (pos? cluster-key-idx))]}
+  `(let [{conn# :conn req-queue# :req-queue} protocol/*context*
+         _# (when-not req-queue# (throw protocol/no-context-ex))
+         request# ~request
+         parser#  protocol/*parser*
+         cluster-keyslot#
+         (if-not (get-in conn# [:spec :cluster]) request#
+           (let [cluster-key-idx# ~cluster-key-idx
+                 _# (assert (pos? cluster-key-idx#))
+                 cluster-key# (nth request# cluster-key-idx#)]
+             (keyslot cluster-key#)))
+
+         request#
+         (if-not (or parser# cluster-keyslot#) request#
+           (with-meta request#
+             {:parser parser# ; Parser metadata will be used as req-opts
+              :expected-keyslot cluster-keyslot#}))]
+
+     ;; We could also choose to throw here for non-Cluster commands being used
+     ;; in Cluster mode. For the moment choosing to let Redis server reply with
+     ;; relevant errors since: 1. There's no command spec info on non/cluster
+     ;; keys yet, and 2. The list of supported commands will probably be
+     ;; evolving rapidly for the foreseeable future.
+
+     ;; (println "Enqueue request: " request#)
+     (swap! req-queue# (fn [[_# q#]] [nil (conj q# request#)]))))
+
+(defmacro defcommand [cmd-name {args :arguments :as refspec}]
+  (let [fn-name      (-> cmd-name (str/replace #" " "-") str/lower-case)
+        fn-docstring (str cmd-name " "
+                       (args->params-docstring args)
+                       "\n\n" (:summary refspec) ".\n\n"
+                       "Available since: " (:since refspec) ".\n\n"
+                       "Time complexity: " (:complexity refspec))
+
+        fn-args   (args->params-vec args)   ; ['key 'value '& 'more]
+        cmd-parts (str/split cmd-name #" ") ; ["CONFIG" "SET"]
+        req-args  (into cmd-parts fn-args)  ; ["CONFIG" "SET" 'key 'value '& 'more]
+
+        ;; [("CONFIG" "SET" 'key 'value) ('& 'more)]:
+        [req-args-main [_ req-args-more]] (split-with #(not= '& %) req-args)
+        req-args-main (vec req-args-main)
+
+        ;; We assume for now that cluster key always follows immediately after
+        ;; command parts since this seems to hold. We could adjust later for any
+        ;; exceptions that may come up:
+        cluster-key-idx (count cmd-parts)]
+
+    `(defn ~(symbol fn-name)
+       {:doc ~fn-docstring
+        :redis-api (or (:since ~refspec) true)}
+       ~fn-args
+       (let [req-args-main# ~req-args-main
+             req-args-more# ~req-args-more
+             request# ; ["SET" "my-key" "my-val"]
+             (if-not req-args-more# req-args-main#
+               (into req-args-main# req-args-more#))]
+
+         (enqueue-request request# ~cluster-key-idx)))))
 
 (defn- get-command-reference
   "Returns parsed JSON official command reference.
   From https://github.com/antirez/redis-doc/blob/master/commands.json"
-  []
-  (-> "commands.json" io/resource io/reader slurp
-      (clojure.data.json/read-str :key-fn keyword)))
+  [] (-> "commands.json" io/resource io/reader slurp
+         (clojure.data.json/read-str :key-fn keyword)))
 
-(defmacro defcommands
-  "Defines an appropriate function for every command in reference. If debug?
-  then only PRINTS information about functions that would be defined."
-  ([] `(defcommands false))
-  ([debug-mode?]
-     (let [ref (get-command-reference)]
-       `(do ~@(map (fn [k v] `(defcommand ~(name k) ~v ~debug-mode?))
-                   (keys ref) (vals ref))))))
+(defmacro defcommands []
+  (let [refspec (get-command-reference)]
+    `(do ~@(map (fn [k v] `(defcommand ~(name k) ~v))
+             (keys refspec) (vals refspec)))))
 
 (comment
-  (defcommands true) ; Debug
   (def cref (get-command-reference))
   (-> cref keys count)
   (-> cref keys sort)

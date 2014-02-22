@@ -39,6 +39,13 @@
 
 (comment
 
+  ;;; 2014 Feb 13, cleaned up request-planned design --server
+  ;; {:wcar 47, :ping 728, :set 765, :get 763, :roundtrip 946, :ping-pipelined 3741}
+
+  ;;; 2014 Feb 12, completely new request-planning design
+  ;;; (motivated by desire for Cluster pipeline support):
+  ;; {:wcar 100, :ping 860, :set 902, :get 916, :roundtrip 1119, :ping-pipelined 4129}
+
   ;;; 2013 Oct 12, Carmine 2.2.3
   ;; {:wcar 73, :ping 741, :set 830, :get 785, :roundtrip 1105, :ping-pipelined 14171}
 

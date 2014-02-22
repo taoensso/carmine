@@ -69,6 +69,6 @@
   (ensure-table creds {:throughput {:read 1 :write 1}})
   (far/describe-table creds default-table)
   (def dstore  (faraday-datastore creds))
-  (def hardkey (tundra/>safe-keyname "foo:bar /♡\\:baz "))
+  (def hardkey (tundra/>urlsafe-str "foo:bar /♡\\:baz "))
   (tundra/put-key dstore hardkey (.getBytes "hello world"))
   (String. (first (tundra/fetch-keys dstore [hardkey]))))

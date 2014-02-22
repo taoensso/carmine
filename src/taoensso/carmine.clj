@@ -19,7 +19,7 @@
   server. Sends Redis commands to server as pipeline and returns the server's
   response. Releases connection back to pool when done.
 
-  `conn` arg is a map with connection pool and spec options:
+  `conn-opts` arg is a map with connection pool and spec options:
     {:pool {} :spec {:host \"127.0.0.1\" :port 6379}} ; Default
     {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}}
     {:pool {} :spec {:host \"127.0.0.1\" :port 6379
@@ -27,18 +27,32 @@
                      :timeout-ms 6000
                      :db 3}}
 
-  A `nil` or `{}` `conn` or opts will use defaults. A `:none` pool can be used
+  A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
   to skip connection pooling. For other pool options, Ref. http://goo.gl/EiTbn."
-  {:arglists '([conn :as-pipeline & body] [conn & body])}
-  [conn & sigs]
-  `(let [{pool-opts# :pool spec-opts# :spec} ~conn
-         [pool# conn#] (conns/pooled-conn pool-opts# spec-opts#)]
+  {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
+  [conn-opts & [s1 & sn :as sigs]]
+  `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
+
+         ;; To support `wcar` nesting with req planning, we mimmick
+         ;; `with-replies` stashing logic here to simulate immediate writes:
+         ?stashed-replies#
+         (when protocol/*context*
+           (protocol/execute-requests :get-replies :as-pipeline))]
+
      (try
        (let [response# (protocol/with-context conn#
-                         (with-replies ~@sigs))]
+                         (protocol/with-replies* ~@sigs))]
          (conns/release-conn pool# conn#)
          response#)
-       (catch Exception e# (conns/release-conn pool# conn# e#) (throw e#)))))
+
+       (catch Exception e#
+         (conns/release-conn pool# conn# e#) (throw e#))
+
+       ;; Restore any stashed replies to preexisting context:
+       (finally
+         (when ?stashed-replies#
+           (parse nil ; Already parsed on stashing
+             (mapv return ?stashed-replies#)))))))
 
 (comment
   (wcar {} (ping) "not-a-Redis-command" (ping))
@@ -69,9 +83,9 @@
 (defmacro parse-double  [& body] `(parse as-double ~@body))
 (defmacro parse-bool    [& body] `(parse as-bool   ~@body))
 (defmacro parse-keyword [& body] `(parse keyword   ~@body))
-(defmacro parse-raw     [& body] `(parse (with-meta identity {:raw? true}) ~@body))
-(defmacro parse-nippy [thaw-opts & body]
-  `(parse (with-meta identity {:thaw-opts ~thaw-opts}) ~@body))
+
+(utils/defalias parse-raw   protocol/parse-raw)
+(utils/defalias parse-nippy protocol/parse-nippy)
 
 (defn as-map [coll & [kf vf]]
   {:pre  [(coll? coll) (or (nil? kf) (fn? kf) (identical? kf :keywordize))
@@ -128,8 +142,9 @@
   (redis-call [:set \"foo\" \"bar\"] [:get \"foo\"])"
   [& requests]
   (doseq [[cmd & args] requests]
-    (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))]
-      (protocol/send-request (into (vec cmd-parts) args)))))
+    (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))
+          request   (into (vec cmd-parts) args)]
+      (commands/enqueue-request request (count cmd-parts)))))
 
 (comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
                               [:config-get "*max-*-entries*"])))
@@ -147,18 +162,15 @@
   of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
   reply. Redis Cluster note: keys need to all be on same shard."
   [script numkeys key & args]
-  (let [[r & _] (->> (apply evalsha* script numkeys key args)
-                     (with-replies :as-pipeline)
-                     ;; (parse nil) ; Nb
-                     ;; This is an unusual case - we want to ignore general
-                     ;; enclosing parsers, but _keep_ raw parsing metadata when
-                     ;; present (this doesn't affect exception handling):
-                     (parse
-                      (if (:raw? (meta protocol/*parser*))
-                        (with-meta identity {:raw? true}) ; parse-raw
-                        nil)))]
-    (if (and (instance? Exception r)
-             (.startsWith (.getMessage ^Exception r) "NOSCRIPT"))
+  (let [parser ; Respect :raw-bulk, otherwise ignore parser:
+        (if-not (:raw-bulk? (meta protocol/*parser*)) nil
+          (with-meta identity {:raw-bulk? true}) ; As `parse-raw`
+          )
+        [r & _] ; & _ for :as-pipeline
+        (parse parser (with-replies :as-pipeline
+                        (apply evalsha* script numkeys key args)))]
+    (if (= (:prefix (ex-data r)) :noscript)
+      ;;; Now apply context's parser:
       (apply eval script numkeys key args)
       (return r))))
 
@@ -338,23 +350,22 @@
       ]
 
   See also `lua` as an alternative method of achieving transactional behaviour."
-  [conn max-cas-attempts & body]
+  [conn-opts max-cas-attempts & body]
   (assert (>= max-cas-attempts 1))
-  `(let [conn#       ~conn
+  `(let [conn-opts#  ~conn-opts
          max-idx#    ~max-cas-attempts
          prelude-result# (atom nil)
          exec-result#
-         (wcar conn# ; Hold 1 conn for all attempts
+         (wcar conn-opts# ; Hold 1 conn for all attempts
            (loop [idx# 1]
-             (try (do ~@body)
+             (try (reset! prelude-result#
+                    (protocol/with-replies* :as-pipeline ~@body))
                   (catch Exception e#
-                    (discard) ; Always return conn to normal state
-                    (throw e#)))
-             (reset! prelude-result# (protocol/get-parsed-replies :as-pipeline))
-             (let [r# (->> (with-replies (exec))
-                           (parse nil) ; Nb
-                           )]
-               (if (not= r# []) ; => empty `mutli` or watched key changed
+                    ;; Always return conn to normal state:
+                    (protocol/with-replies* (discard))))
+             (let [r# (protocol/with-replies* (exec))]
+               (if-not (nil? r#) ; => empty `multi` or watched key changed
+                 ;; Was [] with < Carmine v3
                  (return r#)
                  (if (= idx# max-idx#)
                    (throw (Exception. (format "`atomic` failed after %s attempt(s)"
@@ -384,7 +395,8 @@
   ;; ["OK" "QUEUED" "OK" #<Exception: ERR EXEC without MULTI>]
 
   (wcar {} (watch "aa") (set "aa" "string") (multi) (ping) (exec))
-  ;; ["OK" "OK" "OK" "QUEUED" []]
+  ;; ["OK" "OK" "OK" "QUEUED" []]  ; Old reply fn
+  ;; ["OK" "OK" "OK" "QUEUED" nil] ; New reply fn
 
   (wcar {} (watch "aa") (set "aa" "string") (unwatch) (multi) (ping) (exec))
   ;; ["OK" "OK" "OK" "OK" "QUEUED" ["PONG"]]
@@ -433,29 +445,29 @@
   [conn-spec handler initial-state & body]
   `(let [handler-atom# (atom ~handler)
          state-atom#   (atom ~initial-state)
-         conn# (conns/make-new-connection
-                (assoc (conns/conn-spec ~conn-spec) :listener? true))
-         in#   (:in-stream conn#)]
+         {:as conn# in# :in} (conns/make-new-connection
+                              (assoc (conns/conn-spec ~conn-spec)
+                                :listener? true))]
 
      (future-call ; Thread to long-poll for messages
       (bound-fn []
         (while true ; Closes when conn closes
-          (let [reply# (protocol/get-basic-reply in# false)]
+          (let [reply# (protocol/get-unparsed-reply in# {})]
             (try
               (@handler-atom# reply# @state-atom#)
               (catch Throwable t#
                 (timbre/error t# "Listener handler exception")))))))
 
-     (protocol/with-context conn#
-       (protocol/with-listener-req-mode ~@body))
+     (protocol/with-context conn# ~@body
+       (protocol/execute-requests (not :get-replies) nil))
      (->Listener conn# handler-atom# state-atom#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent
   connection."
   [listener & body]
-  `(protocol/with-context (:connection ~listener)
-     (protocol/with-listener-req-mode ~@body)))
+  `(protocol/with-context (:connection ~listener) ~@body
+     (protocol/execute-requests (not :get-replies) nil)))
 
 (defn close-listener [listener] (conns/close-conn (:connection listener)))
 
@@ -540,7 +552,7 @@
          max-idx#    ~max-tries]
      (loop [idx# 0]
        (let [result# (with-replies (atomically watch-keys# ~@body))]
-         (if (not= [] result#)
+         (if-not (nil? result#) ; Was [] with < Carmine v3
            (remember result#)
            (if (= idx# max-idx#)
              (throw (Exception. (str "`ensure-atomically` failed after " idx#

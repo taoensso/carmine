@@ -1,6 +1,6 @@
 (ns taoensso.carmine.connections
-  "Handles life cycle of socket connections to Redis server. Connection pool is
-  implemented using Apache Commons pool. Originally adapted from redis-clojure."
+  "Handles socket connection lifecycle. Pool is implemented with Apache Commons
+  pool. Originally adapted from redis-clojure."
   {:author "Peter Taoussanis"}
   (:require [taoensso.carmine (utils :as utils) (protocol :as protocol)])
   (:import  [java.net Socket URI]
@@ -8,22 +8,28 @@
             [org.apache.commons.pool KeyedPoolableObjectFactory]
             [org.apache.commons.pool.impl GenericKeyedObjectPool]))
 
-;; Hack to allow cleaner separation of ns concerns
 (utils/declare-remote taoensso.carmine/ping
                       taoensso.carmine/auth
                       taoensso.carmine/select)
+
+;;; Outline/nomenclature
+;; connection -> Connection object.
+;; pool       -> IConnectionPool implementer (for custom pool types, etc.).
+;; conn spec  -> map of processed options describing connection properties.
+;; conn opts  -> map of unprocessed options that'll be processed to create a spec.
+;; pool opts  -> map of options that'll be used to create a pool (memoized).
+;; conn opts  -> {:pool <pool-opts> :spec <spec-opts>} as taken by `wcar`, etc.
 
 (defprotocol IConnection
   (conn-alive? [this])
   (close-conn  [this]))
 
-(defrecord Connection [^Socket socket spec in-stream out-stream]
+(defrecord Connection [^Socket socket spec in out]
   IConnection
   (conn-alive? [this]
-    (if (:listener? spec)
-      true ; TODO Waiting on Redis update, Ref. http://goo.gl/LPhIO
+    (if (:listener? spec) true ; TODO Waiting on Ref. http://goo.gl/LPhIO
       (= "PONG" (try (->> (taoensso.carmine/ping)
-                          (protocol/with-replies)
+                          (protocol/with-replies*)
                           (protocol/with-context this))
                      (catch Exception _)))))
   (close-conn [_] (.close socket)))
@@ -40,22 +46,24 @@
   java.io.Closeable
   (close [_] (.close pool)))
 
-(defn make-new-connection "Actually creates and returns a new socket connection."
-  [{:keys [host port password timeout-ms db] :as spec}]
-  (let [socket (doto (Socket. ^String host ^Integer port)
+;;;
+
+(defn make-new-connection [{:keys [host port password timeout-ms db] :as spec}]
+  (let [buff-size 16384 ; Err on the large size since we're pooling
+        socket (doto (Socket. ^String host ^Integer port)
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer (or timeout-ms 0)))
         conn (->Connection socket spec (-> (.getInputStream socket)
-                                           (BufferedInputStream.)
+                                           (BufferedInputStream. buff-size)
                                            (DataInputStream.))
                                        (-> (.getOutputStream socket)
-                                           (BufferedOutputStream.)))]
+                                           (BufferedOutputStream. buff-size)))]
     (when password (->> (taoensso.carmine/auth password)
-                        (protocol/with-replies)
+                        (protocol/with-replies*)
                         (protocol/with-context conn)))
     (when (and db (not (zero? db))) (->> (taoensso.carmine/select (str db))
-                                         (protocol/with-replies)
+                                         (protocol/with-replies*)
                                          (protocol/with-context conn)))
     conn))
 
@@ -94,17 +102,15 @@
     (throw (Exception. (str "Unknown pool option: " opt))))
   pool)
 
-(def ^:private pool-cache (atom {}))
-
-(defn conn-pool ^java.io.Closeable [opts & [use-cache?]]
+(def ^:private pool-cache "{<pool-opts> <pool>}" (atom {}))
+(defn conn-pool ^java.io.Closeable [pool-opts & [use-cache?]]
   ;; Impl. a little contorted for high-speed v1 API backwards-comp
-  (if-let [dp (and use-cache? (@pool-cache opts))]
-    @dp
+  (if-let [dp (and use-cache? (@pool-cache pool-opts))] @dp
     (let [dp (delay
               (cond
-               (= opts :none) (->NonPooledConnectionPool)
+               (= pool-opts :none) (->NonPooledConnectionPool)
                ;; Pass through pre-made pools (note that test reflects):
-               (satisfies? IConnectionPool opts) opts
+               (satisfies? IConnectionPool pool-opts) pool-opts
                :else
                (let [defaults {:test-while-idle?              true
                                :num-tests-per-eviction-run    -1
@@ -112,14 +118,13 @@
                                :time-between-eviction-runs-ms 30000}]
                  (->ConnectionPool
                   (reduce set-pool-option
-                          (GenericKeyedObjectPool. (make-connection-factory))
-                          (merge defaults opts))))))]
-      (if-not use-cache?
-        @dp
+                    (GenericKeyedObjectPool. (make-connection-factory))
+                    (merge defaults pool-opts))))))]
+
+      (if-not use-cache? @dp
         (locking pool-cache ; Pool creation can be racey even with `delay`
-          (if-let [dp (@pool-cache opts)] ; Retry after lock acquisition
-            @dp
-            (do (swap! pool-cache assoc opts dp)
+          (if-let [dp (@pool-cache pool-opts)] @dp ; Retry after lock acquisition
+            (do (swap! pool-cache assoc pool-opts dp)
                 @dp)))))))
 
 (comment (conn-pool :none) (conn-pool {}))
@@ -137,19 +142,20 @@
 
 (def conn-spec
   (memoize
-   (fn [{:keys [uri host port password timeout-ms db] :as opts}]
-     (let [defaults {:host "127.0.0.1" :port 6379}
-           opts     (if-let [timeout (:timeout opts)] ; Support deprecated opt
-                      (assoc opts :timeout-ms timeout)
-                      opts)]
-       (merge defaults opts (parse-uri uri))))))
+   (fn [{:keys [uri host port password timeout-ms db] :as spec-opts}]
+     (let [defaults  {:host "127.0.0.1" :port 6379}
+           spec-opts (if-let [timeout (:timeout spec-opts)] ; Deprecated opt
+                       (assoc spec-opts :timeout-ms timeout)
+                       spec-opts)]
+       (merge defaults spec-opts (parse-uri uri))))))
 
 (defn pooled-conn "Returns [<open-pool> <pooled-connection>]."
-  [pool-opts spec-opts]
+  ;; [pool-opts spec-opts]
+  [{:as conn-opts pool-opts :pool spec-opts :spec}]
   (let [spec (conn-spec spec-opts)
         pool (conn-pool pool-opts :use-cache)]
     (try (try [pool (get-conn pool spec)]
-              (catch IllegalStateException e
+              (catch IllegalStateException e ; Cached pool's gone bad
                 (let [pool (conn-pool pool-opts)]
                   [pool (get-conn pool spec)])))
          (catch Exception e

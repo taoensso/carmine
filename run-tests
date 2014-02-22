@@ -13,6 +13,7 @@ else
    if [ "$2" = "--auto" ]; then
       lein test-auto
    else
+      export TIMBRE_LOG_LEVEL="trace"
       # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.tundra"
       # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.main"
       # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.message-queue"

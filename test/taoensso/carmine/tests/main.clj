@@ -3,6 +3,7 @@
             [expectations     :as test :refer :all]
             [taoensso.carmine :as car  :refer (wcar)]
             [taoensso.carmine.utils :as utils]
+            [taoensso.carmine.commands   :as commands]
             [taoensso.carmine.protocol   :as protocol]
             [taoensso.carmine.benchmarks :as benchmarks]))
 
@@ -75,6 +76,23 @@
                                  (car/echo "THREE")))
      @p]))
 
+;;;; Request queues (experimental, for Carmine v3)
+;; Pre v3, Redis command fns used to immediately trigger writes to their
+;; context's io stream. v3 introduced lazy writing to allow request planning in
+;; Cluster mode. This is a trade-off: we now have to be careful to realize
+;; queued requests any time a nested connection occurs.
+
+(expect ["OK" "echo"] (wcar {} (car/set (tkey "rq1") (wcar {} (car/echo "echo")))
+                              (car/get (tkey "rq1"))))
+(expect "rq2-val"
+  (let [p (promise)]
+    (wcar {} (car/del (tkey "rq2")))
+    (wcar {} (car/set (tkey "rq2") "rq2-val")
+          ;; Nested `wcar` here should trigger eager sending of queued writes
+          ;; above (to simulate immediate-write commands):
+          (deliver p (wcar {} (car/get (tkey "rq2")))))
+    @p))
+
 ;;;; `atomic`
 
 (expect Exception (car/atomic {} 1)) ; Missing multi
@@ -113,6 +131,13 @@
                     (car/multi)
                     (car/ping))) ; Contending changes to watched key
 
+;; As above, with contending write by different connection:
+(expect Exception (car/atomic {} 5
+                    (car/watch (tkey :watched))
+                    (wcar {} (car/set (tkey :watched) (rand)))
+                    (car/multi)
+                    (car/ping)))
+
 (expect [[["OK" "OK" "QUEUED"] "PONG"] 3]
         (let [idx (atom 1)]
           [(car/atomic {} 3
@@ -123,5 +148,45 @@
              (car/multi)
              (car/ping))
            @idx]))
+
+;;;; Cluster key hashing
+
+(expect [12182 5061 4813] [(commands/keyslot "foo")
+                           (commands/keyslot "bar")
+                           (commands/keyslot "baz")]) ; Basic hashing
+
+(expect (= (commands/keyslot "{user1000}.following")
+           (commands/keyslot "{user1000}.followers"))) ; Both hash on "user1000"
+
+(expect (not= (commands/keyslot "foo{}{bar}")
+              (commands/keyslot "bar"))) ; Only first {}'s non-empty content used
+
+(expect (= (commands/keyslot "foo{{bar}}")
+           (commands/keyslot "{bar"))) ; Content of first {}
+
+(expect (= (commands/keyslot "foo{bar}{zap}")
+           (commands/keyslot "foo{bar}{zip}")
+           (commands/keyslot "baz{bar}{zip}"))) ; All hash on "bar"
+
+(expect (not= (commands/keyslot "foo")
+              (commands/keyslot "FOO"))) ; Hashing is case sensitive
+
+;;; Hashing works over arbitrary bin keys ; TODO
+;; (expect (= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
+;;            (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))))
+;; (expect (not= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
+;;               (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 21)]))))
+
+;;; Hashing works over other non-string-type keys ; TODO
+;; (expect (= (commands/keyslot 10)
+;;            (commands/keyslot 10)))
+;; (expect (not= (commands/keyslot 10)
+;;               (commands/keyslot 11)))
+;; (expect (= (commands/keyslot {:foo :this-will-be-serialized})
+;;            (commands/keyslot {:foo :this-will-be-serialized})))
+;; (expect (not= (commands/keyslot {:foo :this-will-be-serialized})
+;;               (commands/keyslot {:bar :this-will-be-serialized})))
+
+;;;; Benching
 
 (expect (benchmarks/bench {}))
