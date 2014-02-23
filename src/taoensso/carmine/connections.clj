@@ -2,15 +2,16 @@
   "Handles socket connection lifecycle. Pool is implemented with Apache Commons
   pool. Originally adapted from redis-clojure."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.carmine (utils :as utils) (protocol :as protocol)])
+  (:require [taoensso.encore           :as encore]
+            [taoensso.carmine.protocol :as protocol])
   (:import  [java.net Socket URI]
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
             [org.apache.commons.pool KeyedPoolableObjectFactory]
             [org.apache.commons.pool.impl GenericKeyedObjectPool]))
 
-(utils/declare-remote taoensso.carmine/ping
-                      taoensso.carmine/auth
-                      taoensso.carmine/select)
+(encore/declare-remote taoensso.carmine/ping
+                       taoensso.carmine/auth
+                       taoensso.carmine/select)
 
 ;;; Outline/nomenclature
 ;; connection -> Connection object.

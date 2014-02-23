@@ -7,12 +7,12 @@
     * carmine:tundra:evictable -> set, keys for which `ensure-ks` fetch failure
                                   should throw an error."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.carmine       :as car :refer (wcar)]
-            [taoensso.carmine.message-queue :as mq]
-            [taoensso.carmine.utils :as utils]
-            [taoensso.nippy         :as nippy]
+  (:require [taoensso.nippy         :as nippy]
             [taoensso.nippy.tools   :as nippy-tools]
-            [taoensso.timbre        :as timbre])
+            [taoensso.timbre        :as timbre]
+            [taoensso.encore        :as encore]
+            [taoensso.carmine       :as car :refer (wcar)]
+            [taoensso.carmine.message-queue :as mq])
   (:import  [java.net URLDecoder URLEncoder]))
 
 ;;;; TODO
@@ -133,9 +133,9 @@
 (def fetch-keys-delayed
   "Used to prevent multiple threads from rushing the datastore to get the same
   keys, unnecessarily duplicating work."
-  (utils/memoize-ttl 5000 fetch-keys))
+  (encore/memoize* 5000 fetch-keys))
 
-(defn- prep-ks [ks] (vec (distinct (mapv utils/fq-name ks))))
+(defn- prep-ks [ks] (vec (distinct (mapv encore/fq-name ks))))
 (comment (prep-ks [nil]) ; Throws
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
@@ -180,7 +180,7 @@
               (->> dvals-missing
                    (mapv (fn [k dv]
                            (if (throwable? dv) (car/return dv)
-                               (if-not (utils/bytes? dv)
+                               (if-not (encore/bytes? dv)
                                  (car/return (Exception. "Malformed fetch data"))
                                  (car/restore k (or redis-ttl-ms 0) (car/raw dv)))))
                          ks-missing)

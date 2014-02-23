@@ -2,17 +2,17 @@
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
   (:require [clojure.string :as str]
+            [taoensso.encore      :as encore]
+            [taoensso.timbre      :as timbre]
+            [taoensso.nippy.tools :as nippy-tools]
             [taoensso.carmine
-             (utils       :as utils)
              (protocol    :as protocol)
              (connections :as conns)
-             (commands    :as commands)]
-            [taoensso.timbre      :as timbre]
-            [taoensso.nippy.tools :as nippy-tools]))
+             (commands    :as commands)]))
 
 ;;;; Connections
 
-(utils/defalias with-replies protocol/with-replies)
+(encore/defalias with-replies protocol/with-replies)
 
 (defmacro wcar
   "Evaluates body in the context of a thread-bound pooled connection to Redis
@@ -65,47 +65,29 @@
 
 ;;;; Misc
 
-;;; (number? x) for Carmine < v0.11.x backwards compatiblility
-(defn as-long   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
-(defn as-double [x] (when x (if (number? x) (double x) (Double/parseDouble x))))
-(defn as-bool   [x] (when x
-                      (cond (or (true? x) (false? x))            x
-                            (or (= x "false") (= x "0") (= x 0)) false
-                            (or (= x "true")  (= x "1") (= x 1)) true
-                            :else
-                            (throw (Exception. (str "Couldn't coerce as bool: "
-                                                    x))))))
+;;; Similar to encore/as-<x> but throw on non-nil unparseables:
+(defn as-int   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
+(defn as-float [x] (when x (if (number? x) (double x) (Double/parseDouble x))))
+(defn as-bool  [x] (when x
+                     (cond (or (true? x) (false? x))            x
+                           (or (= x "false") (= x "0") (= x 0)) false
+                           (or (= x "true")  (= x "1") (= x 1)) true
+                           :else (throw (Exception.
+                                         (format "Couldn't coerce as bool: %s" x))))))
 
-(utils/defalias parse       protocol/parse)
-(utils/defalias parser-comp protocol/parser-comp)
+(encore/defalias parse       protocol/parse)
+(encore/defalias parser-comp protocol/parser-comp)
 
-(defmacro parse-long    [& body] `(parse as-long   ~@body))
-(defmacro parse-double  [& body] `(parse as-double ~@body))
+(defmacro parse-int     [& body] `(parse as-int    ~@body))
+(defmacro parse-float   [& body] `(parse as-float  ~@body))
 (defmacro parse-bool    [& body] `(parse as-bool   ~@body))
 (defmacro parse-keyword [& body] `(parse keyword   ~@body))
 
-(utils/defalias parse-raw   protocol/parse-raw)
-(utils/defalias parse-nippy protocol/parse-nippy)
+(encore/defalias parse-raw   protocol/parse-raw)
+(encore/defalias parse-nippy protocol/parse-nippy)
+(encore/defalias as-map      encore/as-map)
 
-(defn as-map [coll & [kf vf]]
-  {:pre  [(coll? coll) (or (nil? kf) (fn? kf) (identical? kf :keywordize))
-                       (or (nil? vf) (fn? vf))]
-   :post [(or (nil? %) (map? %))]}
-  (when-let [s' (seq coll)]
-    (let [kf (if-not (identical? kf :keywordize) kf
-                     (fn [k _] (keyword k)))]
-      (loop [m (transient {}) [k v :as s] s']
-        (let [k (if-not kf k (kf k v))
-              v (if-not vf v (vf k v))
-              new-m (assoc! m k v)]
-          (if-let [n (nnext s)]
-            (recur new-m n)
-            (persistent! new-m)))))))
-
-(comment (as-map ["a" "A" "b" "B" "c" "C"] :keywordize
-           (fn [k v] (case k (:a :b) (str "boo-" v) v))))
-
-(defmacro parse-map [form & [kf vf]] `(parse #(as-map % ~kf ~vf) ~form))
+(defmacro parse-map [form & [kf vf]] `(parse #(encore/as-map % ~kf ~vf) ~form))
 
 (defn key
   "Joins parts to form an idiomatic compound Redis key name. Suggested style:
@@ -113,18 +95,18 @@
     * Singular category names (\"account\" rather than \"accounts\").
     * Plural _field_ names when appropriate (\"account:friends\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
-  [& parts] (str/join ":" (mapv #(if (keyword? %) (utils/fq-name %) (str %))
+  [& parts] (str/join ":" (mapv #(if (keyword? %) (encore/fq-name %) (str %))
                                 parts)))
 
 (comment (key :foo/bar :baz "qux" nil 10))
 
-(utils/defalias raw            protocol/raw)
-(utils/defalias with-thaw-opts nippy-tools/with-thaw-opts)
-(utils/defalias freeze         nippy-tools/wrap-for-freezing
+(encore/defalias raw            protocol/raw)
+(encore/defalias with-thaw-opts nippy-tools/with-thaw-opts)
+(encore/defalias freeze         nippy-tools/wrap-for-freezing
   "Forces argument of any type (incl. keywords, simple numbers, and binary types)
   to be subject to automatic de/serialization with Nippy.")
 
-(utils/defalias return protocol/return)
+(encore/defalias return protocol/return)
 (comment (wcar {} (return :foo) (ping) (return :bar))
          (wcar {} (parse name (return :foo)) (ping) (return :bar)))
 
@@ -500,7 +482,14 @@
 
 ;;;; Deprecated
 
-(def hash-script script-hash)
+(def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
+(def as-double "DEPRECATED: Use `as-float` instead." as-double)
+(defmacro parse-long "DEPRECATED: Use `parse-int` instead."
+  [& body] `(parse as-long   ~@body))
+(defmacro parse-double "DEPRECATED: Use `parse-float` instead."
+  [& body] `(parse as-double ~@body))
+
+(def hash-script "DEPRECATED: Use `script-hash` instead." script-hash)
 
 (defn kname "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
   [& parts] (apply key (filter identity parts)))

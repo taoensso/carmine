@@ -4,10 +4,10 @@
 
   Ref: http://redis.io/topics/protocol"
   {:author "Peter Taoussanis"}
-  (:require [clojure.string         :as str]
-            [taoensso.carmine.utils :as utils]
-            [taoensso.nippy         :as nippy]
-            [taoensso.nippy.tools   :as nippy-tools])
+  (:require [clojure.string       :as str]
+            [taoensso.encore      :as encore]
+            [taoensso.nippy       :as nippy]
+            [taoensso.nippy.tools :as nippy-tools])
   (:import  [java.io DataInputStream BufferedOutputStream]
             [clojure.lang Keyword]))
 
@@ -53,13 +53,13 @@
 
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
-  [x] (if (utils/bytes? x) (->WrappedRaw x)
+  [x] (if (encore/bytes? x) (->WrappedRaw x)
           (throw (Exception. "Raw arg must be byte[]"))))
 
 (defprotocol IRedisArg (coerce-bs [x] "x -> [<ba> <meta>]"))
 (extend-protocol IRedisArg
   String  (coerce-bs [x] [(bytestring x) nil])
-  Keyword (coerce-bs [x] [(bytestring ^String (utils/fq-name x)) nil])
+  Keyword (coerce-bs [x] [(bytestring ^String (encore/fq-name x)) nil])
 
   ;;; Simple number types (Redis understands these)
   Long    (coerce-bs [x] [(bytestring (str x)) nil])
@@ -72,7 +72,7 @@
   nil        (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen])
   Object     (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen]))
 
-(extend utils/bytes-class IRedisArg {:coerce-bs (fn [x] [x :mark-bytes])})
+(extend encore/bytes-class IRedisArg {:coerce-bs (fn [x] [x :mark-bytes])})
 
 ;;; Macros to actually send data to stream buffer
 (defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
@@ -165,7 +165,7 @@
                             (let [h (byte-array 2)]
                               (.mark      in 2)
                               (.readFully in h 0 2)
-                              (condp utils/ba= h
+                              (condp encore/ba= h
                                 bs-clj :clj
                                 bs-bin :bin
                                 :str)))
@@ -189,7 +189,7 @@
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
            (if (== bulk-count -1) nil ; Nb was [] with < Carmine v3
-             (utils/repeatedly* bulk-count (get-unparsed-reply in req-opts))))
+             (encore/repeatedly* bulk-count (get-unparsed-reply in req-opts))))
 
       (throw (Exception. (format "Server returned unknown reply type: %s"
                            (str reply-type)))))))
@@ -224,9 +224,12 @@
   See also `parser-comp`."
   [f & body] `(binding [*parser* ~f] ~@body))
 
+(defn- comp-maybe [f g] (cond (and f g) (comp f g) f f g g :else nil))
+(comment ((comp-maybe nil identity) :x))
+
 (defn parser-comp "Composes parsers when f or g are nnil, preserving metadata."
   [f g] (let [m (merge (meta g) (meta f))]
-          (with-meta (utils/comp-maybe f g) m)))
+          (with-meta (comp-maybe f g) m)))
 
 ;;; Special parsers used to communicate metadata to request enqueuer:
 (defmacro parse-raw [& body] `(parse (with-meta identity {:raw-bulk? true}) ~@body))

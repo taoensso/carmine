@@ -18,8 +18,8 @@
   Ref. http://antirez.com/post/250 for basic implementation details."
   {:author "Peter Taoussanis"}
   (:require [clojure.string   :as str]
-            [taoensso.carmine :as car :refer (wcar)]
-            [taoensso.timbre  :as timbre]))
+            [taoensso.timbre  :as timbre]
+            [taoensso.carmine :as car :refer (wcar)]))
 
 ;; TODO Redis 2.8+ Pub/Sub notifications could be used to more efficiently
 ;; coordinate worker backoffs. This'd allow us to essentially go from a polling
@@ -66,7 +66,7 @@
        (->> (car/smembers (qk :done))         (car/parse set))
        (->> (car/smembers (qk :requeue))      (car/parse set))
        (->> (car/get      (qk :eoq-backoff?)) (car/parse-bool)) ; Give TTL?
-       (->> (car/get      (qk :ndry-runs))    (car/parse-long))))))
+       (->> (car/get      (qk :ndry-runs))    (car/parse-int))))))
 
 ;;;; Implementation
 

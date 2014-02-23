@@ -4,8 +4,8 @@
   docstrings, argument specs, etc. This awesome approach was adapted from
   labs-redis-clojure."
   {:author "Peter Taoussanis"}
-  (:require [clojure.java.io   :as io]
-            [clojure.string    :as str]
+  (:require [clojure.string    :as str]
+            [clojure.java.io   :as io]
             [clojure.data.json :as json]
             [taoensso.carmine.utils    :as utils]
             [taoensso.carmine.protocol :as protocol]))

@@ -3,8 +3,8 @@
   {:author "Peter Taoussanis"}
   (:require [clojure.string          :as str]
             [aws.sdk.s3              :as s3]
+            [taoensso.encore         :as encore]
             [taoensso.timbre         :as timbre]
-            [taoensso.carmine.utils  :as utils]
             [taoensso.carmine.tundra :as tundra])
   (:import  [java.io ByteArrayInputStream DataInputStream]
             [taoensso.carmine.tundra IDataStore]
@@ -17,7 +17,7 @@
 (defrecord S3DataStore [creds bucket]
   IDataStore
   (put-key [this k v]
-    (assert (utils/bytes? v))
+    (assert (encore/bytes? v))
     (let [reply (try (s3/put-object creds bucket k (ByteArrayInputStream. v)
                        {:content-length (count v)
                         ;; Nb! Prevents overwriting with corrupted data:

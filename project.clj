@@ -11,12 +11,12 @@
                 *assert* true}
   :dependencies
   [[org.clojure/clojure         "1.4.0"]
-   [org.clojure/tools.macro     "0.1.5"]
-   [commons-pool/commons-pool   "1.6"]
-   [commons-codec/commons-codec "1.9"]
    [org.clojure/data.json       "0.2.4"]
+   [com.taoensso/encore         "0.8.0"]
    [com.taoensso/timbre         "3.0.0"]
-   [com.taoensso/nippy          "2.6.0-alpha3"]]
+   [com.taoensso/nippy          "2.6.0-alpha3"]
+   [commons-pool/commons-pool   "1.6"]
+   [commons-codec/commons-codec "1.9"]]
 
   :test-paths ["test" "src"]
   :profiles

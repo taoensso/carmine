@@ -7,9 +7,8 @@
     * carmine:lock:<lock-name> -> ttl str, lock owner's UUID.
 
   Ref. http://goo.gl/5UalQ for implementation details."
-  (:require [taoensso.carmine       :as car :refer (wcar)]
-            [taoensso.carmine.utils :as utils]
-            [taoensso.timbre        :as timbre]))
+  (:require [taoensso.timbre  :as timbre]
+            [taoensso.carmine :as car :refer (wcar)]))
 
 (def ^:private lkey (partial car/key :carmine :lock))
 
