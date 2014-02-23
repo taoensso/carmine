@@ -1,6 +1,20 @@
 ## Pending / unreleased
 
- * Nothing here yet.
+### New
+
+ * Initial Redis Cluster support (forthcoming)?
+
+### Changes
+
+ * Moved most utils to external `encore` dependency.
+ * **DEPRECATED**: `as-long`, `as-double`, `parse-long`, `parse-double` -> `as-int`, `as-float`, `parse-int`, `parse-float`.
+ * Completely refactor protocol design in prep for Redis Cluster support.
+ * Minor performance improvements.
+
+### Fixes
+
+ * Fix atomic regression (c9ca09d40).
+ * Fix broken Tundra tests, improve test reliability.
 
 
 ## v2.4.6 / 2014 Jan 31
