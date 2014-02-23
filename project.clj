@@ -25,15 +25,16 @@
    :1.6  {:dependencies [[org.clojure/clojure "1.6.0-beta1"]]}
    :test {:dependencies [[expectations            "1.4.56"]
                          [reiddraper/simple-check "0.5.6"]
-                         [clj-aws-s3              "0.3.8"]]
+                         [clj-aws-s3              "0.3.8"]
+                         [ring/ring-core          "1.2.1"]
+                         [com.taoensso/faraday    "1.1.1"]]
           :plugins [[lein-expectations "0.0.8"]
                     [lein-autoexpect   "1.2.2"]]}
    :dev
    [:1.6 :test
     {:jvm-opts ^:replace ["-server"]
      :hooks []
-     :dependencies [[ring/ring-core       "1.2.1"]
-                    [com.taoensso/faraday "1.1.1"]]
+     :dependencies []
      :plugins []}]}
 
   :plugins [[lein-ancient "0.5.4"]
