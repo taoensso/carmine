@@ -33,7 +33,7 @@
     {:jvm-opts ^:replace ["-server"]
      :hooks []
      :dependencies [[ring/ring-core       "1.2.1"]
-                    [com.taoensso/faraday "1.0.2"]]
+                    [com.taoensso/faraday "1.1.1"]]
      :plugins []}]}
 
   :plugins [[lein-ancient "0.5.4"]
