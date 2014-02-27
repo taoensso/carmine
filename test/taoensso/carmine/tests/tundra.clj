@@ -22,10 +22,10 @@
 (defn- before-run {:expectations-options :before-run} [] (clean-up!))
 (defn- after-run  {:expectations-options :after-run}  [] (clean-up!))
 
-(defonce creds {:access-key (get (System/getenv) "AWS_S3_ACCESS_KEY")
-                :secret-key (get (System/getenv) "AWS_S3_SECRET_KEY")})
+(defonce s3-creds {:access-key (get (System/getenv) "AWS_S3_ACCESS_KEY")
+                   :secret-key (get (System/getenv) "AWS_S3_SECRET_KEY")})
 
-(def dstore (ts3/s3-datastore creds "ensso-store/tundra"))
+(def dstore (ts3/s3-datastore s3-creds "ensso-store/tundra"))
 
 (defn- s->ba [^String s] (.getBytes s "UTF-8"))
 (defn- ba->s [^bytes ba] (String.  ba "UTF-8"))
@@ -46,7 +46,7 @@
 ;;;; Tundra API
 
 (let [tstore (tundra/tundra-store dstore)]
-  (expect (and (:access-key creds) (:secret-key creds)))
+  (expect (and (:access-key s3-creds) (:secret-key s3-creds)))
   (expect Exception (wcar* (tundra/dirty     tstore (tkey :invalid))))
   (expect nil       (wcar* (tundra/ensure-ks tstore (tkey :invalid))))
   (expect Exception (wcar* (car/sadd @#'tundra/k-evictable (tkey :invalid-evictable))
