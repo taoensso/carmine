@@ -24,7 +24,7 @@
    :1.5  {:dependencies [[org.clojure/clojure "1.5.1"]]}
    :1.6  {:dependencies [[org.clojure/clojure "1.6.0-beta1"]]}
    :test {:dependencies [[expectations            "1.4.56"]
-                         [reiddraper/simple-check "0.5.6"]
+                         [org.clojure/test.check  "0.5.7"]
                          [com.taoensso/faraday    "1.1.1"]
                          [clj-aws-s3              "0.3.8"]
                          [ring/ring-core          "1.2.1"]]
