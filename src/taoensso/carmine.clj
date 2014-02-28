@@ -65,19 +65,14 @@
 
 ;;;; Misc
 
-;;; Similar to encore/as-<x> but throw on non-nil unparseables:
-(defn as-int   [x] (when x (if (number? x) (long   x) (Long/parseLong     x))))
-(defn as-float [x] (when x (if (number? x) (double x) (Double/parseDouble x))))
-(defn as-bool  [x] (when x
-                     (cond (or (true? x) (false? x))            x
-                           (or (= x "false") (= x "0") (= x 0)) false
-                           (or (= x "true")  (= x "1") (= x 1)) true
-                           :else (throw (Exception.
-                                         (format "Couldn't coerce as bool: %s" x))))))
-
+(encore/defalias as-bool     encore/as-bool  "Returns x as bool, or nil.")
+(encore/defalias as-int      encore/as-int   "Returns x as integer, or nil.")
+(encore/defalias as-float    encore/as-float "Returns x as float, or nil.")
+(encore/defalias as-map      encore/as-map)
 (encore/defalias parse       protocol/parse)
 (encore/defalias parser-comp protocol/parser-comp)
 
+;;; Note that 'parse' has different meanings in Carmine/Encore context:
 (defmacro parse-int     [& body] `(parse as-int    ~@body))
 (defmacro parse-float   [& body] `(parse as-float  ~@body))
 (defmacro parse-bool    [& body] `(parse as-bool   ~@body))
@@ -85,7 +80,6 @@
 
 (encore/defalias parse-raw   protocol/parse-raw)
 (encore/defalias parse-nippy protocol/parse-nippy)
-(encore/defalias as-map      encore/as-map)
 
 (defmacro parse-map [form & [kf vf]] `(parse #(encore/as-map % ~kf ~vf) ~form))
 
