@@ -171,21 +171,11 @@
 (expect (not= (commands/keyslot "foo")
               (commands/keyslot "FOO"))) ; Hashing is case sensitive
 
-;;; Hashing works over arbitrary bin keys ; TODO
-;; (expect (= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
-;;            (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))))
-;; (expect (not= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
-;;               (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 21)]))))
-
-;;; Hashing works over other non-string-type keys ; TODO
-;; (expect (= (commands/keyslot 10)
-;;            (commands/keyslot 10)))
-;; (expect (not= (commands/keyslot 10)
-;;               (commands/keyslot 11)))
-;; (expect (= (commands/keyslot {:foo :this-will-be-serialized})
-;;            (commands/keyslot {:foo :this-will-be-serialized})))
-;; (expect (not= (commands/keyslot {:foo :this-will-be-serialized})
-;;               (commands/keyslot {:bar :this-will-be-serialized})))
+;;; Hashing works over arbitrary bin keys
+(expect (= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
+           (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))))
+(expect (not= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
+              (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 21)]))))
 
 ;;;; Benching
 

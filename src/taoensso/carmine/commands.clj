@@ -7,6 +7,7 @@
   (:require [clojure.string    :as str]
             [clojure.java.io   :as io]
             [clojure.data.json :as json]
+            [taoensso.encore           :as encore]
             [taoensso.carmine.utils    :as utils]
             [taoensso.carmine.protocol :as protocol]))
 
@@ -48,15 +49,15 @@
 (defn keyslot
   "Returns the Redis Cluster key slot ℕ∈[0,num-keyslots) for given key arg using
   the CRC16 algorithm, Ref. http://redis.io/topics/cluster-spec Appendix A."
-  ;; TODO Currently returns `nil` for non-string args. Would be trivial to
-  ;; extend this to support arb bytestring hashing.
   [x]
-  (if-not (string? x) nil ; TODO
-    (let [;; Hash only *first* '{<part>}' when present + non-empty:
-          tag     (nth (re-find #"\{(.*?)\}" x) 1)
-          to-hash (if (and tag (not= tag "")) tag x)]
-      (mod (utils/crc16 (.getBytes ^String to-hash "UTF-8"))
-           num-keyslots))))
+  (encore/cond-throw
+   (encore/bytes? x) (mod (utils/crc16 x) num-keyslots)
+   (string?       x)
+   (let [;; Hash only *first* '{<part>}' when present + non-empty:
+         tag     (nth (re-find #"\{(.*?)\}" x) 1)
+         to-hash (if (and tag (not= tag "")) tag x)]
+     (mod (utils/crc16 (.getBytes ^String to-hash "UTF-8"))
+          num-keyslots))))
 
 (comment (keyslot "foobar")
          (keyslot "ignore-this{foobar}")
@@ -84,8 +85,11 @@
          (if-not (get-in conn# [:spec :cluster]) request#
            (let [cluster-key-idx# ~cluster-key-idx
                  _# (assert (pos? cluster-key-idx#))
-                 cluster-key# (nth request# cluster-key-idx#)]
-             (keyslot cluster-key#)))
+                 cluster-key#
+                 (let [k-uncoerced# (nth request# cluster-key-idx#)]
+                   (if (string? k-uncoerced#) (keyslot k-uncoerced#)
+                     (let [k-coerced# (nth bytestring-req# cluster-key-idx#)]
+                       (keyslot k-coerced#))))]))
 
          request# ; User-readable request, nice for debugging
          (with-meta request#
