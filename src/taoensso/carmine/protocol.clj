@@ -22,6 +22,13 @@
 ;; * For non-listener modes, corresponding replies will then immediately be
 ;;   received, parsed, + returned.
 
+;;; TODO
+;; * Arg coercion could (& probably should) be done during request enqueuing
+;;   rather than as part of the final send job. This'd enable non-String key
+;;   Cluster slot hashing, and would allow command-wrapped thread-local
+;;   bindings to control coercion (sensible per-command Nippy control, for
+;;   example).
+
 ;;;; Dynamic context stuff
 
 (defrecord Context [conn      ; active Connection
