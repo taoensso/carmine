@@ -48,9 +48,8 @@
 (defn keyslot
   "Returns the Redis Cluster key slot ℕ∈[0,num-keyslots) for given key arg using
   the CRC16 algorithm, Ref. http://redis.io/topics/cluster-spec Appendix A."
-  ;; TODO Currently returns `nil` for non-string args. If we ran
-  ;; `protocol/coerce-bs` at request-enqueuing time, it'd be possible to
-  ;; support accurate key-slotting for all arg types. Easy but low priority.
+  ;; TODO Currently returns `nil` for non-string args. Would be trivial to
+  ;; extend this to support arb bytestring hashing.
   [x]
   (if-not (string? x) nil ; TODO
     (let [;; Hash only *first* '{<part>}' when present + non-empty:
@@ -77,8 +76,10 @@
   ;;                              (pos? cluster-key-idx))]}
   `(let [{conn# :conn req-queue# :req-queue} protocol/*context*
          _# (when-not req-queue# (throw protocol/no-context-ex))
-         request# ~request
          parser#  protocol/*parser*
+         request# ~request
+         bytestring-req# (mapv protocol/coerce-bs request#)
+
          cluster-keyslot#
          (if-not (get-in conn# [:spec :cluster]) request#
            (let [cluster-key-idx# ~cluster-key-idx
@@ -86,11 +87,11 @@
                  cluster-key# (nth request# cluster-key-idx#)]
              (keyslot cluster-key#)))
 
-         request#
-         (if-not (or parser# cluster-keyslot#) request#
-           (with-meta request#
-             {:parser parser# ; Parser metadata will be used as req-opts
-              :expected-keyslot cluster-keyslot#}))]
+         request# ; User-readable request, nice for debugging
+         (with-meta request#
+           {:parser parser# ; Parser metadata will be used as req-opts
+            :expected-keyslot cluster-keyslot#
+            :bytestring-req   bytestring-req#})]
 
      ;; We could also choose to throw here for non-Cluster commands being used
      ;; in Cluster mode. For the moment choosing to let Redis server reply with

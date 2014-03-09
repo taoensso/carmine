@@ -22,13 +22,6 @@
 ;; * For non-listener modes, corresponding replies will then immediately be
 ;;   received, parsed, + returned.
 
-;;; TODO
-;; * Arg coercion could (& probably should) be done during request enqueuing
-;;   rather than as part of the final send job. This'd enable non-String key
-;;   Cluster slot hashing, and would allow command-wrapped thread-local
-;;   bindings to control coercion (sensible per-command Nippy control, for
-;;   example).
-
 ;;;; Dynamic context stuff
 
 (defrecord Context [conn      ; active Connection
@@ -43,10 +36,10 @@
 
 ;;;;
 
-(defmacro ^:private bytestring
+(defn- bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
-  [s] `(.getBytes ~s "UTF-8"))
+  ^bytes [^String s] (.getBytes s "UTF-8"))
 
 ;;; Request delimiters
 (def ^bytes bs-crlf (bytestring "\r\n"))
@@ -58,64 +51,42 @@
 (def ^bytes bs-bin (bytestring "\u0000<")) ; Binary data marker
 (def ^bytes bs-clj (bytestring "\u0000>")) ; Frozen data marker
 
+(defn- assert-reserved-first-byte [^bytes ba]
+  (when (zero? (aget ba 0))
+    (throw (Exception. (str "Args can't begin with null terminator"))))
+  ba)
+
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
   [x] (if (encore/bytes? x) (->WrappedRaw x)
-          (throw (Exception. "Raw arg must be byte[]"))))
+        (throw (Exception. "Raw arg must be byte[]"))))
 
-(defprotocol IRedisArg (coerce-bs [x] "x -> [<ba> <meta>]"))
+(defprotocol IRedisArg
+  (coerce-bs [x] "Coerces arbitrary Clojure value to RESP arg, by type."))
+
 (extend-protocol IRedisArg
-  String  (coerce-bs [x] [(bytestring x) nil])
-  Keyword (coerce-bs [x] [(bytestring ^String (encore/fq-name x)) nil])
+  String  (coerce-bs [x] (-> (bytestring x)
+                             (assert-reserved-first-byte)))
+  Keyword (coerce-bs [x] (-> (bytestring ^String (encore/fq-name x))
+                             (assert-reserved-first-byte)))
 
   ;;; Simple number types (Redis understands these)
-  Long    (coerce-bs [x] [(bytestring (str x)) nil])
-  Double  (coerce-bs [x] [(bytestring (str x)) nil])
-  Float   (coerce-bs [x] [(bytestring (str x)) nil])
-  Integer (coerce-bs [x] [(bytestring (str x)) nil])
+  Long    (coerce-bs [x] (bytestring (str x)))
+  Double  (coerce-bs [x] (bytestring (str x)))
+  Float   (coerce-bs [x] (bytestring (str x)))
+  Integer (coerce-bs [x] (bytestring (str x)))
 
   ;;;
-  WrappedRaw (coerce-bs [x] [(:ba x) :raw])
-  nil        (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen])
-  Object     (coerce-bs [x] [(nippy-tools/freeze x) :mark-frozen]))
+  WrappedRaw (coerce-bs [x] (:ba x))
+  nil        (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x)))
+  Object     (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x))))
 
-(extend encore/bytes-class IRedisArg {:coerce-bs (fn [x] [x :mark-bytes])})
+(extend encore/bytes-class IRedisArg
+  {:coerce-bs (fn [x] (encore/ba-concat bs-bin (nippy-tools/freeze x)))})
 
-;;; Macros to actually send data to stream buffer
-(defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
-(defmacro ^:private send-bin  [out] `(.write ~out bs-bin  0 2))
-(defmacro ^:private send-clj  [out] `(.write ~out bs-clj  0 2))
 (defmacro ^:private send-*    [out] `(.write ~out bs-*))
 (defmacro ^:private send-$    [out] `(.write ~out bs-$))
-(defmacro ^:private send-arg
-  "Send arbitrary argument along with information about its size:
-  $<size of arg> crlf
-  <arg data>     crlf
-
-  Argument type will determine how it'll be stored with Redis:
-    * String args become byte strings.
-    * Simple numbers (integers, longs, floats, doubles) become byte strings.
-    * Binary (byte array) args go through un-munged.
-    * Everything else gets serialized."
-  [out arg]
-  `(let [out#          ~out
-         arg#          ~arg
-         [ba# meta#]   (coerce-bs arg#)
-         ba#           (bytes   ba#)
-         payload-size# (alength ba#)
-         data-size#    (case meta# (:mark-bytes :mark-frozen) (+ payload-size# 2)
-                             payload-size#)]
-
-     ;; Reserve null first-byte for marked reply identification
-     (when (and (nil? meta#) (> payload-size# 0) (zero? (aget ba# 0)))
-       (throw (Exception. (str "Args can't begin with null terminator: " arg#))))
-
-     (send-$ out#) (.write out# (bytestring (str data-size#))) (send-crlf out#)
-     (case meta# :mark-bytes  (send-bin out#)
-                 :mark-frozen (send-clj out#)
-                 nil)
-     (.write out# ba# 0 payload-size#)
-     (send-crlf out#)))
+(defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
 
 (defn- send-requests [^BufferedOutputStream out requests]
   "Sends requests to Redis server using its byte string protocol:
@@ -125,11 +96,22 @@
   ;; {:pre [(vector? requests)]}
   (doseq [req-args requests]
     (when (pos? (count req-args)) ; [] req is dummy req for `return`
-      (send-* out)
-      (.write out (bytestring (str (count req-args))))
-      (send-crlf out)
-      (doseq [arg req-args] (send-arg out arg))
-      (comment (.flush out))))
+      (let [bs-args (:bytestring-req (meta req-args))]
+
+        (send-* out)
+        (.write out (bytestring (str (count bs-args))))
+        (send-crlf out)
+
+        (doseq [^bytes bs-arg bs-args]
+          (let [payload-size (alength bs-arg)]
+            (send-$ out)
+            (.write out (bytestring (str payload-size)))
+            (send-crlf out)
+            ;;
+            (.write out bs-arg 0 payload-size) ; Payload
+            (send-crlf out)))
+
+        (comment (.flush out)))))
   (.flush out))
 
 (defn get-unparsed-reply
