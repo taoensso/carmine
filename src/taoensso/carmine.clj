@@ -338,7 +338,8 @@
                     (protocol/with-replies* :as-pipeline ~@body))
                   (catch Exception e#
                     ;; Always return conn to normal state:
-                    (protocol/with-replies* (discard))))
+                    (protocol/with-replies* (discard))
+                    (throw e#)))
              (let [r# (protocol/with-replies* (exec))]
                (if-not (nil? r#) ; => empty `multi` or watched key changed
                  ;; Was [] with < Carmine v3

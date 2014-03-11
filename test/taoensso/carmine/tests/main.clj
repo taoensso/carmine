@@ -105,11 +105,12 @@
 (expect [["echo" "OK" "QUEUED"] "PONG"]
         (car/atomic {} 1 (car/return "echo") (car/multi) (car/ping)))
 
-(expect Exception (car/atomic {} 1
-                    (car/multi)
-                    (car/ping)
-                    (/ 1 0) ; Throws client-side
-                    (car/ping)))
+(expect ArithmeticException ; Nb be specific here to distinguish from other exs!
+  (car/atomic {} 1
+    (car/multi)
+    (car/ping)
+    (/ 1 0) ; Throws client-side
+    (car/ping)))
 
 (expect Exception (car/atomic {} 1
                     (car/multi)

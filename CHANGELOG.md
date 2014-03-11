@@ -15,6 +15,7 @@
 
  * Fix atomic regression (c9ca09d40).
  * Fix broken Tundra tests, improve test reliability.
+ * Fix `atomic` exception handling (wasn't throwing swap exceptions as it should).
 
 
 ## v2.4.6 / 2014 Jan 31
