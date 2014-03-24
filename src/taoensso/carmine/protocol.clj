@@ -51,7 +51,7 @@
 (def ^bytes bs-bin (bytestring "\u0000<")) ; Binary data marker
 (def ^bytes bs-clj (bytestring "\u0000>")) ; Frozen data marker
 
-(defn- assert-reserved-first-byte [^bytes ba]
+(defn- ensure-reserved-first-byte [^bytes ba]
   (when (zero? (aget ba 0))
     (throw (Exception. (str "Args can't begin with null terminator"))))
   ba)
@@ -66,9 +66,9 @@
 
 (extend-protocol IRedisArg
   String  (coerce-bs [x] (-> (bytestring x)
-                             (assert-reserved-first-byte)))
+                             (ensure-reserved-first-byte)))
   Keyword (coerce-bs [x] (-> (bytestring ^String (encore/fq-name x))
-                             (assert-reserved-first-byte)))
+                             (ensure-reserved-first-byte)))
 
   ;;; Simple number types (Redis understands these)
   Long    (coerce-bs [x] (bytestring (str x)))
