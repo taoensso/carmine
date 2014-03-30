@@ -11,9 +11,9 @@
                 *assert* true}
   :dependencies
   [[org.clojure/clojure         "1.4.0"]
-   [com.taoensso/encore         "0.9.7"]
-   [com.taoensso/timbre         "3.1.2"]
-   [com.taoensso/nippy          "2.6.0-beta2"]
+   [com.taoensso/encore         "1.1.0"]
+   [com.taoensso/timbre         "3.1.6"]
+   [com.taoensso/nippy          "2.6.0"]
    [commons-pool/commons-pool   "1.6"]
    [commons-codec/commons-codec "1.9"]
    [org.clojure/data.json       "0.2.4"]]
@@ -22,12 +22,12 @@
   :profiles
   {;; :default [:base :system :user :provided :dev]
    :1.5  {:dependencies [[org.clojure/clojure "1.5.1"]]}
-   :1.6  {:dependencies [[org.clojure/clojure "1.6.0-beta2"]]}
+   :1.6  {:dependencies [[org.clojure/clojure "1.6.0"]]}
    :test {:dependencies [[expectations            "1.4.56"]
                          [org.clojure/test.check  "0.5.7"]
-                         [com.taoensso/faraday    "1.2.0"]
+                         [com.taoensso/faraday    "1.3.0"]
                          [clj-aws-s3              "0.3.8"]
-                         [ring/ring-core          "1.2.1"]]
+                         [ring/ring-core          "1.2.2"]]
           :plugins [[lein-expectations "0.0.8"]
                     [lein-autoexpect   "1.2.2"]]}
    :dev* [:dev {:jvm-opts ^:replace ["-server"]
