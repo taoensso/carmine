@@ -1,10 +1,10 @@
 **[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contributing](#contact--contributing) | current ([semantic][]) version:
 
 ```clojure
-[com.taoensso/carmine "2.4.6"] ; Stable
+[com.taoensso/carmine "2.5.0"] ; Stable
 ```
 
-v2.4 is a major, backwards-compatible update which adds significant improvements to reply parsing, message queues, and [Tundra](#tundra-beta). See the [CHANGELOG](https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md) for details.
+v2.5 is a **major, backwards-compatible release** that lays the groundwork for an upcoming v3 with Redis Cluster support. See the [CHANGELOG][] for details.
 
 # Carmine, a Clojure Redis client & message queue
 
@@ -39,7 +39,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Add the necessary dependency to your [Leiningen][] `project.clj` and `require` the library in your ns:
 
 ```clojure
-[com.taoensso/carmine "2.4.5"] ; project.clj
+[com.taoensso/carmine "2.5.0"] ; project.clj
 (ns my-app (:require [taoensso.carmine :as car :refer (wcar)])) ; ns
 ```
 
@@ -371,7 +371,8 @@ Copyright &copy; 2012-2014 Peter Taoussanis. Distributed under the [Eclipse Publ
 
 
 [API docs]: <http://ptaoussanis.github.io/carmine/>
-[CHANGELOG]: <https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md>
+[CHANGELOG_]: <https://github.com/ptaoussanis/carmine/blob/master/CHANGELOG.md>
+[CHANGELOG]: <https://github.com/ptaoussanis/carmine/releases>
 [other Clojure libs]: <https://www.taoensso.com/clojure-libraries>
 [Twitter]: <https://twitter.com/ptaoussanis>
 [semantic]: <http://semver.org/>

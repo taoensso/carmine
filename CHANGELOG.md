@@ -1,15 +1,13 @@
-## Pending / unreleased
+## v2.5.0 / 2014 Mar 30
 
-### New
-
- * Initial Redis Cluster support (forthcoming)?
+> **Major, backwards-compatible release** that refactors a lot of internal code for performance, reliability, and as groundwork for an upcoming v3 with Redis Cluster support.
 
 ### Changes
 
  * Moved most utils to external `encore` dependency.
  * **DEPRECATED**: `as-long`, `as-double`, `parse-long`, `parse-double` -> `as-int`, `as-float`, `parse-int`, `parse-float`.
- * Completely refactor protocol design in prep for Redis Cluster support.
- * Minor performance improvements.
+ * Completely refactored protocol design in prep for Redis Cluster support.
+ * Misc performance & reliability improvements.
 
 ### Fixes
 
