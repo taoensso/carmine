@@ -5,7 +5,7 @@
 
 (comment (test/run-tests '[taoensso.carmine.tests.message-queue]))
 
-(defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
+(defmacro wcar* [& body] `(car/wcar {} ~@body))
 (def tq :carmine-test-queue)
 
 (defn- before-run {:expectations-options :before-run} [] (mq/clear-queues {} tq))

@@ -1,8 +1,8 @@
 (ns taoensso.carmine.tundra.disk
   "Simple disk-based DataStore implementation for Tundra."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.timbre         :as timbre]
-            [taoensso.carmine.utils  :as utils]
+  (:require [taoensso.encore         :as encore]
+            [taoensso.timbre         :as timbre]
             [taoensso.carmine.tundra :as tundra])
   (:import  [taoensso.carmine.tundra IDataStore]
             [java.nio.file CopyOption Files LinkOption OpenOption Path Paths
@@ -35,7 +35,7 @@
       (mapv fetch1 ks)))
 
   (put-key [this k v]
-    (assert (utils/bytes? v))
+    (assert (encore/bytes? v))
     (let [result
           (try (let [path-full-temp (format "%s/tmp-%s" (path* path) (uuid))
                      path-full      (format "%s/%s"     (path* path) k)]
@@ -58,7 +58,7 @@
 
 (comment
   (def dstore  (disk-datastore "./tundra"))
-  (def hardkey (tundra/>safe-keyname "foo:bar /♡\\:baz "))
+  (def hardkey (tundra/>urlsafe-str "foo:bar /♡\\:baz "))
   (tundra/put-key dstore hardkey (.getBytes "hello world"))
   (String. (first (tundra/fetch-keys dstore [hardkey])))
   (time (dotimes [_ 10000]

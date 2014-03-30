@@ -1,11 +1,11 @@
 (ns taoensso.carmine.benchmarks
   {:author "Peter Taoussanis"}
-  (:require [taoensso.carmine       :as car :refer (wcar)]
-            [taoensso.carmine.utils :as utils]))
+  (:require [taoensso.encore  :as encore]
+            [taoensso.carmine :as car :refer (wcar)]))
 
 (def bench-data  (apply str (repeat 32 "x")))
 (def bench-key   "carmine:temp:benchmark:data-key")
-(defmacro bench* [& body] `(utils/bench 10000 {:warmup-laps 5000} ~@body))
+(defmacro bench* [& body] `(encore/bench 10000 {:warmup-laps 5000} ~@body))
 
 (defn bench [{:keys [laps unpooled?] :or {laps 1}}]
   (println)
@@ -38,6 +38,13 @@
          (bench {}))
 
 (comment
+
+  ;;; 2014 Feb 13, cleaned up request-planned design --server
+  ;; {:wcar 47, :ping 728, :set 765, :get 763, :roundtrip 946, :ping-pipelined 3741}
+
+  ;;; 2014 Feb 12, completely new request-planning design
+  ;;; (motivated by desire for Cluster pipeline support):
+  ;; {:wcar 100, :ping 860, :set 902, :get 916, :roundtrip 1119, :ping-pipelined 4129}
 
   ;;; 2013 Oct 12, Carmine 2.2.3
   ;; {:wcar 73, :ping 741, :set 830, :get 785, :roundtrip 1105, :ping-pipelined 14171}

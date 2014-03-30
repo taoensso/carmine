@@ -7,12 +7,12 @@
     * carmine:tundra:evictable -> set, keys for which `ensure-ks` fetch failure
                                   should throw an error."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.carmine       :as car :refer (wcar)]
-            [taoensso.carmine.message-queue :as mq]
-            [taoensso.carmine.utils :as utils]
-            [taoensso.nippy         :as nippy]
+  (:require [taoensso.nippy         :as nippy]
             [taoensso.nippy.tools   :as nippy-tools]
-            [taoensso.timbre        :as timbre])
+            [taoensso.timbre        :as timbre]
+            [taoensso.encore        :as encore]
+            [taoensso.carmine       :as car :refer (wcar)]
+            [taoensso.carmine.message-queue :as mq])
   (:import  [java.net URLDecoder URLEncoder]))
 
 ;;;; TODO
@@ -21,6 +21,8 @@
 ;;;; Public interfaces
 
 (defprotocol IDataStore "Extension point for additional datastores."
+
+  ;; Done 1-at-a-time via mq, so no need for bulk ks api:
   (put-key    [dstore k v] "(put-key dstore \"key\" <frozen-val>) => <#{true <ex>}>")
   (fetch-keys [dstore ks] "(fetch-keys dstore [\"key\" ...]) => [<#{<frozen-val> <ex>}> ...]"))
 
@@ -33,9 +35,9 @@
 (defprotocol ITundraStore
   (ensure-ks* [tstore ks])
   (dirty*     [tstore ks])
-  (worker     [tstore conn wopts]
+  (worker     [tstore conn-opts wopts]
     "Alpha - subject to change.
-    Returns a threaded [message queue] worker to routinely freeze Redis keys
+    Returns a threaded message queue worker to routinely freeze Redis keys
     marked as dirty to datastore and mark successfully frozen keys as clean.
     Logs any errors. THESE ERRORS ARE **IMPORTANT**: an email or other
     appropriate notification mechanism is HIGHLY RECOMMENDED. If a worker shuts
@@ -51,8 +53,8 @@
       - Standard `taoensso.carmine.message-queue/worker` opts."))
 
 (defn ensure-ks
-  "BLOCKS to ensure given keys (previously created) are available in Redis,
-  fetching them from datastore as necessary. Throws an exception if any keys
+  "BLOCKS to ensure given keys are available in Redis, fetching them from
+  datastore as necessary. Throws an exception if any previously evicted keys
   couldn't be made available. Acts as a Redis command: call within a `wcar`
   context."
   [tstore & ks] {:pre [(<= (count ks) 10)] :post [(nil? %)]}
@@ -86,7 +88,7 @@
     "local result = {}
      local ttl_ms = tonumber(ARGV[1])
      for i,k in pairs(KEYS) do
-       if ttl_ms > 0 and redis.call('ttl', k) > 0 then
+       if ttl_ms > 0 and redis.call('pttl', k) > 0 then
          result[i] = redis.call('pexpire', k, ttl_ms)
        else
          result[i] = redis.call('exists', k)
@@ -98,7 +100,10 @@
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
 
+;; Could make this configurable per store but not a big deal in practice since
+;; the key space is per Redis server anyway:
 (def ^:private k-evictable "carmine:tundra:evictable")
+
 (defn extend-exists-missing-ks [ttl-ms ks & [only-evictable?]]
   (let [existance-replies (->> (extend-exists ttl-ms ks)
                                (car/with-replies) ; Single bulk reply
@@ -110,18 +115,27 @@
             (->> ks-missing
                  (mapv #(car/sismember k-evictable %))
                  (car/with-replies :as-pipeline)
-                 (car/parse-bool))]
-        (->> (mapv #(when %2 %1) ks-missing evictable-replies)
-             (filterv identity))))))
+                 (car/parse-bool))
+            evictable-ks-missing
+            (->> (mapv #(when %2 %1) ks-missing evictable-replies)
+                 (filterv identity))]
+
+        (timbre/tracef "extend-exists-missing-ks: %s"
+          [:existance-replies existance-replies
+           :ks-missing        ks-missing
+           :evictable-replies evictable-replies
+           :evictable-ks-missing evictable-ks-missing])
+
+        evictable-ks-missing))))
 
 ;;;;
 
 (def fetch-keys-delayed
   "Used to prevent multiple threads from rushing the datastore to get the same
   keys, unnecessarily duplicating work."
-  (utils/memoize-ttl 5000 fetch-keys))
+  (encore/memoize* 5000 fetch-keys))
 
-(defn- prep-ks [ks] (vec (distinct (mapv utils/fq-name ks))))
+(defn- prep-ks [ks] (vec (distinct (mapv encore/fq-name ks))))
 (comment (prep-ks [nil]) ; Throws
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
@@ -136,6 +150,9 @@
     (let [{:keys [redis-ttl-ms]} opts
           ks (prep-ks ks)
           ks-missing (extend-exists-missing-ks redis-ttl-ms ks :only-evictable)]
+
+      (timbre/tracef "ensure-ks*: %s" {:ks ks
+                                       :ks-missing ks-missing})
 
       (when-not (empty? ks-missing)
         (timbre/tracef "Fetching missing evictable keys: %s" ks-missing)
@@ -163,7 +180,7 @@
               (->> dvals-missing
                    (mapv (fn [k dv]
                            (if (throwable? dv) (car/return dv)
-                               (if-not (utils/bytes? dv)
+                               (if-not (encore/bytes? dv)
                                  (car/return (Exception. "Malformed fetch data"))
                                  (car/restore k (or redis-ttl-ms 0) (car/raw dv)))))
                          ks-missing)
@@ -192,6 +209,10 @@
           ks-missing     (extend-exists-missing-ks redis-ttl-ms ks)
           ks-not-missing (->> ks (filterv (complement (set ks-missing))))]
 
+      (timbre/tracef "dirty*: %s" {:ks ks
+                                   :ks-missing ks-missing
+                                   :ks-not-missing ks-not-missing})
+
       (doseq [k ks-not-missing]
         (->> (mq/enqueue tqname k k :allow-locked-dupe) ; key as msg & mid (deduped)
              (car/with-replies :as-pipeline) ; Don't pollute pipeline
@@ -202,25 +223,28 @@
           (timbre/error ex) (throw ex)))
       nil))
 
-  (worker [tstore conn wopts]
+  (worker [tstore conn-opts wopts]
     (let [{:keys [tqname redis-ttl-ms]} opts
           {:keys [nattempts retry-backoff-ms]
            :or   {nattempts 3
                   retry-backoff-ms mq/exp-backoff}} wopts]
-      (mq/worker conn tqname
+      (mq/worker conn-opts tqname
         (assoc wopts :handler
           (fn [{:keys [mid message attempt]}]
             (let [k message
                   put-reply ; #{true nil <throwable>}, nb inclusion of nil!
-                  (catcht (->> (wcar conn (car/parse-raw (car/dump k)))
+                  (catcht (->> (wcar conn-opts (car/parse-raw (car/dump k)))
                                (#(if (or (nil? %) ; Key doesn't exist
                                          (nil? freezer)) %
                                    (freeze freezer %)))
                                (#(if (nil? %) nil
                                    (put-key datastore (>urlsafe-str k) %)))))]
 
-              (if (= put-reply true)
-                (do (wcar conn (car/sadd k-evictable k)
+              (timbre/tracef "Worker loop: %s" {:k message
+                                                :put-reply put-reply})
+
+              (if (true? put-reply)
+                (do (wcar conn-opts (car/sadd k-evictable k)
                                (when (and redis-ttl-ms (> redis-ttl-ms 0))
                                  (car/pexpire k redis-ttl-ms)))
                     {:status :success})

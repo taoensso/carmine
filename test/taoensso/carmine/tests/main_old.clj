@@ -1,9 +1,9 @@
 (ns taoensso.carmine.tests.main-old
   (:require [clojure.test :refer :all]
-            [clojure.string         :as str]
-            [taoensso.carmine       :as car]
-            [taoensso.carmine.utils :as utils]
-            [taoensso.nippy         :as nippy]))
+            [clojure.string   :as str]
+            [taoensso.encore  :as encore]
+            [taoensso.carmine :as car]
+            [taoensso.nippy   :as nippy]))
 
 (defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
 (defn test-key [key] (str "carmine:temp:test:" key))
@@ -245,7 +245,7 @@
   (let [k (test-key "binary-safety")
         ba (byte-array [(byte 3) (byte 1) (byte 4)])]
     (wcar* (car/set k ba))
-    (is (utils/ba= ba (wcar* (car/get k))))))
+    (is (encore/ba= ba (wcar* (car/get k))))))
 
 (deftest test-nulls
   (let [k (test-key "nulls")]
@@ -311,7 +311,7 @@
     ;;; This transaction will fail
     (wcar* (car/set k  k-val)
           (car/set wk wk-val))
-    (is (= []
+    (is (= nil ; []
            (wcar* (car/atomically
                   [wk]
                   (wcar* (car/set wk "CHANGE!")) ; Will break watch
