@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.5.0"
+(defproject com.taoensso/carmine "2.6.0"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
@@ -11,7 +11,7 @@
                 *assert* true}
   :dependencies
   [[org.clojure/clojure         "1.4.0"]
-   [com.taoensso/encore         "1.2.0"]
+   [com.taoensso/encore         "1.2.1"]
    [com.taoensso/timbre         "3.1.6"]
    [com.taoensso/nippy          "2.6.0"]
    [commons-pool/commons-pool   "1.6"]

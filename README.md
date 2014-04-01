@@ -1,10 +1,10 @@
 **[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contributing](#contact--contributing) | current ([semantic][]) version:
 
 ```clojure
-[com.taoensso/carmine "2.5.0"] ; Stable
+[com.taoensso/carmine "2.6.0"] ; Stable
 ```
 
-v2.5 is a **major, backwards-compatible release** that lays the groundwork for an upcoming v3 with Redis Cluster support. See the [CHANGELOG][] for details.
+v2.6 is a **major, backwards-compatible release** that lays the groundwork for an upcoming v3 with Redis Cluster support. See the [CHANGELOG][] for details.
 
 # Carmine, a Clojure Redis client & message queue
 
@@ -39,7 +39,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Add the necessary dependency to your [Leiningen][] `project.clj` and `require` the library in your ns:
 
 ```clojure
-[com.taoensso/carmine "2.5.0"] ; project.clj
+[com.taoensso/carmine "2.6.0"] ; project.clj
 (ns my-app (:require [taoensso.carmine :as car :refer (wcar)])) ; ns
 ```
 

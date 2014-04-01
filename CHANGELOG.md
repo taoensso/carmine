@@ -1,3 +1,11 @@
+## v2.6.0 / 2014 Apr 1
+
+> Adds support for new [HyperLogLog](http://antirez.com/news/75) commands (currently requires a Redis >=2.8.9 client).
+
+ * Updated official commands.json spec.
+ * Bumped `Encore` dependency.
+
+
 ## v2.5.0 / 2014 Mar 30
 
 > **Major, backwards-compatible release** that refactors a lot of internal code for performance, reliability, and as groundwork for an upcoming v3 with Redis Cluster support.
