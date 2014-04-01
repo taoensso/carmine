@@ -79,6 +79,32 @@
     "since": "2.6.0",
     "group": "string"
   },
+  "BITPOS": {
+    "summary": "Find first bit set or clear in a string",
+    "complexity": "O(N)",
+    "arguments": [
+      {
+        "name": "key",
+        "type": "key"
+      },
+      {
+        "name": "bit",
+        "type": "integer"
+      },
+      {
+        "name": "start",
+        "type": "integer",
+        "optional": true
+      },
+      {
+        "name": "end",
+        "type": "integer",
+        "optional": true
+      }
+    ],
+    "since": "2.8.7",
+    "group": "string"
+  },
   "BLPOP": {
     "summary": "Remove and get the first element in a list, or block until one is available",
     "complexity": "O(1)",
@@ -155,6 +181,18 @@
     "summary": "Get the current connection name",
     "complexity": "O(1)",
     "since": "2.6.9",
+    "group": "server"
+  },
+  "CLIENT PAUSE": {
+    "summary": "Stop processing commands from clients for some time",
+    "complexity": "O(1)",
+    "arguments": [
+      {
+        "name": "timeout",
+        "type": "integer"
+      }
+    ],
+    "since": "2.9.50",
     "group": "server"
   },
   "CLIENT SETNAME": {
@@ -1099,6 +1137,52 @@
     ],
     "since": "2.6.0",
     "group": "generic"
+  },
+  "PFADD": {
+    "summary": "Adds the specified elements to the specified HyperLogLog.",
+    "complexity": "O(1) to add every element.",
+    "arguments": [
+      {
+        "name": "key",
+        "type": "key"
+      },
+      {
+        "name": "element",
+        "type": "string",
+        "multiple": true
+      }
+    ],
+    "since": "2.8.9",
+    "group": "hyperloglog"
+  },
+  "PFCOUNT": {
+    "summary": "Return the approximated cardinality of the set observed by the HyperLogLog at key.",
+    "complexity": "O(1).",
+    "arguments": [
+      {
+        "name": "key",
+        "type": "key"
+      }
+    ],
+    "since": "2.8.9",
+    "group": "hyperloglog"
+  },
+  "PFMERGE": {
+    "summary": "Merge N different HyperLogLogs into a single one.",
+    "complexity": "O(N) to merge N HyperLogLogs, but with high constant times.",
+    "arguments": [
+      {
+        "name": "destkey",
+        "type": "key"
+      },
+      {
+        "name": "sourcekey",
+        "type": "key",
+        "multiple": true
+      }
+    ],
+    "since": "2.8.9",
+    "group": "hyperloglog"
   },
   "PING": {
     "summary": "Ping the server",
