@@ -6,8 +6,8 @@
             [taoensso.carmine.protocol :as protocol])
   (:import  [java.net Socket URI]
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
-            [org.apache.commons.pool KeyedPoolableObjectFactory]
-            [org.apache.commons.pool.impl GenericKeyedObjectPool]))
+            [org.apache.commons.pool2 KeyedPooledObjectFactory]
+            [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
 
 (encore/declare-remote taoensso.carmine/ping
                        taoensso.carmine/auth
@@ -78,25 +78,27 @@
   (close [_] nil))
 
 (defn make-connection-factory []
-  (reify KeyedPoolableObjectFactory
-    (makeObject      [_ spec] (make-new-connection spec))
-    (activateObject  [_ spec conn])
-    (validateObject  [_ spec conn] (conn-alive? conn))
-    (passivateObject [_ spec conn])
-    (destroyObject   [_ spec conn] (close-conn conn))))
+  (reify KeyedPooledObjectFactory
+    (makeObject      [_ spec] (DefaultPooledObject. (make-new-connection spec)))
+    (activateObject  [_ spec pooled-obj])
+    (validateObject  [_ spec pooled-obj] (let [conn (.getObject pooled-obj)]
+                                           (conn-alive? conn)))
+    (passivateObject [_ spec pooled-obj])
+    (destroyObject   [_ spec pooled-obj] (let [conn (.getObject pooled-obj)]
+                                           (close-conn conn)))))
 
 (defn set-pool-option [^GenericKeyedObjectPool pool [opt v]]
   (case opt
-    :max-active                    (.setMaxActive pool v)
+    ;; :max-active                 (.setMaxActive pool v)
     :max-total                     (.setMaxTotal pool v)
-    :min-idle                      (.setMinIdle pool v)
-    :max-idle                      (.setMaxIdle pool v)
-    :max-wait                      (.setMaxWait pool v)
+    ;; :min-idle                   (.setMinIdle pool v)
+    ;; :max-idle                   (.setMaxIdle pool v)
+    ;; :max-wait                   (.setMaxWait pool v)
     :lifo?                         (.setLifo pool v)
     :test-on-borrow?               (.setTestOnBorrow pool v)
     :test-on-return?               (.setTestOnReturn pool v)
     :test-while-idle?              (.setTestWhileIdle pool v)
-    :when-exhausted-action         (.setWhenExhaustedAction pool v)
+    ;; :when-exhausted-action      (.setWhenExhaustedAction pool v)
     :num-tests-per-eviction-run    (.setNumTestsPerEvictionRun pool v)
     :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v)
     :min-evictable-idle-time-ms    (.setMinEvictableIdleTimeMillis pool v)
@@ -109,7 +111,7 @@
   (if-let [dp (and use-cache? (@pool-cache pool-opts))] @dp
     (let [dp (delay
               (cond
-               (= pool-opts :none) (->NonPooledConnectionPool)
+               (identical? pool-opts :none) (->NonPooledConnectionPool)
                ;; Pass through pre-made pools (note that test reflects):
                (satisfies? IConnectionPool pool-opts) pool-opts
                :else

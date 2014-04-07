@@ -28,7 +28,7 @@
                      :db 3}}
 
   A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
-  to skip connection pooling. For other pool options, Ref. http://goo.gl/7ewMzM."
+  to skip connection pooling. For other pool options, Ref. http://goo.gl/e1p1h3."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   ;; [conn-opts & [s1 & sn :as sigs]]
   [conn-opts & sigs]

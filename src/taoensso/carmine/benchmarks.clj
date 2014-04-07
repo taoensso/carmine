@@ -35,7 +35,7 @@
   true)
 
 (comment (bench {:unpooled? true})
-         (bench {}))
+         (bench {:laps 3}))
 
 (comment
 
