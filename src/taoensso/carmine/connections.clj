@@ -107,28 +107,23 @@
 
 (def ^:private pool-cache "{<pool-opts> <pool>}" (atom {}))
 (defn conn-pool ^java.io.Closeable [pool-opts & [use-cache?]]
-  ;; Impl. a little contorted for high-speed v1 API backwards-comp
-  (if-let [dp (and use-cache? (@pool-cache pool-opts))] @dp
-    (let [dp (delay
-              (cond
-               (identical? pool-opts :none) (->NonPooledConnectionPool)
-               ;; Pass through pre-made pools (note that test reflects):
-               (satisfies? IConnectionPool pool-opts) pool-opts
-               :else
-               (let [defaults {:test-while-idle?              true
-                               :num-tests-per-eviction-run    -1
-                               :min-evictable-idle-time-ms    60000
-                               :time-between-eviction-runs-ms 30000}]
-                 (->ConnectionPool
-                  (reduce set-pool-option
-                    (GenericKeyedObjectPool. (make-connection-factory))
-                    (merge defaults pool-opts))))))]
-
-      (if-not use-cache? @dp
-        (locking pool-cache ; Pool creation can be racey even with `delay`
-          (if-let [dp (@pool-cache pool-opts)] @dp ; Retry after lock acquisition
-            (do (swap! pool-cache assoc pool-opts dp)
-                @dp)))))))
+  @(encore/swap-val! pool-cache pool-opts
+     (fn [?dv]
+       (if (and ?dv use-cache?) ?dv
+         (delay
+          (cond
+           (identical? pool-opts :none) (->NonPooledConnectionPool)
+           ;; Pass through pre-made pools (note that test reflects):
+           (satisfies? IConnectionPool pool-opts) pool-opts
+           :else
+           (let [defaults {:test-while-idle?              true
+                           :num-tests-per-eviction-run    -1
+                           :min-evictable-idle-time-ms    60000
+                           :time-between-eviction-runs-ms 30000}]
+             (->ConnectionPool
+              (reduce set-pool-option
+                (GenericKeyedObjectPool. (make-connection-factory))
+                (merge defaults pool-opts))))))))))
 
 (comment (conn-pool :none) (conn-pool {}))
 

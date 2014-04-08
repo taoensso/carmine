@@ -1,3 +1,9 @@
+## v2.7.0-SNAPSHOT / unreleased
+
+ * Upgraded to apache-commons-pool v2.
+ * New lock-free connection pool cache (improved performance under contention).
+
+
 ## v2.6.2 / 2014 May 3
 
  * [#84] **Fix** empty-string writes (they were throwing exceptions) (@bzg).
