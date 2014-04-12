@@ -293,6 +293,7 @@ See the [API docs](http://ptaoussanis.github.io/carmine/taoensso.carmine.message
 (:require [taoensso.carmine.locks :as locks]) ; Add to `ns` macro
 
 (locks/with-lock "my-lock"
+  {:pool {<opts>} :spec {<opts>}} ; Connection details
   1000 ; Time to hold lock
   500  ; Time to wait (block) for lock acquisition
   (println "This was printed under lock!"))
