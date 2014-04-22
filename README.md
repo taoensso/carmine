@@ -63,7 +63,7 @@ Sending commands is easy:
 => ["PONG" "OK" "bar"]
 ```
 
-Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a vector.
+Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a vector. By default, if a single command is in the body of `wcar` the value of the command is returned. To always return a vector, add the `:as-pipeline` argument to `wcar`.
 
 If the server responds with an error, an exception is thrown:
 
