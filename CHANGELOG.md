@@ -1,3 +1,10 @@
+## v2.6.1 / 2014 May 1
+
+> This is an **important fix release**, please update from `v2.6.0` ASAP.
+
+ * [#83] Nb **FIX** unnecessary serialization of binary arguments (@mishok13).
+
+
 ## v2.6.0 / 2014 Apr 1
 
 > Adds support for new [HyperLogLog](http://antirez.com/news/75) commands (currently requires a Redis >=2.8.9 client).
