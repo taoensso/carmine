@@ -82,7 +82,7 @@
   Object     (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x))))
 
 (extend encore/bytes-class IRedisArg
-  {:coerce-bs (fn [x] (encore/ba-concat bs-bin (nippy-tools/freeze x)))})
+  {:coerce-bs (fn [x] (encore/ba-concat bs-bin x))})
 
 (defmacro ^:private send-*    [out] `(.write ~out bs-*))
 (defmacro ^:private send-$    [out] `(.write ~out bs-$))
@@ -172,7 +172,11 @@
                      :clj (if-let [thaw-opts (:thaw-opts req-opts)]
                             (nippy/thaw payload thaw-opts)
                             (nippy/thaw payload))
-                     :bin payload)
+                     :bin ; payload
+                     ;; Workaround #81 (v2.6.0 may have written _serialized_ bins):
+                     (if (= (take 3 payload) '(78 80 89)) ; Nippy header
+                       (try (nippy/thaw payload) (catch Exception _ payload))
+                       payload))
                    (catch Exception e
                      (Exception. (str "Bad reply data: " (.getMessage e)) e)))))))
 

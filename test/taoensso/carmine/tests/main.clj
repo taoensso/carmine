@@ -178,6 +178,12 @@
 (expect (not= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
               (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 21)]))))
 
+;;;; Bin args
+
+(expect (seq (.getBytes "Foobar" "UTF-8"))
+  (do (wcar {} (car/set (tkey "bin-arg") (.getBytes "Foobar" "UTF-8")))
+      (seq (wcar {} (car/get (tkey "bin-arg"))))))
+
 ;;;; Benching
 
 (expect (benchmarks/bench {}))
