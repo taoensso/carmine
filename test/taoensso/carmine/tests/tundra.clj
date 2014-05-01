@@ -32,6 +32,8 @@
 
 ;;;; S3 DataStore
 
+(expect (and (:access-key s3-creds) (:secret-key s3-creds)))
+
 (expect "hello world" ; Basic put & fetch
   (do (tundra/put-key dstore (tkey :foo) (s->ba "hello world"))
       (-> (tundra/fetch-keys dstore [(tkey :foo)]) (first) (ba->s))))
@@ -46,7 +48,6 @@
 ;;;; Tundra API
 
 (let [tstore (tundra/tundra-store dstore)]
-  (expect (and (:access-key s3-creds) (:secret-key s3-creds)))
   (expect Exception (wcar* (tundra/dirty     tstore (tkey :invalid))))
   (expect nil       (wcar* (tundra/ensure-ks tstore (tkey :invalid))))
   (expect Exception (wcar* (car/sadd @#'tundra/k-evictable (tkey :invalid-evictable))
