@@ -17,6 +17,316 @@
 (defn- before-run {:expectations-options :before-run} [] (clean-up-tkeys!))
 (defn- after-run  {:expectations-options :after-run}  [] (clean-up-tkeys!))
 
+;;;; Migrated
+
+(expect "Message" (wcar* (car/echo "Message")))
+(expect "PONG"    (wcar* (car/ping)))
+
+(let [k (tkey "exists")]
+  (expect 0     (wcar* (car/exists k)))
+  (expect 1 (do (wcar* (car/set    k "exists!"))
+                (wcar* (car/exists k)))))
+
+(let [k (tkey "server:name")]
+  (expect "OK"   (wcar* (car/set k "fido")))
+  (expect "fido" (wcar* (car/get k)))
+  (expect 15     (wcar* (car/append k " [shutdown]")))
+  (expect "fido [shutdown]" (wcar* (car/getset   k "fido [running]")))
+  (expect "running"         (wcar* (car/getrange k 6 12))))
+
+(let [k (tkey "mykey")]
+  (expect 1 (do (wcar* (car/setbit k 7 1))
+                (wcar* (car/getbit k 7)))))
+
+(let [k (tkey "multiline")]
+  (expect "OK" (wcar* (car/set k "Redis\r\nDemo")))
+  (expect "Redis\r\nDemo" (wcar* (car/get k))))
+
+(let [k (tkey "connections")]
+  (expect 11 (do (wcar* (car/set k 10))
+                 (wcar* (car/incr k))))
+  (expect 20 (wcar* (car/incrby k 9)))
+  (expect 19 (wcar* (car/decr k)))
+  (expect 10 (wcar* (car/decrby k 9))))
+
+(let [k (tkey "something")]
+  (expect 1 (do (wcar* (car/set k "foo"))
+                (wcar* (car/del k)))))
+
+(let [k (tkey "resource:lock")]
+  (expect -1 (do (wcar* (car/set k "Redis Demo"))
+                 (wcar* (car/ttl k))))
+  (expect 1 (wcar* (car/expire k 120)))
+  (expect #(< 0 %) (wcar* (car/ttl k))))
+
+(let [k (tkey "friends")]
+  (expect ["Sam" "Tom" "Bob"]
+    (do (wcar* (car/rpush k "Tom"))
+        (wcar* (car/rpush k "Bob"))
+        (wcar* (car/lpush k "Sam"))
+        (wcar* (car/lrange k 0 -1))))
+  (expect ["Sam" "Tom"] (wcar* (car/lrange k 0 1)))
+  (expect ["Sam" "Tom" "Bob"] (wcar* (car/lrange k 0 2)))
+  (expect 3 (wcar* (car/llen k)))
+  (expect "Sam" (wcar* (car/lpop k)))
+  (expect "Bob" (wcar* (car/rpop k)))
+  (expect 1 (wcar* (car/llen k)))
+  (expect ["Tom"] (wcar* (car/lrange k 0 -1))))
+
+(let [k (tkey "spanish")]
+  (expect "OK" (wcar* (car/set k "year->año")))
+  (expect "year->año" (wcar* (car/get k))))
+
+(let [k (tkey "str-field")]
+  (expect Exception (do (wcar* (car/set k "str-value"))
+                        (wcar* (car/incr k))))
+  (expect (some #(instance? Exception %)
+            (wcar* (car/ping) (car/incr k) (car/ping)))))
+
+(expect nil (wcar* "This is a malformed request"))
+(expect "PONG" (wcar* (car/ping) "This is a malformed request"))
+(expect ["PONG" "PONG" "PONG"] (wcar* (doall (repeatedly 3 car/ping))))
+(expect ["A" "B" "C"] (wcar* (doall (map car/echo ["A" "B" "C"]))))
+
+(let [out-k (tkey "outside-key")
+      in-k  (tkey "inside-key")]
+  (expect "inside value"
+    (do (wcar* (car/set in-k  "inside value")
+               (car/set out-k in-k))
+        (wcar* (car/get (last (wcar* (car/ping) (car/get out-k))))))))
+
+(let [k (tkey "parallel-key")]
+  (expect "10000"
+    (do (wcar* (car/set k 0))
+        (->> (fn [] (future (dotimes [n 100] (wcar* (car/incr k)))))
+             (repeatedly 100) ; No. of parallel clients
+             (doall)
+             (map deref)
+             (dorun))
+        (wcar* (car/get k)))))
+
+(let [k (tkey "myhash")]
+  (expect "value1" (do (wcar* (car/hset k "field1" "value1"))
+                       (wcar* (car/hget k "field1"))))
+  (expect "value1" (do (wcar* (car/hsetnx k "field1" "newvalue"))
+                       (wcar* (car/hget k "field1"))))
+  (expect 1 (wcar* (car/hexists k "field1")))
+  (expect ["field1" "value1"] (wcar* (car/hgetall k)))
+  (expect 3 (do (wcar* (car/hset k "field2" 1))
+                (wcar* (car/hincrby k "field2" 2))))
+  (expect ["field1" "field2"] (wcar* (car/hkeys k)))
+  (expect ["value1" "3"] (wcar* (car/hvals k)))
+  (expect 2 (wcar* (car/hlen k)))
+  (expect 0 (do (wcar* (car/hdel k "field1"))
+                (wcar* (car/hexists k "field1")))))
+
+(let [k1 (tkey "superpowers")
+      k2 (tkey "birdpowers")]
+  (expect 1 (do (wcar* (car/sadd k1 "flight"))
+                (wcar* (car/sadd k1 "x-ray vision"))
+                (wcar* (car/sadd k1 "reflexes"))
+                (wcar* (car/srem k1 "reflexes"))
+                (wcar* (car/sismember k1 "flight"))))
+  (expect 0 (wcar* (car/sismember k1 "reflexes")))
+  (expect (set ["flight" "pecking" "x-ray vision"])
+    (do (wcar* (car/sadd k2 "pecking"))
+        (wcar* (car/sadd k2 "flight"))
+        (set (wcar* (car/sunion k1 k2))))))
+
+(let [k1 (tkey "hackers")
+      k2 (tkey "slackers")
+      k1-U-k2 (tkey "hackersnslackers")
+      k1-I-k2 (tkey "hackerslackers")]
+  (expect ["Alan Kay" "Richard Stallman" "Yukihiro Matsumoto"]
+    (do
+      (wcar*
+        (car/zadd k1 "1940" "Alan Kay")
+        (car/zadd k1 "1953" "Richard Stallman")
+        (car/zadd k1 "1965" "Yukihiro Matsumoto")
+        (car/zadd k1 "1916" "Claude Shannon")
+        (car/zadd k1 "1969" "Linus Torvalds")
+        (car/zadd k1 "1912" "Alan Turing")
+        (car/zadd k1 "1972" "Dade Murphy")
+        (car/zadd k1 "1970" "Emmanuel Goldstein")
+        (car/zadd k2 "1968" "Pauly Shore")
+        (car/zadd k2 "1972" "Dade Murphy")
+        (car/zadd k2 "1970" "Emmanuel Goldstein")
+        (car/zadd k2 "1966" "Adam Sandler")
+        (car/zadd k2 "1962" "Ferris Beuler")
+        (car/zadd k2 "1871" "Theodore Dreiser")
+        (car/zunionstore* k1-U-k2 [k1 k2])
+        (car/zinterstore* k1-I-k2 [k1 k2]))
+      (wcar* (car/zrange k1 2 4))))
+  (expect ["Claude Shannon" "Alan Kay" "Richard Stallman" "Ferris Beuler"]
+    (wcar* (car/zrange k1-U-k2 2 5)))
+  (expect ["Emmanuel Goldstein" "Dade Murphy"]
+    (wcar* (car/zrange k1-I-k2 0 1))))
+
+(let [k1 (tkey "children")
+      k2 (tkey "favorite:child")]
+  (expect ["B" "B"] (do (wcar* (car/rpush k1 "A")
+                               (car/rpush k1 "B")
+                               (car/rpush k1 "C")
+                               (car/set   k2 "B"))
+                        (wcar* (car/get k2)
+                               (car/get k2))))
+  (expect ["B" ["A" "B" "C"] "B"]
+    (wcar* (car/get k2)
+           (car/lrange k1 0 3)
+           (car/get k2))))
+
+;;; Pub/sub
+
+(expect-let
+  [received (atom [])
+   listener (car/with-new-pubsub-listener
+              {} {"ps-foo" #(swap! received conj %)}
+              (car/subscribe "ps-foo"))]
+  [["subscribe" "ps-foo" 1]
+   ["message"   "ps-foo" "one"]
+   ["message"   "ps-foo" "two"]
+   ["message"   "ps-foo" "three"]]
+  (do
+    (wcar* (car/publish "ps-foo" "one")
+           (car/publish "ps-foo" "two")
+           (car/publish "ps-foo" "three"))
+    (Thread/sleep 500)
+    (car/close-listener listener)
+    @received))
+
+(expect-let
+  [received (atom [])
+   listener (car/with-new-pubsub-listener
+              {} {"ps-foo" #(swap! received conj %)
+                  "ps-baz" #(swap! received conj %)}
+              (car/subscribe "ps-foo" "ps-baz"))]
+  [["subscribe" "ps-foo" 1]
+   ["subscribe" "ps-baz" 2]
+   ["message"   "ps-foo" "one"]
+   ["message"   "ps-baz" "three"]]
+  (do
+    (wcar* (car/publish "ps-foo" "one")
+           (car/publish "ps-bar" "two")
+           (car/publish "ps-baz" "three"))
+    (Thread/sleep 500)
+    (car/close-listener listener)
+    @received))
+
+(expect-let
+  [received (atom [])
+   listener (car/with-new-pubsub-listener
+              {} {"ps-*"   #(swap! received conj %)
+                  "ps-foo" #(swap! received conj %)})]
+  [["psubscribe"  "ps-*"   1]
+   ["subscribe"   "ps-foo" 2]
+   ["message"     "ps-foo" "one"]
+   ["pmessage"    "ps-*"   "ps-foo" "one"]
+   ["pmessage"    "ps-*"   "ps-bar" "two"]
+   ["pmessage"    "ps-*"   "ps-baz" "three"]
+   ["unsubscribe" "ps-foo" 1]
+   ["pmessage"    "ps-*"   "ps-foo" "four"]
+   ["pmessage"    "ps-*"   "ps-baz" "five"]]
+  (do
+    (car/with-open-listener listener
+      (car/psubscribe "ps-*")
+      (car/subscribe  "ps-foo"))
+    (wcar* (car/publish "ps-foo" "one")
+           (car/publish "ps-bar" "two")
+           (car/publish "ps-baz" "three"))
+    (Thread/sleep 500)
+    (car/with-open-listener listener
+      (car/unsubscribe "ps-foo"))
+    (Thread/sleep 500)
+    (wcar* (car/publish "ps-foo" "four")
+           (car/publish "ps-baz" "five"))
+    (Thread/sleep 500)
+    (car/close-listener listener)
+    @received))
+
+;;; Bin safety
+
+(let [k  (tkey "binary-safety")
+      ba (byte-array [(byte 3) (byte 1) (byte 4)])]
+  (expect #(encore/ba= ba %) (do (wcar* (car/set k ba))
+                                 (wcar* (car/get k)))))
+
+;;; Nulls
+
+(let [k (tkey "nulls")]
+  (expect nil (do (wcar* (car/set k nil))
+                  (wcar* (car/get k))))
+  (expect "" (do (wcar* (car/set k ""))
+                 (wcar* (car/get k))))
+  (expect " " (do (wcar* (car/set k " "))
+                  (wcar* (car/get k))))
+  (expect 0 (do (wcar* (car/set k (byte-array 0)))
+                (count (wcar* (car/get k)))))
+  (expect 1 (do (wcar* (car/set k (.getBytes "\u0000" "UTF-8")))
+                (count (wcar* (car/get k)))))
+  (expect "Foobar\u0000" (do (wcar* (car/set k "Foobar\u0000"))
+                             (wcar* (car/get k))))
+  (expect Exception (wcar* (car/set k "\u0000Foobar"))))
+
+;;; Big responses
+
+(let [k (tkey "big-list")
+      n 250000]
+  (expect (repeat n "value")
+    (do (wcar* (dorun (repeatedly n (fn [] (car/rpush k "value")))))
+        (wcar* (car/lrange k 0 -1)))))
+
+;;; Lua
+
+(let [k (tkey "script")
+      script "return redis.call('set',KEYS[1],'script-value')"
+      script-hash (car/hash-script script)]
+  (expect "script-value" (do (wcar* (car/script-load script))
+                             (wcar* (car/evalsha script-hash 1 k))
+                             (wcar* (car/get k))))
+  (expect ["key1" "key2" "arg1" "arg2"]
+    (wcar* (car/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
+             2 "key1" "key2" "arg1" "arg2"))))
+
+;;; Reply parsing
+
+(let [k (tkey "reply-parsing")]
+  (expect ["PONG" {:a :A :b :B :c :C :d :D} "pong" "pong" "PONG"]
+    (do
+      (wcar* (car/set k [:a :A :b :B :c :C :d :D]))
+      (wcar* (car/ping)
+             (car/with-parser #(apply hash-map %) (car/get k))
+             (car/with-parser str/lower-case
+               (car/ping)
+               (car/ping))
+             (car/ping)))))
+
+;;; DEPRECATED `atomically` transactions
+
+(let [k      (tkey "atomic")
+      wk     (tkey "watch")
+      k-val  "initial-k-value"
+      wk-val "initial-wk-value"]
+
+  ;;; This transaction will succeed
+  (expect ["PONG" "OK"]
+    (do (wcar* (car/set k  k-val)
+               (car/set wk wk-val))
+        (wcar* (car/atomically []
+                 (let [wk-val (wcar* (car/get wk))]
+                   (car/ping)
+                   (car/set k wk-val))))))
+
+  (expect wk-val (wcar* (car/get k)))
+
+  ;;; This transaction will fail
+  (expect nil ; []
+    (do (wcar* (car/set k  k-val)
+               (car/set wk wk-val))
+        (wcar* (car/atomically [wk]
+                 (wcar* (car/set wk "CHANGE!")) ; Will break watch
+                 (car/ping)))))
+  (expect k-val (wcar* (car/get k))))
+
 ;;;; Parsers
 ;; Like middleware, comp order can get confusing
 
@@ -83,7 +393,7 @@
 ;; queued requests any time a nested connection occurs.
 
 (expect ["OK" "echo"] (wcar {} (car/set (tkey "rq1") (wcar {} (car/echo "echo")))
-                              (car/get (tkey "rq1"))))
+                               (car/get (tkey "rq1"))))
 (expect "rq2-val"
   (let [p (promise)]
     (wcar {} (car/del (tkey "rq2")))

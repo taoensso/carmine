@@ -1,36 +1,58 @@
 (ns taoensso.carmine.tests.locks
-  (:require [clojure.test :refer :all]
+  (:require [expectations     :as test :refer :all]
+            [taoensso.carmine :as car  :refer (wcar)]
             [taoensso.carmine.locks
              :refer (acquire-lock release-lock with-lock)]))
 
-(deftest basic-locking
-  (is (acquire-lock {} 2 2000 2000)) ; For 2 secs
-  (is (not (acquire-lock {} 2 2000 200))) ; Too early
-  (Thread/sleep 1000)
-  (is (acquire-lock {} 2 2000 2000)))
+(comment (test/run-tests '[taoensso.carmine.tests.locks]))
+(defn- before-run {:expectations-options :before-run} [])
+(defn- after-run  {:expectations-options :after-run}  [])
 
-(deftest releasing
-  (let [uuid (acquire-lock {} 3 2000 2000)]
-    (is (not (acquire-lock {} 3 2000 200))) ; Too early
-    (is (release-lock {} 3 uuid))
-    (is (acquire-lock {} 3 2000 2000))))
+;;; Basic locking
 
-(deftest aleady-released
-  (let [uuid (acquire-lock {} 4 2000 2000)
-        f1   (future (release-lock {} 4 uuid))]
-    (Thread/sleep 200) ; Let future run
-    (is (not (release-lock {} 4 uuid)))))
+(expect (acquire-lock {} :2 2000 2000)) ; For 2 secs
+(expect (not (acquire-lock {} :2 2000 200))) ; Too early
+(expect (do (Thread/sleep 1000)
+            (acquire-lock {} :2 2000 2000)))
 
-(deftest locking-scope
-  (try (with-lock {} 5 2000 2000 (throw (Exception.)))
-       (catch Exception e nil))
-  (is (not (nil? (acquire-lock {} 5 2000 2000)))))
+;;; Releasing
 
-(deftest locking-failure
-  (acquire-lock {} 6 3000 2000)
-  (is (= nil (with-lock {} 6 #() 2000 10))))
+(expect-let
+  [uuid (acquire-lock {} :3 2000 2000)]
+  (fn [[x y z]] (and (nil? x) y z))
+  [(acquire-lock {} :3 2000 200) ; Too early
+   (release-lock {} :3 uuid)
+   (acquire-lock {} :3 2000 10)])
 
-(deftest with-lock-expiry
-  (future (with-lock {} 9 4000 2000 (Thread/sleep 1000)))
- (Thread/sleep 200)
- (is (= nil (with-lock {} 9 3000 10 (identity 1)))))
+;;; Already released
+
+(expect-let
+  [uuid (acquire-lock {} :4 2000 2000)
+   f1   (future (release-lock {} :4 uuid))]
+  false
+  (do (Thread/sleep 200) ; Let future run
+      (release-lock {} :4 uuid)))
+
+;;; Locking scope
+
+(expect #(not (nil? %))
+  (do (try (with-lock {} :5 2000 2000 (throw (Exception.)))
+           (catch Exception e nil))
+      (acquire-lock {} :5 2000 2000)))
+
+;;; Locking failure
+
+(expect nil (do (acquire-lock {} :6 3000 2000)
+                (with-lock {} :6 2000 10)))
+
+;;; `with-lock` expiry
+
+(expect Exception (with-lock {} 9 500 2000 (Thread/sleep 1000)))
+(expect nil
+  (do (future (with-lock {} :10 500 2000 (Thread/sleep 1000)))
+      (Thread/sleep 100) ; Give future time to acquire lock
+      (with-lock {} :10 3000 10 :foo)))
+(expect {:result :foo}
+  (do (future (with-lock {} :11 500 2000 (Thread/sleep 1000)))
+      (Thread/sleep 600) ; Give future time to acquire + lose lock
+      (with-lock {} :11 3000 10 :foo)))
