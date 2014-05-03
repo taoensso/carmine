@@ -52,7 +52,7 @@
 (def ^bytes bs-clj (bytestring "\u0000>")) ; Frozen data marker
 
 (defn- ensure-reserved-first-byte [^bytes ba]
-  (when (zero? (aget ba 0))
+  (when (= (first ba) 0)
     (throw (Exception. (str "Args can't begin with null terminator"))))
   ba)
 
