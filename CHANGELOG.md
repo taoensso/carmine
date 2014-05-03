@@ -1,3 +1,8 @@
+## v2.6.2 / 2014 May 3
+
+ * [#84] **Fix** empty-string writes (they were throwing exceptions) (@bzg).
+
+
 ## v2.6.1 / 2014 May 1
 
 > This is an **important fix release**, please update from `v2.6.0` ASAP.
