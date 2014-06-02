@@ -32,6 +32,9 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Pluggable **compression** and **encryption** support. (v2+)
   * Includes _Tundra_, an API for **replicating data to an additional datastore**. (Redis 2.6+, v2+)
 
+## 3rd-party tools, etc.
+ * [redlock-clj](https://github.com/lantiga/redlock-clj) by [Luca Antiga](https://github.com/lantiga) - distributed locks for uncoordinated Redis clusters.
+
 ## Getting started
 
 ### Dependencies
