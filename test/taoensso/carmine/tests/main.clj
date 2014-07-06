@@ -162,6 +162,19 @@
   (expect ["Emmanuel Goldstein" "Dade Murphy"]
     (wcar* (car/zrange k1-I-k2 0 1))))
 
+(let [k1 (tkey "lexhackers")]
+  (expect ["Adam Sandler"]
+  (do
+    (wcar*
+     (car/zadd k1 0 "Adam Sandler")
+     (car/zadd k1 0 "Alan Turing")
+     (car/zadd k1 0 "Dade Murphy")
+     (car/zadd k1 0 "Ferris Beuler"))
+    (wcar* (car/zrangebylex k1 "[Ad" "[Adxff"))))
+  (expect ["Adam Sandler" "Alan Turing" "Dade Murphy" "Ferris Beuler"]
+    (wcar* (car/zrangebylex k1 "-" "+")))
+  )
+
 (let [k1 (tkey "children")
       k2 (tkey "favorite:child")]
   (expect ["B" "B"] (do (wcar* (car/rpush k1 "A")
