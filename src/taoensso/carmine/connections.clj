@@ -89,19 +89,26 @@
 
 (defn set-pool-option [^GenericKeyedObjectPool pool [opt v]]
   (case opt
-    ;; :max-active                 (.setMaxActive pool v)
-    :max-total                     (.setMaxTotal pool v)
-    ;; :min-idle                   (.setMinIdle pool v)
-    ;; :max-idle                   (.setMaxIdle pool v)
-    ;; :max-wait                   (.setMaxWait pool v)
-    :lifo?                         (.setLifo pool v)
-    :test-on-borrow?               (.setTestOnBorrow pool v)
-    :test-on-return?               (.setTestOnReturn pool v)
-    :test-while-idle?              (.setTestWhileIdle pool v)
-    ;; :when-exhausted-action      (.setWhenExhaustedAction pool v)
-    :num-tests-per-eviction-run    (.setNumTestsPerEvictionRun pool v)
-    :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v)
-    :min-evictable-idle-time-ms    (.setMinEvictableIdleTimeMillis pool v)
+
+    ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
+    :min-idle-per-key  (.setMinIdlePerKey  pool v) ; 0
+    :max-idle-per-key  (.setMaxIdlePerKey  pool v) ; 8
+    :max-total-per-key (.setMaxTotalPerKey pool v) ; 8
+
+    ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
+    :block-when-exhausted? (.setBlockWhenExhausted pool v) ; true
+    :lifo?       (.setLifo          pool v) ; true
+    :max-total   (.setMaxTotal      pool v) ; -1
+    :max-wait-ms (.setMaxWaitMillis pool v) ; -1
+    :min-evictable-idle-time-ms (.setMinEvictableIdleTimeMillis pool v) ; 1800000
+    :num-tests-per-eviction-run (.setNumTestsPerEvictionRun     pool v) ; 3
+    :soft-min-evictable-idle-time-ms (.setSoftMinEvictableIdleTimeMillis pool v) ; -1
+    :swallowed-exception-listener    (.setSwallowedExceptionListener     pool v)
+    :test-on-borrow?  (.setTestOnBorrow  pool v) ; false
+    :test-on-return?  (.setTestOnReturn  pool v) ; false
+    :test-while-idle? (.setTestWhileIdle pool v) ; false
+    :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v) ; -1
+
     (throw (Exception. (str "Unknown pool option: " opt))))
   pool)
 
@@ -116,14 +123,19 @@
            ;; Pass through pre-made pools (note that test reflects):
            (satisfies? IConnectionPool pool-opts) pool-opts
            :else
-           (let [defaults {:test-while-idle?              true
-                           :num-tests-per-eviction-run    -1
-                           :min-evictable-idle-time-ms    60000
-                           :time-between-eviction-runs-ms 30000}]
+           (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
+                 {:test-while-idle?              true  ; from false
+                  :num-tests-per-eviction-run    -1    ; from 3
+                  :min-evictable-idle-time-ms    60000 ; from 1800000
+                  :time-between-eviction-runs-ms 30000 ; from -1
+                  }
+                 carmine-defaults
+                 {:max-total-per-key 16 ; from 8
+                  }]
              (->ConnectionPool
               (reduce set-pool-option
                 (GenericKeyedObjectPool. (make-connection-factory))
-                (merge defaults pool-opts))))))))))
+                (merge jedis-defaults carmine-defaults pool-opts))))))))))
 
 (comment (conn-pool :none) (conn-pool {}))
 
