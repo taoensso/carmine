@@ -351,11 +351,16 @@
                                         :ndry-runs       (or ndruns 0)
                                         :poll-reply      poll-reply}))
 
-                            (if (= poll-reply "eoq-backoff")
+                            (cond
+                              (instance? Exception poll-reply)
+                              (throw poll-reply) ; Don't pass conn errs to `handle1`
+
+                              (= poll-reply "eoq-backoff")
                               (Thread/sleep
-                               (max (wcar conn-opts (car/pttl (qk :eoq-backoff?)))
-                                    10))
-                              (handle1 conn-opts qname handler poll-reply))
+                                (max (wcar conn-opts (car/pttl (qk :eoq-backoff?)))
+                                  10))
+
+                              :else (handle1 conn-opts qname handler poll-reply))
 
                             (when throttle-ms (Thread/sleep throttle-ms)))
                           nil ; Successful worker loop
