@@ -18,7 +18,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 
 ## What's in the box™?
   * Small, uncomplicated **all-Clojure** library.
-  * **Fully documented**, up-to-date API, with full support for the latest Redis versions.
+  * **Fully documented**, [up-to-date API](https://github.com/ptaoussanis/carmine/blob/master/src/commands.list), with full support for the latest Redis versions.
   * **Great performance**.
   * Industrial strength **connection pooling**.
   * Composable, **first-class command functions**.

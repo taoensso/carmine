@@ -27,6 +27,16 @@
         has-more? (seq (filter #(or (:optional %) (:multiple %)) args))]
     (if has-more? (conj fixed-args '& 'args) fixed-args)))
 
+(comment ; Debug
+  (let [refspec (get-command-reference)]
+    (spit "commands.list" ; println
+      (with-out-str
+        (println (format "%s commands in refspec:\n---" (count (keys refspec))))
+        (doseq [rk (sort (keys refspec))]
+          (println (format "%s - %s"
+                     (str/lower-case (name rk))
+                     (args->params-vec (:arguments (get refspec rk))))))))))
+
 (defn- args->params-docstring
   "Parses refspec argument map into Redis reference-doc-style explanatory
   string: \"BRPOP key [key ...] timeout\", etc."
