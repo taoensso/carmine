@@ -1,6 +1,7 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
+  (:import (taoensso.carmine.exceptions RedisTransactionException))
   (:require [clojure.string :as str]
             [taoensso.encore      :as encore]
             [taoensso.timbre      :as timbre]
@@ -26,27 +27,36 @@
                      :password \"secret\"
                      :timeout-ms 6000
                      :db 3}}
+    {:pool {} :spec {} :single-conn true}
 
   A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
-  to skip connection pooling. For other pool options, Ref. http://goo.gl/EiTbn."
+  to skip connection pooling.For other pool options, Ref. http://goo.gl/EiTbn.
+
+  If :single-conn is set, then nested wcars are guaranteed to use the same
+  connection."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   [conn-opts & [s1 & sn :as sigs]]
-  `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
-
-         ;; To support `wcar` nesting with req planning, we mimmick
+  `(let [context#      protocol/*context*         
+         release?#     (or (nil? context#)
+                           (not (:single-conn ~conn-opts)))
+         [pool# conn#] (if context#
+                         [nil (:conn context#)]
+                         (conns/pooled-conn ~conn-opts))
+         ;; To support `wcar` nesting with req planning, we mimic
          ;; `with-replies` stashing logic here to simulate immediate writes:
-         ?stashed-replies#
-         (when protocol/*context*
-           (protocol/execute-requests :get-replies :as-pipeline))]
+         ?stashed-replies#     (when context#
+                                 (protocol/execute-requests :get-replies :as-pipeline))]
+
+     ;(timbre/trace "wcar" ~conn-opts conn# release?#)
 
      (try
        (let [response# (protocol/with-context conn#
                          (protocol/with-replies* ~@sigs))]
-         (conns/release-conn pool# conn#)
+         (when release?# (conns/release-conn pool# conn#))
          response#)
 
        (catch Exception e#
-         (conns/release-conn pool# conn# e#) (throw e#))
+         (when release?# (conns/release-conn pool# conn# e#)) (throw e#))
 
        ;; Restore any stashed replies to preexisting context:
        (finally
@@ -345,7 +355,7 @@
                  ;; Was [] with < Carmine v3
                  (return r#)
                  (if (= idx# max-idx#)
-                   (throw (Exception. (format "`atomic` failed after %s attempt(s)"
+                   (throw (RedisTransactionException. (format "`atomic` failed after %s attempt(s)"
                                               idx#)))
                    (recur (inc idx#)))))))]
 
