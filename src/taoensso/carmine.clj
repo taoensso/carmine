@@ -34,7 +34,7 @@
   [conn-opts & sigs]
   `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
 
-         ;; To support `wcar` nesting with req planning, we mimmick
+         ;; To support `wcar` nesting with req planning, we mimic
          ;; `with-replies` stashing logic here to simulate immediate writes:
          ?stashed-replies#
          (when protocol/*context*
