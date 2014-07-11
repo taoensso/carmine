@@ -328,7 +328,7 @@
       [\"OK\" \"1\"] ; Transaction replies (`exec` reply)
       ]
 
-  See also `lua` as an alternative method of achieving transactional behaviour."
+  See also `lua` as alternative way to get transactional behaviour."
   [conn-opts max-cas-attempts & body]
   (assert (>= max-cas-attempts 1))
   `(let [conn-opts#  ~conn-opts
