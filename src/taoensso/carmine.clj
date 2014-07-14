@@ -288,7 +288,7 @@
           :alpha (recur (conj out "ALPHA") args)
           :asc   (recur (conj out "ASC")   args)
           :desc  (recur (conj out "DESC")  args)
-          (throw (Exception. (str "Unknown sort argument: " type))))))))
+          (throw (ex-info (str "Unknown sort argument: " type) {:type type})))))))
 
 (defn sort*
   "Like `sort` but supports idiomatic Clojure arguments: :by pattern,
@@ -348,8 +348,9 @@
                  ;; Was [] with < Carmine v3
                  (return r#)
                  (if (= idx# max-idx#)
-                   (throw (Exception. (format "`atomic` failed after %s attempt(s)"
-                                              idx#)))
+                   (throw (ex-info (format "`atomic` failed after %s attempt(s)"
+                                     idx#)
+                            {:nattempts idx#}))
                    (recur (inc idx#)))))))]
 
      [@prelude-result#
@@ -542,8 +543,10 @@
          (if-not (nil? result#) ; Was [] with < Carmine v3
            (remember result#)
            (if (= idx# max-idx#)
-             (throw (Exception. (str "`ensure-atomically` failed after " idx#
-                                     " attempts")))
+             (throw
+               (ex-info (format "`ensure-atomically` failed after %s attempt(s)"
+                          idx#)
+                 {:nattempts idx#}))
              (recur (inc idx#))))))))
 
 (defn hmget* "DEPRECATED: Use `parse-map` instead."

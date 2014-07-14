@@ -48,7 +48,7 @@
                  (encore/map-kvs nil :frozen-val)
                  (reduce merge {}))
             (catch Throwable t (zipmap ks (repeat t))))]
-      (mapv #(get vals-map % (Exception. "Missing value")) ks))))
+      (mapv #(get vals-map % (ex-info "Missing value" {})) ks))))
 
 (defn faraday-datastore
   "Alpha - subject to change.

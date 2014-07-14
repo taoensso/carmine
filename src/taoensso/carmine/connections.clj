@@ -109,7 +109,7 @@
     :test-while-idle? (.setTestWhileIdle pool v) ; false
     :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v) ; -1
 
-    (throw (Exception. (str "Unknown pool option: " opt))))
+    (throw (ex-info (str "Unknown pool option: " opt) {:option opt})))
   pool)
 
 (def ^:private pool-cache "{<pool-opts> <pool>}" (atom {}))
@@ -169,4 +169,4 @@
                 (let [pool (conn-pool pool-opts)]
                   [pool (get-conn pool spec)])))
          (catch Exception e
-           (throw (Exception. "Carmine connection error" e))))))
+           (throw (ex-info "Carmine connection error" {} e))))))

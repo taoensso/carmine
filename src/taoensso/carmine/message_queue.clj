@@ -201,7 +201,8 @@
         eoq-backoff-ms-vec
         (cond (fn?      eoq-backoff-ms) (mapv eoq-backoff-ms              (range 5))
               (integer? eoq-backoff-ms) (mapv (constantly eoq-backoff-ms) (range 5))
-              :else (throw (Exception. (str "Bad eoq-backoff-ms: " eoq-backoff-ms))))]
+              :else (throw (ex-info (str "Bad eoq-backoff-ms: " eoq-backoff-ms)
+                             {:eoq-backoff-ms eoq-backoff-ms})))]
     (car/lua
      (script-with-msg-status (not :mid-arg)
       "--
@@ -301,8 +302,9 @@
           error (fn [mid poll-reply & [throwable]]
                   (done :error mid)
                   (timbre/errorf
-                   (if throwable throwable (Exception. ":error handler response"))
-                   "Error handling %s queue message:\n%s" qname poll-reply))
+                    (if throwable throwable
+                      (ex-info ":error handler response" {}))
+                    "Error handling %s queue message:\n%s" qname poll-reply))
 
           {:keys [status throwable backoff-ms]}
           (let [result (try (handler {:mid mid :message mcontent :attempt attempt})
