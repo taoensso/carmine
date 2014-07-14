@@ -298,8 +298,38 @@
   :alpha, :asc, :desc."
   [key & sort-args] (apply sort key (parse-sort-args sort-args)))
 
+(defmacro atomic* "Alpha - subject to change. Low-level transaction util."
+  [conn-opts max-cas-attempts on-success on-failure]
+    (assert (>= max-cas-attempts 1))
+  `(let [conn-opts#  ~conn-opts
+         max-idx#    ~max-cas-attempts
+         prelude-result# (atom nil)
+         exec-result#
+         (wcar conn-opts# ; Hold 1 conn for all attempts
+           (loop [idx# 1]
+             (try (reset! prelude-result#
+                    (protocol/with-replies* :as-pipeline (do ~on-success)))
+                  (catch Exception e#
+                    ;; Always return conn to normal state:
+                    (protocol/with-replies* (discard))
+                    (throw e#)))
+             (let [r# (protocol/with-replies* (exec))]
+               (if-not (nil? r#) ; => empty `multi` or watched key changed
+                 ;; Was [] with < Carmine v3
+                 (return r#)
+                 (if (= idx# max-idx#)
+                   (do ~on-failure)
+                   (recur (inc idx#)))))))]
+
+     [@prelude-result#
+      ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
+      (let [r# exec-result#]
+        (if (next r#) r#
+          (let [r# (nth r# 0)]
+            (if (instance? Exception r#) (throw r#) r#))))]))
+
 (defmacro atomic
-  "Alpha - subject to change!!
+  "Alpha - subject to change!
   Tool to ease Redis transactions for fun & profit. Wraps body in a `wcar`
   call that terminates with `exec`, cleans up reply, and supports automatic
   retry for failed optimistic locking.
@@ -332,35 +362,10 @@
 
   See also `lua` as alternative way to get transactional behaviour."
   [conn-opts max-cas-attempts & body]
-  (assert (>= max-cas-attempts 1))
-  `(let [conn-opts#  ~conn-opts
-         max-idx#    ~max-cas-attempts
-         prelude-result# (atom nil)
-         exec-result#
-         (wcar conn-opts# ; Hold 1 conn for all attempts
-           (loop [idx# 1]
-             (try (reset! prelude-result#
-                    (protocol/with-replies* :as-pipeline ~@body))
-                  (catch Exception e#
-                    ;; Always return conn to normal state:
-                    (protocol/with-replies* (discard))
-                    (throw e#)))
-             (let [r# (protocol/with-replies* (exec))]
-               (if-not (nil? r#) ; => empty `multi` or watched key changed
-                 ;; Was [] with < Carmine v3
-                 (return r#)
-                 (if (= idx# max-idx#)
-                   (throw (ex-info (format "`atomic` failed after %s attempt(s)"
-                                     idx#)
-                            {:nattempts idx#}))
-                   (recur (inc idx#)))))))]
-
-     [@prelude-result#
-      ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
-      (let [r# exec-result#]
-        (if (next r#) r#
-          (let [r# (nth r# 0)]
-            (if (instance? Exception r#) (throw r#) r#))))]))
+  `(atomic* ~conn-opts ~max-cas-attempts (do ~@body)
+     (throw (ex-info (format "`atomic` failed after %s attempt(s)"
+                       ~max-cas-attempts)
+              {:nattempts ~max-cas-attempts}))))
 
 (comment
   ;; Error before exec (=> syntax, etc.)
