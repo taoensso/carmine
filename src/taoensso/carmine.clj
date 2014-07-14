@@ -15,9 +15,9 @@
 (encore/defalias with-replies protocol/with-replies)
 
 (defmacro wcar
-  "Evaluates body in the context of a thread-bound pooled connection to Redis
-  server. Sends Redis commands to server as pipeline and returns the server's
-  response. Releases connection back to pool when done.
+  "Evaluates body in the context of a fresh thread-bound pooled connection to
+  Redis server. Sends Redis commands to server as pipeline and returns the
+  server's response. Releases connection back to pool when done.
 
   `conn-opts` arg is a map with connection pool and spec options:
     {:pool {} :spec {:host \"127.0.0.1\" :port 6379}} ; Default
@@ -28,9 +28,11 @@
                      :db 3}}
 
   A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
-  to skip connection pooling.
+  to skip connection pooling (not recommended).
   For other pool options, Ref. http://goo.gl/e1p1h3,
-                               http://goo.gl/Sz4uN1 (defaults)."
+                               http://goo.gl/Sz4uN1 (defaults).
+
+  See also `with-replies`."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   ;; [conn-opts & [s1 & sn :as sigs]]
   [conn-opts & sigs]
