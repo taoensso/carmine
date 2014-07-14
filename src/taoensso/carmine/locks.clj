@@ -81,8 +81,9 @@
          (catch Throwable t# (throw t#))
          (finally
           (when-not (release-lock conn-opts# ~lock-name uuid#)
-            (throw (RuntimeException. (str "Lock expired before it was released: "
-                                           ~lock-name)))))))))
+            (throw (ex-info (str "Lock expired before it was released: "
+                              ~lock-name)
+                     {:lock-name ~lock-name}))))))))
 
 (comment
   (timbre/set-level! :debug)

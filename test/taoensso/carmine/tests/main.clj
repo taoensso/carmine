@@ -74,8 +74,8 @@
   (expect ["Tom"] (wcar* (car/lrange k 0 -1))))
 
 (let [k (tkey "spanish")]
-  (expect "OK" (wcar* (car/set k "year->año")))
-  (expect "year->año" (wcar* (car/get k))))
+  (expect ["OK" "year->año"] (wcar* (car/set k "year->año")
+                                    (car/get k))))
 
 (let [k (tkey "str-field")]
   (expect Exception (do (wcar* (car/set k "str-value"))

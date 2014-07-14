@@ -48,7 +48,7 @@
        (do (mkdirs path) (recur k v))
 
        (instance? Exception result) result
-       :else (Exception. (format "Unexpected result: %s" result))))))
+       :else (ex-info (format "Unexpected result: %s" result) {:result result})))))
 
 (defn disk-datastore
   "Alpha - subject to change.

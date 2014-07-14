@@ -6,8 +6,8 @@
             [taoensso.carmine.protocol :as protocol])
   (:import  [java.net Socket URI]
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
-            [org.apache.commons.pool KeyedPoolableObjectFactory]
-            [org.apache.commons.pool.impl GenericKeyedObjectPool]))
+            [org.apache.commons.pool2 KeyedPooledObjectFactory]
+            [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
 
 (encore/declare-remote taoensso.carmine/ping
                        taoensso.carmine/auth
@@ -78,55 +78,64 @@
   (close [_] nil))
 
 (defn make-connection-factory []
-  (reify KeyedPoolableObjectFactory
-    (makeObject      [_ spec] (make-new-connection spec))
-    (activateObject  [_ spec conn])
-    (validateObject  [_ spec conn] (conn-alive? conn))
-    (passivateObject [_ spec conn])
-    (destroyObject   [_ spec conn] (close-conn conn))))
+  (reify KeyedPooledObjectFactory
+    (makeObject      [_ spec] (DefaultPooledObject. (make-new-connection spec)))
+    (activateObject  [_ spec pooled-obj])
+    (validateObject  [_ spec pooled-obj] (let [conn (.getObject pooled-obj)]
+                                           (conn-alive? conn)))
+    (passivateObject [_ spec pooled-obj])
+    (destroyObject   [_ spec pooled-obj] (let [conn (.getObject pooled-obj)]
+                                           (close-conn conn)))))
 
 (defn set-pool-option [^GenericKeyedObjectPool pool [opt v]]
   (case opt
-    :max-active                    (.setMaxActive pool v)
-    :max-total                     (.setMaxTotal pool v)
-    :min-idle                      (.setMinIdle pool v)
-    :max-idle                      (.setMaxIdle pool v)
-    :max-wait                      (.setMaxWait pool v)
-    :lifo?                         (.setLifo pool v)
-    :test-on-borrow?               (.setTestOnBorrow pool v)
-    :test-on-return?               (.setTestOnReturn pool v)
-    :test-while-idle?              (.setTestWhileIdle pool v)
-    :when-exhausted-action         (.setWhenExhaustedAction pool v)
-    :num-tests-per-eviction-run    (.setNumTestsPerEvictionRun pool v)
-    :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v)
-    :min-evictable-idle-time-ms    (.setMinEvictableIdleTimeMillis pool v)
-    (throw (Exception. (str "Unknown pool option: " opt))))
+
+    ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
+    :min-idle-per-key  (.setMinIdlePerKey  pool v) ; 0
+    :max-idle-per-key  (.setMaxIdlePerKey  pool v) ; 8
+    :max-total-per-key (.setMaxTotalPerKey pool v) ; 8
+
+    ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
+    :block-when-exhausted? (.setBlockWhenExhausted pool v) ; true
+    :lifo?       (.setLifo          pool v) ; true
+    :max-total   (.setMaxTotal      pool v) ; -1
+    :max-wait-ms (.setMaxWaitMillis pool v) ; -1
+    :min-evictable-idle-time-ms (.setMinEvictableIdleTimeMillis pool v) ; 1800000
+    :num-tests-per-eviction-run (.setNumTestsPerEvictionRun     pool v) ; 3
+    :soft-min-evictable-idle-time-ms (.setSoftMinEvictableIdleTimeMillis pool v) ; -1
+    :swallowed-exception-listener    (.setSwallowedExceptionListener     pool v)
+    :test-on-borrow?  (.setTestOnBorrow  pool v) ; false
+    :test-on-return?  (.setTestOnReturn  pool v) ; false
+    :test-while-idle? (.setTestWhileIdle pool v) ; false
+    :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v) ; -1
+
+    (throw (ex-info (str "Unknown pool option: " opt) {:option opt})))
   pool)
 
 (def ^:private pool-cache "{<pool-opts> <pool>}" (atom {}))
 (defn conn-pool ^java.io.Closeable [pool-opts & [use-cache?]]
-  ;; Impl. a little contorted for high-speed v1 API backwards-comp
-  (if-let [dp (and use-cache? (@pool-cache pool-opts))] @dp
-    (let [dp (delay
-              (cond
-               (= pool-opts :none) (->NonPooledConnectionPool)
-               ;; Pass through pre-made pools (note that test reflects):
-               (satisfies? IConnectionPool pool-opts) pool-opts
-               :else
-               (let [defaults {:test-while-idle?              true
-                               :num-tests-per-eviction-run    -1
-                               :min-evictable-idle-time-ms    60000
-                               :time-between-eviction-runs-ms 30000}]
-                 (->ConnectionPool
-                  (reduce set-pool-option
-                    (GenericKeyedObjectPool. (make-connection-factory))
-                    (merge defaults pool-opts))))))]
-
-      (if-not use-cache? @dp
-        (locking pool-cache ; Pool creation can be racey even with `delay`
-          (if-let [dp (@pool-cache pool-opts)] @dp ; Retry after lock acquisition
-            (do (swap! pool-cache assoc pool-opts dp)
-                @dp)))))))
+  @(encore/swap-val! pool-cache pool-opts
+     (fn [?dv]
+       (if (and ?dv use-cache?) ?dv
+         (delay
+          (cond
+           (identical? pool-opts :none) (->NonPooledConnectionPool)
+           ;; Pass through pre-made pools (note that test reflects):
+           (satisfies? IConnectionPool pool-opts) pool-opts
+           :else
+           (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
+                 {:test-while-idle?              true  ; from false
+                  :num-tests-per-eviction-run    -1    ; from 3
+                  :min-evictable-idle-time-ms    60000 ; from 1800000
+                  :time-between-eviction-runs-ms 30000 ; from -1
+                  }
+                 carmine-defaults
+                 {:max-total-per-key 16 ; from 8
+                  }]
+             (->ConnectionPool
+              (reduce set-pool-option
+                (GenericKeyedObjectPool. (make-connection-factory))
+                (merge jedis-defaults carmine-defaults pool-opts))))))))))
 
 (comment (conn-pool :none) (conn-pool {}))
 
@@ -160,4 +169,4 @@
                 (let [pool (conn-pool pool-opts)]
                   [pool (get-conn pool spec)])))
          (catch Exception e
-           (throw (Exception. "Carmine connection error" e))))))
+           (throw (ex-info "Carmine connection error" {} e))))))

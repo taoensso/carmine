@@ -30,9 +30,9 @@
 (def ^:dynamic *context* nil) ; Context
 (def ^:dynamic *parser*  nil) ; ifn (with optional meta) or nil
 (def no-context-ex
-  (Exception.
-   (str "Redis commands must be called within the context of a"
-        " connection to Redis server. See `wcar`.")))
+  (ex-info
+    (str "Redis commands must be called within the context of a"
+      " connection to Redis server. See `wcar`.") {}))
 
 ;;;;
 
@@ -53,13 +53,13 @@
 
 (defn- ensure-reserved-first-byte [^bytes ba]
   (when (= (first ba) 0)
-    (throw (Exception. (str "Args can't begin with null terminator"))))
+    (throw (ex-info "Args can't begin with null terminator" {:ba ba})))
   ba)
 
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
   [x] (if (encore/bytes? x) (->WrappedRaw x)
-        (throw (Exception. "Raw arg must be byte[]"))))
+        (throw (ex-info "Raw arg must be byte[]" {:x x}))))
 
 (defprotocol IRedisArg
   (coerce-bs [x] "Coerces arbitrary Clojure value to RESP arg, by type."))
@@ -178,14 +178,17 @@
                        (try (nippy/thaw payload) (catch Exception _ payload))
                        payload))
                    (catch Exception e
-                     (Exception. (str "Bad reply data: " (.getMessage e)) e)))))))
+                     (let [message (.getMessage e)]
+                       (ex-info (str "Bad reply data: " message)
+                         {:message message} e))))))))
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
            (if (== bulk-count -1) nil ; Nb was [] with < Carmine v3
              (encore/repeatedly* bulk-count (get-unparsed-reply in req-opts))))
 
-      (throw (Exception. (format "Server returned unknown reply type: %s"
-                           (str reply-type)))))))
+      (throw (ex-info (format "Server returned unknown reply type: %s"
+                        (str reply-type))
+               {:reply-type reply-type})))))
 
 (defn get-parsed-reply "Implementation detail."
   [^DataInputStream in ?parser]
@@ -207,7 +210,9 @@
         unparsed-reply ; Return unparsed
         (try (?parser unparsed-reply)
              (catch Exception e
-               (Exception. (format "Parser error: %s" (.getMessage e)) e)))))))
+               (let [message (.getMessage e)]
+                 (ex-info (format "Parser error: %s" message)
+                   {:message message} e))))))))
 
 ;;;; Parsers
 

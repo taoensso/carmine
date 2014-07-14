@@ -164,12 +164,17 @@
               _
               (when-not (= (count dvals-missing)
                            (count ks-missing))
-                (-> (format (str "Bad `fetch-keys` result:"
-                                 " unexpected val count (got %s, expected %s)."
-                                 " Bad DataStore implementation?")
-                            (count dvals-missing)
-                            (count ks-missing))
-                    (Exception.) (throw)))
+                (let [n-dvals-missing (count dvals-missing)
+                      n-ks-missing    (count ks-missing)]
+                  (throw
+                    (ex-info
+                      (format (str "Bad `fetch-keys` result:"
+                                " unexpected val count (got %s, expected %s)."
+                                " Bad DataStore implementation?")
+                        n-dvals-missing
+                        n-ks-missing)
+                      {:n-dvals-missing n-dvals-missing
+                       :n-ks-missing    n-ks-missing}))))
 
               dvals-missing (if (nil? freezer) dvals-missing
                                 (->> dvals-missing
@@ -181,7 +186,8 @@
                    (mapv (fn [k dv]
                            (if (throwable? dv) (car/return dv)
                                (if-not (encore/bytes? dv)
-                                 (car/return (Exception. "Malformed fetch data"))
+                                 (car/return
+                                   (ex-info "Malformed fetch data" {:dv dv}))
                                  (car/restore k (or redis-ttl-ms 0) (car/raw dv)))))
                          ks-missing)
                    (car/with-replies :as-pipeline)

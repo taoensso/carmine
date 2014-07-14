@@ -15,9 +15,9 @@
 (encore/defalias with-replies protocol/with-replies)
 
 (defmacro wcar
-  "Evaluates body in the context of a thread-bound pooled connection to Redis
-  server. Sends Redis commands to server as pipeline and returns the server's
-  response. Releases connection back to pool when done.
+  "Evaluates body in the context of a fresh thread-bound pooled connection to
+  Redis server. Sends Redis commands to server as pipeline and returns the
+  server's response. Releases connection back to pool when done.
 
   `conn-opts` arg is a map with connection pool and spec options:
     {:pool {} :spec {:host \"127.0.0.1\" :port 6379}} ; Default
@@ -28,12 +28,17 @@
                      :db 3}}
 
   A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
-  to skip connection pooling. For other pool options, Ref. http://goo.gl/EiTbn."
+  to skip connection pooling (not recommended).
+  For other pool options, Ref. http://goo.gl/e1p1h3,
+                               http://goo.gl/Sz4uN1 (defaults).
+
+  See also `with-replies`."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
-  [conn-opts & [s1 & sn :as sigs]]
+  ;; [conn-opts & [s1 & sn :as sigs]]
+  [conn-opts & sigs]
   `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
 
-         ;; To support `wcar` nesting with req planning, we mimmick
+         ;; To support `wcar` nesting with req planning, we mimic
          ;; `with-replies` stashing logic here to simulate immediate writes:
          ?stashed-replies#
          (when protocol/*context*
@@ -285,7 +290,7 @@
           :alpha (recur (conj out "ALPHA") args)
           :asc   (recur (conj out "ASC")   args)
           :desc  (recur (conj out "DESC")  args)
-          (throw (Exception. (str "Unknown sort argument: " type))))))))
+          (throw (ex-info (str "Unknown sort argument: " type) {:type type})))))))
 
 (defn sort*
   "Like `sort` but supports idiomatic Clojure arguments: :by pattern,
@@ -293,8 +298,38 @@
   :alpha, :asc, :desc."
   [key & sort-args] (apply sort key (parse-sort-args sort-args)))
 
+(defmacro atomic* "Alpha - subject to change. Low-level transaction util."
+  [conn-opts max-cas-attempts on-success on-failure]
+    (assert (>= max-cas-attempts 1))
+  `(let [conn-opts#  ~conn-opts
+         max-idx#    ~max-cas-attempts
+         prelude-result# (atom nil)
+         exec-result#
+         (wcar conn-opts# ; Hold 1 conn for all attempts
+           (loop [idx# 1]
+             (try (reset! prelude-result#
+                    (protocol/with-replies* :as-pipeline (do ~on-success)))
+                  (catch Exception e#
+                    ;; Always return conn to normal state:
+                    (protocol/with-replies* (discard))
+                    (throw e#)))
+             (let [r# (protocol/with-replies* (exec))]
+               (if-not (nil? r#) ; => empty `multi` or watched key changed
+                 ;; Was [] with < Carmine v3
+                 (return r#)
+                 (if (= idx# max-idx#)
+                   (do ~on-failure)
+                   (recur (inc idx#)))))))]
+
+     [@prelude-result#
+      ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
+      (let [r# exec-result#]
+        (if (next r#) r#
+          (let [r# (nth r# 0)]
+            (if (instance? Exception r#) (throw r#) r#))))]))
+
 (defmacro atomic
-  "Alpha - subject to change!!
+  "Alpha - subject to change!
   Tool to ease Redis transactions for fun & profit. Wraps body in a `wcar`
   call that terminates with `exec`, cleans up reply, and supports automatic
   retry for failed optimistic locking.
@@ -325,36 +360,12 @@
       [\"OK\" \"1\"] ; Transaction replies (`exec` reply)
       ]
 
-  See also `lua` as an alternative method of achieving transactional behaviour."
+  See also `lua` as alternative way to get transactional behaviour."
   [conn-opts max-cas-attempts & body]
-  (assert (>= max-cas-attempts 1))
-  `(let [conn-opts#  ~conn-opts
-         max-idx#    ~max-cas-attempts
-         prelude-result# (atom nil)
-         exec-result#
-         (wcar conn-opts# ; Hold 1 conn for all attempts
-           (loop [idx# 1]
-             (try (reset! prelude-result#
-                    (protocol/with-replies* :as-pipeline ~@body))
-                  (catch Exception e#
-                    ;; Always return conn to normal state:
-                    (protocol/with-replies* (discard))
-                    (throw e#)))
-             (let [r# (protocol/with-replies* (exec))]
-               (if-not (nil? r#) ; => empty `multi` or watched key changed
-                 ;; Was [] with < Carmine v3
-                 (return r#)
-                 (if (= idx# max-idx#)
-                   (throw (Exception. (format "`atomic` failed after %s attempt(s)"
-                                              idx#)))
-                   (recur (inc idx#)))))))]
-
-     [@prelude-result#
-      ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
-      (let [r# exec-result#]
-        (if (next r#) r#
-          (let [r# (nth r# 0)]
-            (if (instance? Exception r#) (throw r#) r#))))]))
+  `(atomic* ~conn-opts ~max-cas-attempts (do ~@body)
+     (throw (ex-info (format "`atomic` failed after %s attempt(s)"
+                       ~max-cas-attempts)
+              {:nattempts ~max-cas-attempts}))))
 
 (comment
   ;; Error before exec (=> syntax, etc.)
@@ -539,8 +550,10 @@
          (if-not (nil? result#) ; Was [] with < Carmine v3
            (remember result#)
            (if (= idx# max-idx#)
-             (throw (Exception. (str "`ensure-atomically` failed after " idx#
-                                     " attempts")))
+             (throw
+               (ex-info (format "`ensure-atomically` failed after %s attempt(s)"
+                          idx#)
+                 {:nattempts idx#}))
              (recur (inc idx#))))))))
 
 (defn hmget* "DEPRECATED: Use `parse-map` instead."

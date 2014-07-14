@@ -1,6 +1,19 @@
+## v2.7.0-RC1 / 2014 July 14
+
+> This is a significant release that **may be breaking** for those using custom connection pool options.
+
+ * **POSSIBLY BREAKING**: Upgraded to apache-commons-pool v2, bumped default max active conns (8->16). If you're using custom connection pool options, please confirm that none of your options have been removed in v2 (an exception will be thrown for invalid options).
+ * **CHANGE**: New lock-free connection pool cache (improved performance under contention).
+ * **CHANGE**: All `Exception`s are now `ExceptionInfo`s.
+ * **NEW**: New commands! (Updated official commands.json spec).
+ * **NEW**: Added `atomic*` (alpha) low-level transactions util (#93).
+
+
 ## v2.6.2 / 2014 May 3
 
- * [#84] **Fix** empty-string writes (they were throwing exceptions) (@bzg).
+> This is a hotfix release.
+
+ * [#84] **FIX** empty-string writes (they were throwing exceptions) (@bzg).
 
 
 ## v2.6.1 / 2014 May 1
