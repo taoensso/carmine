@@ -345,8 +345,8 @@
                  ;; Was [] with < Carmine v3
                  (return r#)
                  (if (= idx# max-idx#)
-                   (throw (Exception. (format "`atomic` failed after %s attempt(s)"
-                                              idx#)))
+                   (throw (ex-info (format "`atomic` failed after %s attempt(s)")
+                                   {:source 'taoensso.carmine.atomic :idx idx#}))
                    (recur (inc idx#)))))))]
 
      [@prelude-result#
