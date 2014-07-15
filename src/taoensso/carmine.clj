@@ -27,18 +27,12 @@
                      :password \"secret\"
                      :timeout-ms 6000
                      :db 3}}
-    {:pool {} :spec {} :single-conn true}
 
   A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
-  to skip connection pooling.For other pool options, Ref. http://goo.gl/EiTbn.
-
-  If :single-conn is set, then nested wcars are guaranteed to use the same
-  connection."
+  to skip connection pooling. For other pool options, Ref. http://goo.gl/EiTbn."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   [conn-opts & [s1 & sn :as sigs]]
-  `(let [context#      protocol/*context*         
-         release?#     (or (nil? context#)
-                           (not (:single-conn ~conn-opts)))
+  `(let [context#      protocol/*context*
          [pool# conn#] (if context#
                          [nil (:conn context#)]
                          (conns/pooled-conn ~conn-opts))
@@ -46,17 +40,16 @@
          ;; `with-replies` stashing logic here to simulate immediate writes:
          ?stashed-replies#     (when context#
                                  (protocol/execute-requests :get-replies :as-pipeline))]
-
-     ;(timbre/trace "wcar" ~conn-opts conn# release?#)
+     ;(timbre/trace "wcar" ~conn-opts conn#)
 
      (try
        (let [response# (protocol/with-context conn#
                          (protocol/with-replies* ~@sigs))]
-         (when release?# (conns/release-conn pool# conn#))
+         (when-not context# (conns/release-conn pool# conn#))
          response#)
 
        (catch Exception e#
-         (when release?# (conns/release-conn pool# conn# e#)) (throw e#))
+         (when-not context# (conns/release-conn pool# conn# e#)) (throw e#))
 
        ;; Restore any stashed replies to preexisting context:
        (finally
