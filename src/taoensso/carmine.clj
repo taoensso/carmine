@@ -1,7 +1,6 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
-  (:import (taoensso.carmine.exceptions RedisTransactionException))
   (:require [clojure.string :as str]
             [taoensso.encore      :as encore]
             [taoensso.timbre      :as timbre]
@@ -36,6 +35,7 @@
          [pool# conn#] (if context#
                          [nil (:conn context#)]
                          (conns/pooled-conn ~conn-opts))
+
          ;; To support `wcar` nesting with req planning, we mimic
          ;; `with-replies` stashing logic here to simulate immediate writes:
          ?stashed-replies#     (when context#
@@ -348,7 +348,7 @@
                  ;; Was [] with < Carmine v3
                  (return r#)
                  (if (= idx# max-idx#)
-                   (throw (RedisTransactionException. (format "`atomic` failed after %s attempt(s)"
+                   (throw (Exception. (format "`atomic` failed after %s attempt(s)"
                                               idx#)))
                    (recur (inc idx#)))))))]
 

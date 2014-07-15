@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.6.2-pnf-SNAPSHOT"
+(defproject com.taoensso/carmine "2.6.2"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
@@ -38,8 +38,6 @@
     {:dependencies []
      :plugins [[lein-ancient "0.5.4"]
                [codox        "0.6.7"]]}]}
-
-  :aot [taoensso.carmine.exceptions]
 
   ;; :codox {:sources ["target/classes"]} ; cljx
   :aliases
