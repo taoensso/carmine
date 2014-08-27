@@ -50,8 +50,8 @@
          (conns/release-conn pool# conn#)
          response#)
 
-       (catch Exception e#
-         (conns/release-conn pool# conn# e#) (throw e#))
+       (catch Throwable t# ; nb Throwable to catch assertions, etc.
+         (conns/release-conn pool# conn# t#) (throw t#))
 
        ;; Restore any stashed replies to preexisting context:
        (finally
@@ -309,10 +309,10 @@
            (loop [idx# 1]
              (try (reset! prelude-result#
                     (protocol/with-replies* :as-pipeline (do ~on-success)))
-                  (catch Exception e#
+                  (catch Throwable t# ; nb Throwable to catch assertions, etc.
                     ;; Always return conn to normal state:
                     (protocol/with-replies* (discard))
-                    (throw e#)))
+                    (throw t#)))
              (let [r# (protocol/with-replies* (exec))]
                (if-not (nil? r#) ; => empty `multi` or watched key changed
                  ;; Was [] with < Carmine v3

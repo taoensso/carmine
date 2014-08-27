@@ -1,13 +1,15 @@
-## v2.7.0-RC1 / 2014 July 14
+> This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
+
+## v2.7.0 / 2014 Aug 27
 
 > This is a significant release that **may be breaking** for those using custom connection pool options.
 
  * **POSSIBLY BREAKING**: Upgraded to apache-commons-pool v2, bumped default max active conns (8->16). If you're using custom connection pool options, please confirm that none of your options have been removed in v2 (an exception will be thrown for invalid options).
  * **CHANGE**: New lock-free connection pool cache (improved performance under contention).
  * **CHANGE**: All `Exception`s are now `ExceptionInfo`s.
+ * **CHANGE**: `wcar, `atomic*`, `atomic` now catch `Throwable`s rather than `Exception`s (assertions in particular).
  * **NEW**: New commands! (Updated official commands.json spec).
  * **NEW**: Added `atomic*` (alpha) low-level transactions util (#93).
-
 
 ## v2.6.2 / 2014 May 3
 
