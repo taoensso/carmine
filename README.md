@@ -1,8 +1,7 @@
 **[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contrib](#contact--contributing) | current [Break Version][]:
 
 ```clojure
-[com.taoensso/carmine "2.6.2"]     ; Stable (please upgrade from v2.6.0 ASAP)
-[com.taoensso/carmine "2.7.0-RC1"] ; Development
+[com.taoensso/carmine "2.7.0"] ; Stable
 ```
 
 v2.7 is a significant release that **may be breaking** for folks using custom connection pooling options. Please see the [CHANGELOG][] for details.
@@ -43,7 +42,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Add the necessary dependency to your [Leiningen][] `project.clj` and `require` the library in your ns:
 
 ```clojure
-[com.taoensso/carmine "2.6.2"] ; project.clj
+[com.taoensso/carmine "2.7.0"] ; project.clj
 (ns my-app (:require [taoensso.carmine :as car :refer (wcar)])) ; ns
 ```
 
