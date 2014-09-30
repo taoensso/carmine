@@ -184,7 +184,8 @@
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
            (if (== bulk-count -1) nil ; Nb was [] with < Carmine v3
-             (encore/repeatedly* bulk-count (get-unparsed-reply in req-opts))))
+             (encore/repeatedly-into* [] bulk-count
+               (get-unparsed-reply in req-opts))))
 
       (throw (ex-info (format "Server returned unknown reply type: %s"
                         (str reply-type))
