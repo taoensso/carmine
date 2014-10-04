@@ -62,8 +62,8 @@
   [client-opts & [{:keys [table key-ns]
                    :or   {table default-table
                           key-ns :default}}]]
-  (->FaradayDataStore client-opts {:table  table
-                                   :key-ns key-ns}))
+  (FaradayDataStore. client-opts {:table  table
+                                  :key-ns key-ns}))
 
 (comment
   (ensure-table client-opts {:throughput {:read 1 :write 1}})

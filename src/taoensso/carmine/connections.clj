@@ -55,11 +55,11 @@
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer (or timeout-ms 0)))
-        conn (->Connection socket spec (-> (.getInputStream socket)
-                                           (BufferedInputStream. buff-size)
-                                           (DataInputStream.))
-                                       (-> (.getOutputStream socket)
-                                           (BufferedOutputStream. buff-size)))]
+        conn (Connection. socket spec (-> (.getInputStream socket)
+                                          (BufferedInputStream. buff-size)
+                                          (DataInputStream.))
+                                      (-> (.getOutputStream socket)
+                                          (BufferedOutputStream. buff-size)))]
     (when password (->> (taoensso.carmine/auth password)
                         (protocol/with-replies*)
                         (protocol/with-context conn)))
@@ -132,7 +132,7 @@
                  carmine-defaults
                  {:max-total-per-key 16 ; from 8
                   }]
-             (->ConnectionPool
+             (ConnectionPool.
               (reduce set-pool-option
                 (GenericKeyedObjectPool. (make-connection-factory))
                 (merge jedis-defaults carmine-defaults pool-opts))))))))))

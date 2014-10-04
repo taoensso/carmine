@@ -494,6 +494,19 @@
   (do (wcar {} (car/set (tkey "bin-arg") (.getBytes "Foobar" "UTF-8")))
       (seq (wcar {} (car/get (tkey "bin-arg"))))))
 
+;;;; compare-and-set
+
+(expect [1 1 0 1 1 "final-val"]
+  (let [tk  (tkey "cas-k")
+        cas (partial car/compare-and-set tk)]
+    (wcar {}
+      (cas :redis/nx 0)
+      (cas 0         1)
+      (cas 22        23)  ; Will be ignored
+      (cas 1         nil) ; Serialized nil
+      (cas nil       "final-val")
+      (car/get tk))))
+
 ;;;; Benching
 
 (expect (benchmarks/bench {}))

@@ -132,8 +132,8 @@
 
 ;;; Lua scripts
 
-(def script-hash (memoize (fn [script]
-  (org.apache.commons.codec.digest.DigestUtils/shaHex (str script)))))
+(defn- str-sha [x] (org.apache.commons.codec.digest.DigestUtils/shaHex (str x)))
+(def script-hash (memoize (fn [script] (str-sha script))))
 
 (defn evalsha* "Like `evalsha` but automatically computes SHA1 hash for script."
   [script numkeys key & args] (apply evalsha (script-hash script) numkeys key args))
@@ -234,6 +234,45 @@
           (dotimes [_ 10000]
             (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
                      (ping) (ping) (ping)))))
+
+(defn compare-and-set
+  "Experimental.
+  This should _really_ be in Redis core but isn't, Ref http://goo.gl/M4Phx8."
+  [k old-val new-val]
+  (case old-val
+    ;; Could also do with
+    ;; sha = redis.sha1hex(nil) = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+    ;;    != redis.sha1hex(<serialized-nil>):
+    :redis/nx (setnx k new-val)
+    (if-let [sha ; Can only hash for string vals; only worth doing for large ones
+             (when (and (string? new-val) (> (count new-val) 40))
+               (str-sha new-val))]
+      (lua
+        "--
+        local get_val = redis.call('get', _:k)
+        local get_sha = redis.sha1hex(get_val)
+        if (get_sha == _:old-val-sha) then
+          redis.call('set', _:k, _:new-val)
+          return 1
+        else
+          return 0
+        end"
+        {:k k}
+        {:old-val-sha sha :new-val new-val})
+
+      (lua
+        "--
+        local get_val = redis.call('get', _:k)
+        if (get_val == _:old-val) then
+          redis.call('set', _:k, _:new-val)
+          return 1
+        else
+          return 0
+        end"
+        {:k k}
+        {:old-val old-val :new-val new-val}))))
+
+(comment (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx 1)))
 
 ;;;
 
@@ -448,7 +487,7 @@
 
      (protocol/with-context conn# ~@body
        (protocol/execute-requests (not :get-replies) nil))
-     (->Listener conn# handler-atom# state-atom#)))
+     (Listener. conn# handler-atom# state-atom#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent

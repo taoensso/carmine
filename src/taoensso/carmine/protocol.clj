@@ -58,7 +58,7 @@
 
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
-  [x] (if (encore/bytes? x) (->WrappedRaw x)
+  [x] (if (encore/bytes? x) (WrappedRaw. x)
         (throw (ex-info "Raw arg must be byte[]" {:x x}))))
 
 (defprotocol IRedisArg
@@ -184,7 +184,8 @@
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
            (if (== bulk-count -1) nil ; Nb was [] with < Carmine v3
-             (encore/repeatedly* bulk-count (get-unparsed-reply in req-opts))))
+             (encore/repeatedly-into* [] bulk-count
+               (get-unparsed-reply in req-opts))))
 
       (throw (ex-info (format "Server returned unknown reply type: %s"
                         (str reply-type))
@@ -320,6 +321,6 @@
 
 (defmacro with-context "Implementation detail."
   [conn & body]
-  `(binding [*context* (->Context ~conn (atom [nil []]))
+  `(binding [*context* (Context. ~conn (atom [nil []]))
              *parser*  nil]
      ~@body))
