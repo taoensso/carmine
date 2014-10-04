@@ -1,5 +1,10 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.7.1 / 2014 Oct 4
+
+ * **NEW**: Experimental `compare-and-set` fn.
+
+
 ## v2.7.0 / 2014 Aug 27
 
 > This is a significant release that **may be breaking** for those using custom connection pool options.
