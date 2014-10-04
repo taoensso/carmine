@@ -14,9 +14,9 @@ else
       lein test-auto
    else
       export TIMBRE_LOG_LEVEL="trace"
-      # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.tundra"
-      # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.main"
-      # lein with-profile +1.5,+test expectations "taoensso.carmine.tests.message-queue"
+      lein with-profile +1.5,+test expectations "taoensso.carmine.tests.tundra"
+      lein with-profile +1.5,+test expectations "taoensso.carmine.tests.main"
+      lein with-profile +1.5,+test expectations "taoensso.carmine.tests.message-queue"
       lein test-all
     fi
 fi

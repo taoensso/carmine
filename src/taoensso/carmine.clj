@@ -487,7 +487,7 @@
 
      (protocol/with-context conn# ~@body
        (protocol/execute-requests (not :get-replies) nil))
-     (->Listener conn# handler-atom# state-atom#)))
+     (Listener. conn# handler-atom# state-atom#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent

@@ -58,7 +58,7 @@
 
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
-  [x] (if (encore/bytes? x) (->WrappedRaw x)
+  [x] (if (encore/bytes? x) (WrappedRaw. x)
         (throw (ex-info "Raw arg must be byte[]" {:x x}))))
 
 (defprotocol IRedisArg
@@ -321,6 +321,6 @@
 
 (defmacro with-context "Implementation detail."
   [conn & body]
-  `(binding [*context* (->Context ~conn (atom [nil []]))
+  `(binding [*context* (Context. ~conn (atom [nil []]))
              *parser*  nil]
      ~@body))

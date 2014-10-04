@@ -416,7 +416,7 @@
             throttle-ms    200
             eoq-backoff-ms exp-backoff
             auto-start     true}}]]
-  (let [w (->Worker conn-opts qname (atom false)
+  (let [w (Worker. conn-opts qname (atom false)
             {:handler        handler
              :monitor        monitor
              :lock-ms        lock-ms
