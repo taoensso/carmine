@@ -236,8 +236,8 @@
                      (ping) (ping) (ping)))))
 
 (defn compare-and-set
-  "Experimental.
-  This should _really_ be in Redis core but isn't, Ref http://goo.gl/M4Phx8."
+  "Experimental. Workaround for this not being in Redis core,
+  Ref http://goo.gl/M4Phx8."
   [k old-val new-val]
   (case old-val
     ;; Could also do with
