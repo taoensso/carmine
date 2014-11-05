@@ -28,11 +28,14 @@
 (defrecord Connection [^Socket socket spec in out]
   IConnection
   (conn-alive? [this]
-    (if (:listener? spec) true ; TODO Waiting on Ref. http://goo.gl/LPhIO
-      (= "PONG" (try (->> (taoensso.carmine/ping)
-                          (protocol/with-replies)
-                          (protocol/with-context this))
-                     (catch Exception _)))))
+    (if (:listener? spec)
+      true ; TODO Waiting on Ref. http://goo.gl/LPhIO
+      (= "PONG"
+        (try
+          (protocol/with-context this
+            (protocol/with-replies
+              (taoensso.carmine/ping)))
+          (catch Exception _)))))
   (close-conn [_] (.close socket)))
 
 (defprotocol IConnectionPool
@@ -49,23 +52,27 @@
 
 ;;;
 
-(defn make-new-connection [{:keys [host port password timeout-ms db] :as spec}]
+(defn make-new-connection
+  [{:keys [host port password timeout-ms db] :as spec}]
   (let [buff-size 16384 ; Err on the large size since we're pooling
         socket (doto (Socket. ^String host ^Integer port)
                  (.setTcpNoDelay true)
                  (.setKeepAlive true)
                  (.setSoTimeout ^Integer (or timeout-ms 0)))
-        conn (Connection. socket spec (-> (.getInputStream socket)
-                                          (BufferedInputStream. buff-size)
-                                          (DataInputStream.))
-                                      (-> (.getOutputStream socket)
-                                          (BufferedOutputStream. buff-size)))]
-    (when password (->> (taoensso.carmine/auth password)
-                        (protocol/with-replies)
-                        (protocol/with-context conn)))
-    (when (and db (not (zero? db))) (->> (taoensso.carmine/select (str db))
-                                         (protocol/with-replies)
-                                         (protocol/with-context conn)))
+        conn (Connection. socket spec
+               (-> (.getInputStream socket)
+                   (BufferedInputStream. buff-size)
+                   (DataInputStream.))
+               (-> (.getOutputStream socket)
+                   (BufferedOutputStream. buff-size)))
+
+        db (when (and db (not (zero? db)) db))]
+
+    (when (or password db)
+      (protocol/with-context conn
+        (protocol/with-replies ; Discard replies
+          (when password (taoensso.carmine/auth password))
+          (when db       (taoensso.carmine/select (str db))))))
     conn))
 
 ;; A degenerate connection pool: gives pool-like interface for non-pooled conns
