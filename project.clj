@@ -14,7 +14,7 @@
   [[org.clojure/clojure         "1.4.0"]
    [com.taoensso/encore         "1.15.0"]
    [com.taoensso/timbre         "3.3.1"]
-   [com.taoensso/nippy          "2.6.3"]
+   [com.taoensso/nippy          "2.7.0"]
    [org.apache.commons/commons-pool2 "2.2"]
    [commons-codec/commons-codec "1.9"]
    [org.clojure/data.json       "0.2.5"]]
