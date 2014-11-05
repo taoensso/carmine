@@ -72,9 +72,9 @@
 
 ;;;; Misc
 
-(encore/defalias as-bool     encore/as-bool  "Returns x as bool, or nil.")
-(encore/defalias as-int      encore/as-int   "Returns x as integer, or nil.")
-(encore/defalias as-float    encore/as-float "Returns x as float, or nil.")
+(encore/defalias as-bool     encore/as-?bool)
+(encore/defalias as-int      encore/as-?int)
+(encore/defalias as-float    encore/as-?float)
 (encore/defalias as-map      encore/as-map)
 (encore/defalias parse       protocol/parse)
 (encore/defalias parser-comp protocol/parser-comp)
