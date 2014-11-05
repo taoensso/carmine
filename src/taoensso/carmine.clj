@@ -83,6 +83,11 @@
 (defmacro parse-bool    [& body] `(parse as-bool   ~@body))
 (defmacro parse-keyword [& body] `(parse keyword   ~@body))
 
+(defmacro parse-suppress "Experimental." [& body]
+  `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
+
+(comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
+
 (encore/defalias parse-raw   protocol/parse-raw)
 (encore/defalias parse-nippy protocol/parse-nippy)
 

@@ -249,6 +249,11 @@
 
 ;;;; Requests
 
+(def ^:const   suppressed-reply-kw :carmine/suppressed-reply)
+(def ^:private suppressed-reply-singleton-val nil)
+(defn-         suppressed-reply? [parsed-reply]
+  (encore/kw-identical? parsed-reply suppressed-reply-kw))
+
 (defn execute-requests
   "Implementation detail.
   Sends given/dynamic requests to given/dynamic Redis server and optionally
@@ -272,12 +277,32 @@
            (send-requests out requests)
            (when get-replies?
              (if (or (> nreqs 1) replies-as-pipeline?)
-               (mapv (fn [req] (get-parsed-reply in (:parser (meta req))))
-                     requests)
+               ;; (mapv (fn [req] (get-parsed-reply in (:parser (meta req))))
+               ;;   requests)
+               ;; Experimental (to enable reply filtering, etc.):
+               (let [parsed-replies
+                     (reduce
+                       (fn [v-acc req-in]
+                         (let [parsed-reply (get-parsed-reply in
+                                              (:parser (meta req-in)))]
+                           (if (suppressed-reply? parsed-reply)
+                             v-acc
+                             (conj v-acc parsed-reply))))
+                       []
+                       requests)
+                     nparsed-replies (count parsed-replies)]
+                 (if (or (> nparsed-replies 1) replies-as-pipeline?)
+                   parsed-replies
+                   (nth parsed-replies 0 suppressed-reply-singleton-val)))
                (let [req (nth requests 0)
                      one-reply (get-parsed-reply in (:parser (meta req)))]
-                 (if (instance? Exception one-reply) (throw one-reply)
-                   one-reply)))))))))
+                 ;; (if (instance? Exception one-reply) (throw one-reply)
+                 ;;   one-reply)
+                 ;; Experimental:
+                 (cond
+                   (instance? Exception one-reply) (throw one-reply)
+                   (suppressed-reply? one-reply) suppressed-reply-singleton-val
+                   :else one-reply)))))))))
 
 ;;;; General-purpose macros
 
