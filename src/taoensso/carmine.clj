@@ -66,7 +66,9 @@
   (wcar {} :as-pipeline (ping))
 
   (wcar {} (echo 1) (println (with-replies (ping))) (echo 2))
-  (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
+  (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2))
+  (def setupf (fn [_] (println "boo")))
+  (wcar {:spec {:conn-setup-fn setupf}}))
 
 ;;;; Misc
 
