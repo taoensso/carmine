@@ -46,7 +46,7 @@
 
      (try
        (let [response# (protocol/with-context conn#
-                         (protocol/with-replies* ~@sigs))]
+                         (protocol/with-replies ~@sigs))]
          (conns/release-conn pool# conn#)
          response#)
 
@@ -57,7 +57,7 @@
        (finally
          (when ?stashed-replies#
            (parse nil ; Already parsed on stashing
-             (mapv return ?stashed-replies#)))))))
+             (doseq [r# ?stashed-replies#] (return r#))))))))
 
 (comment
   (wcar {} (ping) "not-a-Redis-command" (ping))
@@ -352,12 +352,12 @@
          (wcar conn-opts# ; Hold 1 conn for all attempts
            (loop [idx# 1]
              (try (reset! prelude-result#
-                    (protocol/with-replies* :as-pipeline (do ~on-success)))
+                    (protocol/with-replies :as-pipeline (do ~on-success)))
                   (catch Throwable t# ; nb Throwable to catch assertions, etc.
                     ;; Always return conn to normal state:
-                    (protocol/with-replies* (discard))
+                    (protocol/with-replies (discard))
                     (throw t#)))
-             (let [r# (protocol/with-replies* (exec))]
+             (let [r# (protocol/with-replies (exec))]
                (if-not (nil? r#) ; => empty `multi` or watched key changed
                  ;; Was [] with < Carmine v3
                  (return r#)
@@ -366,11 +366,7 @@
                    (recur (inc idx#)))))))]
 
      [@prelude-result#
-      ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
-      (let [r# exec-result#]
-        (if (next r#) r#
-          (let [r# (nth r# 0)]
-            (if (instance? Exception r#) (throw r#) r#))))]))
+      (protocol/return-parsed-replies exec-result# (not :as-pipeline))]))
 
 (defmacro atomic
   "Alpha - subject to change!

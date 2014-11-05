@@ -30,7 +30,7 @@
   (conn-alive? [this]
     (if (:listener? spec) true ; TODO Waiting on Ref. http://goo.gl/LPhIO
       (= "PONG" (try (->> (taoensso.carmine/ping)
-                          (protocol/with-replies*)
+                          (protocol/with-replies)
                           (protocol/with-context this))
                      (catch Exception _)))))
   (close-conn [_] (.close socket)))
@@ -61,10 +61,10 @@
                                       (-> (.getOutputStream socket)
                                           (BufferedOutputStream. buff-size)))]
     (when password (->> (taoensso.carmine/auth password)
-                        (protocol/with-replies*)
+                        (protocol/with-replies)
                         (protocol/with-context conn)))
     (when (and db (not (zero? db))) (->> (taoensso.carmine/select (str db))
-                                         (protocol/with-replies*)
+                                         (protocol/with-replies)
                                          (protocol/with-context conn)))
     conn))
 

@@ -249,10 +249,24 @@
 
 ;;;; Requests
 
-(def ^:const   suppressed-reply-kw :carmine/suppressed-reply)
-(def ^:private suppressed-reply-singleton-val nil)
-(defn-         suppressed-reply? [parsed-reply]
+(def ^:const suppressed-reply-kw :carmine/suppressed-reply)
+(defn-       suppressed-reply? [parsed-reply]
   (encore/kw-identical? parsed-reply suppressed-reply-kw))
+
+(defn- return-parsed-reply "Implementation detail."
+  [preply] (if (instance? Exception preply) (throw preply) preply))
+
+(defn return-parsed-replies "Implementation detail."
+  [preplies as-pipeline?]
+  (let [nreplies (count preplies)]
+    (if (or (> nreplies 1) as-pipeline?)
+      preplies
+      (let [pr1 (nth preplies 0 nil ; nb fallback for possible suppressed replies
+                  )]
+        (return-parsed-reply pr1)))))
+
+(defn pull-requests "Implementation detail." [req-queue]
+  (-> (swap! req-queue (fn [[_ q]] [q []])) (nth 0)))
 
 (defn execute-requests
   "Implementation detail.
@@ -260,15 +274,13 @@
   blocks to receive the relevant queued (pipelined) parsed replies."
 
   ;; For use with standard dynamic bindings:
-  ([get-replies? replies-as-pipeline?]
+  ([get-replies? as-pipeline?]
      (let [{:keys [conn req-queue]} *context*
-           requests ; Atomically pull reqs from dynamic queue:
-           (-> (swap! req-queue (fn [[_ q]] [q []]))
-               (nth 0))]
-       (execute-requests conn requests get-replies? replies-as-pipeline?)))
+           requests (pull-requests req-queue)]
+       (execute-requests conn requests get-replies? as-pipeline?)))
 
   ;; For use with Cluster, etc.:
-  ([conn requests get-replies? replies-as-pipeline?]
+  ([conn requests get-replies? as-pipeline?]
      (let [nreqs (count requests)]
        (when (pos? nreqs)
          (let [{:keys [in out]} conn]
@@ -276,10 +288,7 @@
            ;; (println "Sending requests: " requests)
            (send-requests out requests)
            (when get-replies?
-             (if (or (> nreqs 1) replies-as-pipeline?)
-               ;; (mapv (fn [req] (get-parsed-reply in (:parser (meta req))))
-               ;;   requests)
-               ;; Experimental (to enable reply filtering, etc.):
+             (if (or (> nreqs 1) as-pipeline?)
                (let [parsed-replies
                      (reduce
                        (fn [v-acc req-in]
@@ -291,30 +300,42 @@
                        []
                        requests)
                      nparsed-replies (count parsed-replies)]
-                 (if (or (> nparsed-replies 1) replies-as-pipeline?)
-                   parsed-replies
-                   (nth parsed-replies 0 suppressed-reply-singleton-val)))
+                 (return-parsed-replies parsed-replies as-pipeline?))
                (let [req (nth requests 0)
                      one-reply (get-parsed-reply in (:parser (meta req)))]
-                 ;; (if (instance? Exception one-reply) (throw one-reply)
-                 ;;   one-reply)
-                 ;; Experimental:
-                 (cond
-                   (instance? Exception one-reply) (throw one-reply)
-                   (suppressed-reply? one-reply) suppressed-reply-singleton-val
-                   :else one-reply)))))))))
+                 (return-parsed-reply one-reply)))))))))
 
 ;;;; General-purpose macros
 
-(defmacro with-replies*
-  "Implementation detail.
-  Light, fresh-context version of `with-replies`. Useful for consumers that'll
-  be in complete control of the connection/context."
-  {:arglists '([:as-pipeline & body] [& body])}
-  [& [s1 & sn :as sigs]]
-  (let [as-pipeline? (identical? s1 :as-pipeline)
-        body         (if as-pipeline? sn sigs)]
-    `(do ~@body (execute-requests :get-replies ~as-pipeline?))))
+(defn with-replies* "Implementation detail."
+  [body-fn as-pipeline?]
+  (let [{:keys [conn req-queue]} *context*
+        stashed-reqs (pull-requests req-queue)]
+    (if (empty? stashed-reqs) ; Common case
+      (let [_        (body-fn)
+            new-reqs (pull-requests req-queue)]
+        (execute-requests conn new-reqs :get-replies as-pipeline?))
+      (let [stash-marker (Object.)
+            _            (parse nil (return stash-marker))
+            ?throwable   (try (body-fn) nil (catch Throwable t t))
+            new-reqs     (pull-requests req-queue)
+            all-reqs     (into stashed-reqs new-reqs)
+            all-replies  (execute-requests conn all-reqs :get-replies
+                           :as-pipeline)
+            marker-idx   (.indexOf ^clojure.lang.PersistentVector
+                           all-replies stash-marker)
+
+            [stashed-replies requested-replies]
+            [(subvec all-replies 0 marker-idx)
+             (subvec all-replies (inc marker-idx))]]
+
+        ;; Restore any stashed replies to underlying stateful context:
+        (parse nil ; We already parsed on stashing
+          (doseq [r stashed-replies] (return r)))
+
+        (if ?throwable
+          (throw ?throwable)
+          (return-parsed-replies requested-replies as-pipeline?))))))
 
 (defmacro with-replies
   "Alpha - subject to change.
@@ -331,18 +352,9 @@
   leaking into your internal logic."
   {:arglists '([:as-pipeline & body] [& body])}
   [& [s1 & sn :as sigs]]
-  (let [as-pipeline? (identical? s1 :as-pipeline)
+  (let [as-pipeline? (encore/kw-identical? s1 :as-pipeline)
         body         (if as-pipeline? sn sigs)]
-    `(let [?stashed-replies# (execute-requests :get-replies :as-pipeline)]
-       (try
-         ;; This'll be returned to `with-replies` caller:
-         (do ~@body (execute-requests :get-replies ~as-pipeline?))
-
-         ;; Then we'll restore any stashed replies to underlying context:
-         (finally
-           (when ?stashed-replies#
-             (parse nil ; Already parsed on stashing
-               (mapv return ?stashed-replies#))))))))
+    `(with-replies* (fn [] ~@body) ~as-pipeline?)))
 
 (defmacro with-context "Implementation detail."
   [conn & body]
