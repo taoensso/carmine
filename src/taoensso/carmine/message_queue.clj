@@ -46,10 +46,20 @@
 (def qkey "Prefixed queue key" (memoize (partial car/key :carmine :mq)))
 
 (defn clear-queues [conn-opts & qnames]
-  (wcar conn-opts
-    (doseq [qname qnames]
-      (when-let [qks (seq (wcar conn-opts (car/keys (qkey qname :*))))]
-        (apply car/del qks)))))
+  (when (seq qnames)
+    (wcar conn-opts
+      (doseq [qname qnames]
+        (let [qk (partial qkey qname)]
+          (car/del
+            (qk :messages)
+            (qk :locks)
+            (qk :backoffs)
+            (qk :nattempts)
+            (qk :mid-circle)
+            (qk :done)
+            (qk :requeue)
+            (qk :eoq-backoff?)
+            (qk :ndry-runs)))))))
 
 (defn queue-status [conn-opts qname]
   (let [qk (partial qkey qname)]
