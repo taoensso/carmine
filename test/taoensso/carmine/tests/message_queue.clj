@@ -21,13 +21,10 @@
   (let [r (mq/dequeue qname (merge {:eoq-backoff-ms 175} opts))]
     (Thread/sleep 205) r))
 
-(defmacro expect* [n e a]
-  `(expect e (do (println (str ~n ":" (tq-status))) ~a)))
+;; (defmacro expect* [n e a]
+;;   `(expect e (do (println (str ~n ":" (tq-status))) ~a)))
 
-(expect (do (println
-              (str "Running message queue tests\n"
-                   "NB: These don't seem to work properly from the command line (Ref. http://goo.gl/QZtEzn)"))
-            true))
+(expect (do (println (str "Running message queue tests")) true))
 
 ;;;; Basic enqueuing & dequeuing
 (expect "eoq-backoff"    (do (clear-tq) (wcar* (dequeue* tq))))
