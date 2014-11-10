@@ -42,14 +42,15 @@
   ^bytes [^String s] (.getBytes s "UTF-8"))
 
 ;;; Request delimiters
-(def ^bytes bs-crlf (bytestring "\r\n"))
+(def ^{:tag 'bytes} bs-crlf (bytestring "\r\n"))
 (def ^:const ^Integer bs-* (int (first (bytestring "*"))))
 (def ^:const ^Integer bs-$ (int (first (bytestring "$"))))
 
 ;; Carmine-only markers that'll be used _within_ bulk data to indicate that
 ;; the data requires special reply handling
-(def ^bytes bs-bin (bytestring "\u0000<")) ; Binary data marker
-(def ^bytes bs-clj (bytestring "\u0000>")) ; Frozen data marker
+(def ^{:tag 'bytes} bs-bin (bytestring "\u0000<")) ; Binary data marker
+(def ^{:tag 'bytes} bs-clj (bytestring "\u0000>")) ; Frozen data marker
+(def ^{:tag 'bytes} bs-bin (bytestring "\u0000<"))
 
 (defn- ensure-reserved-first-byte [^bytes ba]
   (when (= (first ba) 0)
@@ -88,12 +89,13 @@
 (defmacro ^:private send-$    [out] `(.write ~out bs-$))
 (defmacro ^:private send-crlf [out] `(.write ~out bs-crlf 0 2))
 
-(defn- send-requests [^BufferedOutputStream out requests]
+(defn- send-requests
   "Sends requests to Redis server using its byte string protocol:
     *<no. of args>     crlf
     [$<size of arg N>  crlf
       <arg data>       crlf ...]"
   ;; {:pre [(vector? requests)]}
+  [^BufferedOutputStream out requests]
   (doseq [req-args requests]
     (when (pos? (count req-args)) ; [] req is dummy req for `return`
       (let [bs-args (:bytestring-req (meta req-args))]

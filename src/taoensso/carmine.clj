@@ -139,7 +139,7 @@
 
 ;;; Lua scripts
 
-(defn- str-sha [x] (org.apache.commons.codec.digest.DigestUtils/shaHex (str x)))
+(defn- str-sha [x] (org.apache.commons.codec.digest.DigestUtils/sha1Hex (str x)))
 (def script-hash (memoize (fn [script] (str-sha script))))
 
 (defn evalsha* "Like `evalsha` but automatically computes SHA1 hash for script."
