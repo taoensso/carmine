@@ -67,7 +67,7 @@
                (-> (.getOutputStream socket)
                    (BufferedOutputStream. buff-size)))
 
-        db (when (and db (not (zero? db)) db))]
+        db (when (and db (not (zero? db))) db)]
 
     (when (or password db conn-setup-fn)
       (protocol/with-context conn
