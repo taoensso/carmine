@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.8.0-SNAPSHOT"
+(defproject com.taoensso/carmine "2.8.0-RC1"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
@@ -11,19 +11,19 @@
                 *assert* true}
 
   :dependencies
-  [[org.clojure/clojure         "1.4.0"]
-   [com.taoensso/encore         "1.16.0"]
-   [com.taoensso/timbre         "3.3.1"]
-   [com.taoensso/nippy          "2.7.0"]
+  [[org.clojure/clojure              "1.4.0"]
+   [com.taoensso/encore              "1.16.0"]
+   [com.taoensso/timbre              "3.3.1"]
+   [com.taoensso/nippy               "2.7.0"]
    [org.apache.commons/commons-pool2 "2.2"]
-   [commons-codec/commons-codec "1.10"]
-   [org.clojure/data.json       "0.2.5"]]
+   [commons-codec/commons-codec      "1.10"]
+   [org.clojure/data.json            "0.2.5"]]
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
    :server-jvm {:jvm-opts ^:replace ["-server"]}
-   :1.5  {:dependencies [[org.clojure/clojure "1.5.1"]]}
-   :1.6  {:dependencies [[org.clojure/clojure "1.6.0"]]}
+   :1.5  {:dependencies [[org.clojure/clojure     "1.5.1"]]}
+   :1.6  {:dependencies [[org.clojure/clojure     "1.6.0"]]}
    :test {:dependencies [[expectations            "2.0.13"]
                          [org.clojure/test.check  "0.6.1"]
                          [com.taoensso/faraday    "1.5.0"]

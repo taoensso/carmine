@@ -1,10 +1,11 @@
 **[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contrib](#contact--contributing) | current [Break Version][]:
 
 ```clojure
-[com.taoensso/carmine "2.7.1"] ; Stable
+[com.taoensso/carmine "2.7.1"]     ; Stable
+[com.taoensso/carmine "2.8.0-RC1"] ; Dev
 ```
 
-v2.7 is a significant release that **may be breaking** for folks using custom connection pooling options. Please see the [CHANGELOG][] for details.
+Please see the [CHANGELOG][] for upgrade details.
 
 # Carmine, a Clojure Redis client & message queue
 
