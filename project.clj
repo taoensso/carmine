@@ -12,11 +12,11 @@
 
   :dependencies
   [[org.clojure/clojure         "1.4.0"]
-   [com.taoensso/encore         "1.15.0"]
+   [com.taoensso/encore         "1.16.0"]
    [com.taoensso/timbre         "3.3.1"]
    [com.taoensso/nippy          "2.7.0"]
    [org.apache.commons/commons-pool2 "2.2"]
-   [commons-codec/commons-codec "1.9"]
+   [commons-codec/commons-codec "1.10"]
    [org.clojure/data.json       "0.2.5"]]
 
   :profiles
@@ -25,7 +25,7 @@
    :1.5  {:dependencies [[org.clojure/clojure "1.5.1"]]}
    :1.6  {:dependencies [[org.clojure/clojure "1.6.0"]]}
    :test {:dependencies [[expectations            "2.0.13"]
-                         [org.clojure/test.check  "0.5.9"]
+                         [org.clojure/test.check  "0.6.1"]
                          [com.taoensso/faraday    "1.5.0"]
                          [clj-aws-s3              "0.3.10"]
                          [ring/ring-core          "1.3.1"]]
