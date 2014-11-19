@@ -80,23 +80,11 @@
 
 ;;;;
 
-(defn- extend-exists
+(def ^:private extend-exists
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
-  [ttl-ms keys]
-  (car/lua
-    "local result = {}
-     local ttl_ms = tonumber(ARGV[1])
-     for i,k in pairs(KEYS) do
-       if ttl_ms > 0 and redis.call('pttl', k) > 0 then
-         result[i] = redis.call('pexpire', k, ttl_ms)
-       else
-         result[i] = redis.call('exists', k)
-       end
-     end
-     return result"
-    keys
-    [(or ttl-ms 0)]))
+  (let [script (encore/slurp-resource "lua/tundra/extend_exists.lua")]
+    (fn [ttl-ms keys] (car/lua script keys [(or ttl-ms 0)]))))
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
 
