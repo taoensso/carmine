@@ -1,10 +1,11 @@
 **[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contrib](#contact--contributing) | current [Break Version][]:
 
 ```clojure
-[com.taoensso/carmine "2.7.1"] ; Stable
+[com.taoensso/carmine "2.7.1"]     ; Stable
+[com.taoensso/carmine "2.8.0-RC1"] ; Dev
 ```
 
-v2.7 is a significant release that **may be breaking** for folks using custom connection pooling options. Please see the [CHANGELOG][] for details.
+Please see the [CHANGELOG][] for upgrade details.
 
 # Carmine, a Clojure Redis client & message queue
 
@@ -18,7 +19,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 
 ## What's in the box™?
   * Small, uncomplicated **all-Clojure** library.
-  * **Fully documented**, [up-to-date API](https://github.com/ptaoussanis/carmine/blob/master/src/commands.list), with full support for the latest Redis versions.
+  * **Fully documented**, [up-to-date API](https://github.com/ptaoussanis/carmine/blob/master/src/commands/commands.list), with full support for the latest Redis versions.
   * **Great performance**.
   * Industrial strength **connection pooling**.
   * Composable, **first-class command functions**.

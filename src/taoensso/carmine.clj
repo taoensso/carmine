@@ -46,7 +46,7 @@
 
      (try
        (let [response# (protocol/with-context conn#
-                         (protocol/with-replies* ~@sigs))]
+                         (protocol/with-replies ~@sigs))]
          (conns/release-conn pool# conn#)
          response#)
 
@@ -57,7 +57,7 @@
        (finally
          (when ?stashed-replies#
            (parse nil ; Already parsed on stashing
-             (mapv return ?stashed-replies#)))))))
+             (doseq [r# ?stashed-replies#] (return r#))))))))
 
 (comment
   (wcar {} (ping) "not-a-Redis-command" (ping))
@@ -66,13 +66,15 @@
   (wcar {} :as-pipeline (ping))
 
   (wcar {} (echo 1) (println (with-replies (ping))) (echo 2))
-  (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2)))
+  (wcar {} (echo 1) (println (with-replies :as-pipeline (ping))) (echo 2))
+  (def setupf (fn [_] (println "boo")))
+  (wcar {:spec {:conn-setup-fn setupf}}))
 
 ;;;; Misc
 
-(encore/defalias as-bool     encore/as-bool  "Returns x as bool, or nil.")
-(encore/defalias as-int      encore/as-int   "Returns x as integer, or nil.")
-(encore/defalias as-float    encore/as-float "Returns x as float, or nil.")
+(encore/defalias as-bool     encore/as-?bool)
+(encore/defalias as-int      encore/as-?int)
+(encore/defalias as-float    encore/as-?float)
 (encore/defalias as-map      encore/as-map)
 (encore/defalias parse       protocol/parse)
 (encore/defalias parser-comp protocol/parser-comp)
@@ -82,6 +84,11 @@
 (defmacro parse-float   [& body] `(parse as-float  ~@body))
 (defmacro parse-bool    [& body] `(parse as-bool   ~@body))
 (defmacro parse-keyword [& body] `(parse keyword   ~@body))
+
+(defmacro parse-suppress "Experimental." [& body]
+  `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
+
+(comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
 
 (encore/defalias parse-raw   protocol/parse-raw)
 (encore/defalias parse-nippy protocol/parse-nippy)
@@ -132,7 +139,7 @@
 
 ;;; Lua scripts
 
-(defn- str-sha [x] (org.apache.commons.codec.digest.DigestUtils/shaHex (str x)))
+(defn- str-sha [x] (org.apache.commons.codec.digest.DigestUtils/sha1Hex (str x)))
 (def script-hash (memoize (fn [script] (str-sha script))))
 
 (defn evalsha* "Like `evalsha` but automatically computes SHA1 hash for script."
@@ -236,8 +243,8 @@
                      (ping) (ping) (ping)))))
 
 (defn compare-and-set
-  "Experimental.
-  This should _really_ be in Redis core but isn't, Ref http://goo.gl/M4Phx8."
+  "Experimental. Workaround for this not being in Redis core,
+  Ref http://goo.gl/M4Phx8."
   [k old-val new-val]
   (case old-val
     ;; Could also do with
@@ -347,12 +354,12 @@
          (wcar conn-opts# ; Hold 1 conn for all attempts
            (loop [idx# 1]
              (try (reset! prelude-result#
-                    (protocol/with-replies* :as-pipeline (do ~on-success)))
+                    (protocol/with-replies :as-pipeline (do ~on-success)))
                   (catch Throwable t# ; nb Throwable to catch assertions, etc.
                     ;; Always return conn to normal state:
-                    (protocol/with-replies* (discard))
+                    (protocol/with-replies (discard))
                     (throw t#)))
-             (let [r# (protocol/with-replies* (exec))]
+             (let [r# (protocol/with-replies (exec))]
                (if-not (nil? r#) ; => empty `multi` or watched key changed
                  ;; Was [] with < Carmine v3
                  (return r#)
@@ -361,11 +368,7 @@
                    (recur (inc idx#)))))))]
 
      [@prelude-result#
-      ;; Mimic normal `get-parsed-replies` behaviour here re: vectorized replies:
-      (let [r# exec-result#]
-        (if (next r#) r#
-          (let [r# (nth r# 0)]
-            (if (instance? Exception r#) (throw r#) r#))))]))
+      (protocol/return-parsed-replies exec-result# (not :as-pipeline))]))
 
 (defmacro atomic
   "Alpha - subject to change!

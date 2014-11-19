@@ -7,6 +7,7 @@
             [taoensso.carmine.protocol   :as protocol]
             [taoensso.carmine.benchmarks :as benchmarks]))
 
+;; (remove-ns 'taoensso.carmine.tests.main)
 (comment (test/run-tests '[taoensso.carmine.tests.main]))
 
 (defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
@@ -405,9 +406,9 @@
 
 ;;;; `atomic`
 
-(expect Exception (car/atomic {} 1)) ; Missing multi
-(expect Exception (car/atomic {} 1 (car/multi))) ; Empty multi
-(expect Exception (car/atomic {} 1 (car/multi) (car/discard))) ; Like missing multi
+(expect Exception    (car/atomic {} 1)) ; Missing multi
+(expect [["OK"] nil] (car/atomic {} 1 (car/multi))) ; Empty multi
+(expect Exception    (car/atomic {} 1 (car/multi) (car/discard))) ; Like missing multi
 
 (expect [["OK" "QUEUED"] "PONG"] (car/atomic {} 1 (car/multi) (car/ping)))
 (expect [["OK" "QUEUED" "QUEUED"] ["PONG" "PONG"]]

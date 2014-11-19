@@ -23,10 +23,10 @@
        (when (> max-udt (System/currentTimeMillis))
          (if (-> (car/lua
                   "if redis.call('setnx', _:lkey, _:uuid) == 1 then
-                    redis.call('pexpire', _:lkey, _:timeout-ms)
-                    return 1
+                    redis.call('pexpire', _:lkey, _:timeout-ms);
+                    return 1;
                   else
-                    return 0
+                    return 0;
                   end"
                   {:lkey       (lkey lock-name)}
                   {:uuid       uuid
@@ -44,10 +44,10 @@
     (car/parse-bool
      (car/lua
       "if redis.call('get', _:lkey) == _:uuid then
-         redis.call('del', _:lkey)
-         return 1
+         redis.call('del', _:lkey);
+         return 1;
        else
-         return 0
+         return 0;
        end"
       {:lkey (lkey lock-name)}
       {:uuid owner-uuid}))))
