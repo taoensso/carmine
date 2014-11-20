@@ -248,18 +248,25 @@
   (let [script-val (encore/slurp-resource "lua/misc/cas_val.lua")
         script-sha (encore/slurp-resource "lua/misc/cas_sha.lua")]
     (fn [k old-val new-val]
-      (case old-val
+      (if (= old-val :redis/nx)
         ;; Could also do with
         ;; sha = redis.sha1hex(nil) = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
         ;;    != redis.sha1hex(<serialized-nil>):
-        :redis/nx (setnx k new-val)
-        (if-let [sha ; Can only hash for string vals; only worth doing for large ones
-                 (when (and (string? new-val) (> (count new-val) 40))
-                   (str-sha new-val))]
-          (lua script-sha {:k k} {:old-val-sha sha :new-val new-val})
-          (lua script-val {:k k} {:old-val old-val :new-val new-val}))))))
+        (setnx k new-val)
+        (let [bs-old-val    (protocol/coerce-bs old-val)
+              just-use-val? (< (count bs-old-val) 40) #_false
+              ?sha
+              (when-not just-use-val?
+                (org.apache.commons.codec.digest.DigestUtils/sha1Hex
+                  ^bytes bs-old-val))]
+          (if-let [sha ?sha]
+            (lua script-sha {:k k} {:old-val-sha sha :new-val new-val})
+            (lua script-val {:k k} {:old-val old-val :new-val new-val})))))))
 
-(comment (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx 1)))
+(comment
+  (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx [:foo]))
+  (wcar {} (compare-and-set "cas-k" [:foo] [:bar]))
+  (wcar {} (get "cas-k")))
 
 ;;;
 
