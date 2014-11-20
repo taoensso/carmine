@@ -245,8 +245,7 @@
 (def compare-and-set
   "Experimental. Workaround for this not being in Redis core,
   Ref http://goo.gl/M4Phx8."
-  (let [script-val (encore/slurp-resource "lua/misc/cas_val.lua")
-        script-sha (encore/slurp-resource "lua/misc/cas_sha.lua")]
+  (let [script (encore/slurp-resource "lua/cas.lua")]
     (fn [k old-val new-val]
       (if (= old-val :redis/nx)
         ;; Could also do with
@@ -254,14 +253,16 @@
         ;;    != redis.sha1hex(<serialized-nil>):
         (setnx k new-val)
         (let [bs-old-val    (protocol/coerce-bs old-val)
-              just-use-val? (< (count bs-old-val) 40) #_false
+              just-use-val? (< (count bs-old-val) 40) #_false #_true
               ?sha
               (when-not just-use-val?
                 (org.apache.commons.codec.digest.DigestUtils/sha1Hex
                   ^bytes bs-old-val))]
-          (if-let [sha ?sha]
-            (lua script-sha {:k k} {:old-val-sha sha :new-val new-val})
-            (lua script-val {:k k} {:old-val old-val :new-val new-val})))))))
+          (lua script
+            {:k            k}
+            {:old-val-?sha (if-not ?sha ""   ?sha)
+             :old-?val     (if-not ?sha old-val "")
+             :new-val      new-val}))))))
 
 (comment
   (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx [:foo]))
