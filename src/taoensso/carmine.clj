@@ -242,44 +242,32 @@
             (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
                      (ping) (ping) (ping)))))
 
-(defn compare-and-set
+(def compare-and-set
   "Experimental. Workaround for this not being in Redis core,
   Ref http://goo.gl/M4Phx8."
-  [k old-val new-val]
-  (case old-val
-    ;; Could also do with
-    ;; sha = redis.sha1hex(nil) = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
-    ;;    != redis.sha1hex(<serialized-nil>):
-    :redis/nx (setnx k new-val)
-    (if-let [sha ; Can only hash for string vals; only worth doing for large ones
-             (when (and (string? new-val) (> (count new-val) 40))
-               (str-sha new-val))]
-      (lua
-        "--
-        local get_val = redis.call('get', _:k)
-        local get_sha = redis.sha1hex(get_val)
-        if (get_sha == _:old-val-sha) then
-          redis.call('set', _:k, _:new-val)
-          return 1
-        else
-          return 0
-        end"
-        {:k k}
-        {:old-val-sha sha :new-val new-val})
+  (let [script (encore/slurp-resource "lua/cas.lua")]
+    (fn [k old-val new-val]
+      (if (= old-val :redis/nx)
+        ;; Could also do with
+        ;; sha = redis.sha1hex(nil) = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+        ;;    != redis.sha1hex(<serialized-nil>):
+        (setnx k new-val)
+        (let [bs-old-val    (protocol/coerce-bs old-val)
+              just-use-val? (< (count bs-old-val) 40) #_false #_true
+              ?sha
+              (when-not just-use-val?
+                (org.apache.commons.codec.digest.DigestUtils/sha1Hex
+                  ^bytes bs-old-val))]
+          (lua script
+            {:k            k}
+            {:old-val-?sha (if-not ?sha ""   ?sha)
+             :old-?val     (if-not ?sha old-val "")
+             :new-val      new-val}))))))
 
-      (lua
-        "--
-        local get_val = redis.call('get', _:k)
-        if (get_val == _:old-val) then
-          redis.call('set', _:k, _:new-val)
-          return 1
-        else
-          return 0
-        end"
-        {:k k}
-        {:old-val old-val :new-val new-val}))))
-
-(comment (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx 1)))
+(comment
+  (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx [:foo]))
+  (wcar {} (compare-and-set "cas-k" [:foo] [:bar]))
+  (wcar {} (get "cas-k")))
 
 ;;;
 

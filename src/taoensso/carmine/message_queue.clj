@@ -1,19 +1,20 @@
 (ns taoensso.carmine.message-queue
-  "Carmine-backed Clojure message queue. All heavy lifting by Redis (2.6+).
-  Simple implementation. Very simple API. Reliable. Fast.
+  "Carmine-backed Clojure message queue. All heavy lifting by Redis.
+  Message circle architecture used here is simple, reliable, and has
+  reasonable throughput but at best mediocre latency.
 
   Redis keys:
-    * carmine:mq:<qname>:messages     -> hash, {mid mcontent}.
-    * carmine:mq:<qname>:locks        -> hash, {mid lock-expiry-time}.
-    * carmine:mq:<qname>:backoffs     -> hash, {mid backoff-expiry-time}.
-    * carmine:mq:<qname>:nattempts    -> hash, {mid attempt-count}.
-    * carmine:mq:<qname>:mid-circle   -> list, rotating list of mids.
-    * carmine:mq:<qname>:done         -> set, awaiting gc, requeue, etc.
-    * carmine:mq:<qname>:requeue      -> set, for `allow-requeue?` option.
-    * carmine:mq:<qname>:eoq-backoff? -> ttl flag, used for queue-wide (every-worker)
-                                         polling backoff.
-    * carmine:mq:<qname>:ndry-runs    -> int, number of times worker(s) have burnt
-                                         through queue w/o work to do.
+    * carmine:mq:<qname>:messages     - hash, {mid mcontent}.
+    * carmine:mq:<qname>:locks        - hash, {mid lock-expiry-time}.
+    * carmine:mq:<qname>:backoffs     - hash, {mid backoff-expiry-time}.
+    * carmine:mq:<qname>:nattempts    - hash, {mid attempt-count}.
+    * carmine:mq:<qname>:mid-circle   - list, rotating list of mids.
+    * carmine:mq:<qname>:done         - set, awaiting gc, requeue, etc.
+    * carmine:mq:<qname>:requeue      - set, for `allow-requeue?` option.
+    * carmine:mq:<qname>:eoq-backoff? - ttl flag, used for queue-wide
+                                        (every-worker) polling backoff.
+    * carmine:mq:<qname>:ndry-runs    - int, number of times worker(s) have
+                                        burnt through queue w/o work to do.
 
   Ref. http://antirez.com/post/250 for basic implementation details."
   {:author "Peter Taoussanis"}
@@ -22,20 +23,28 @@
             [taoensso.carmine :as car :refer (wcar)]
             [taoensso.encore  :as encore]))
 
-;; TODO Redis 2.8+ Pub/Sub notifications could be used to more efficiently
-;; coordinate worker backoffs. This'd allow us to essentially go from a polling
-;; design to an evented design even w/o the need for a Lua brpoplpush.
-;;
-;; Note that we'd want the Pub/Sub notifier _in addition to_ the current
-;; rpoplpush design: both for atomicity and reliability (Pub/Sub doesn't
-;; currently have reliability guarantees).
+;;;; Ideas to avoid polling
+;; 1. Lua brpoplpush - doesn't currently exist, unlikely to in future.
+;; 2. Redis 2.8+ Pub/Sub keyspace notifications? Maybe with reliable Pub/Sub?
+;; 3. Possible 2-circle (or alternative) designs?
+;; 4. Leave it as is since we'd want a polling worker anyway for gc, lock
+;;    checks, etc.
 
 ;;;; Public utils
+
+(defn get-expected-throughput
+  "Returns ~n msgs handled per second, excluding gc + queue maintenance."
+  [nthreads ?throttle-ms]
+  (* 0.5 nthreads (/ 1000 (or ?throttle-ms 0.5))))
+
+(comment
+  (get-expected-throughput 1 100)
+  (get-expected-throughput 10 nil))
 
 (defn exp-backoff "Returns binary exponential backoff value."
   [attempt & [{:keys [factor min max] :or {factor 2200}}]]
   (let [binary-exp (Math/pow 2 (dec attempt))
-        time (* (+ binary-exp (rand binary-exp)) 0.5 factor)]
+        time       (* (+ binary-exp (rand binary-exp)) 0.5 factor)]
     (long (let [time (if min (clojure.core/max min time) time)
                 time (if max (clojure.core/min max time) time)]
             time))))
@@ -104,14 +113,12 @@
 
 (def enqueue
   "Pushes given message (any Clojure datatype) to named queue and returns unique
-  message id or {:carmine.mq/error <message-status>}.
-  Options:
-    unique-message-id  - Specify an explicit message id (e.g. message hash) to
-                         perform a de-duplication check. If unspecified, a unique
-                         message id will be auto-generated.
-    allow-requeue?     - Alpha - subject to change.
-                         When true, allow buffered escrow-requeue for a message
-                         in the :locked or :done-with-backoff state."
+  message id or {:carmine.mq/error <message-status>}. Options:
+    * unique-message-id  - Specify an explicit message id (e.g. message hash) to
+                           perform a de-duplication check. If unspecified, a
+                           unique id will be auto-generated.
+    * allow-requeue?     - When true, allow buffered escrow-requeue for a
+                           message in the :locked or :done-with-backoff state."
   (let [script (encore/slurp-resource "lua/mq/enqueue.lua")]
     (fn [qname message & [unique-message-id allow-requeue?]]
       (car/parse
@@ -178,6 +185,7 @@
   (when (and poll-reply (not= poll-reply "eoq-backoff"))
     (let [qk   (partial qkey qname)
           done (fn [status mid & [backoff-ms]]
+                 ;; TODO Switch to Lua script
                  (car/atomic conn-opts 100
                    (car/watch (qk :requeue))
                    (let [requeue?
@@ -257,7 +265,8 @@
                                     10))
                               (handle1 conn-opts qname handler poll-reply))
 
-                            (when throttle-ms (Thread/sleep throttle-ms)))
+                            (when (and throttle-ms (> throttle-ms 0))
+                              (Thread/sleep throttle-ms)))
                           nil ; Successful worker loop
                           (catch Throwable t t))]
 
@@ -275,25 +284,25 @@
   the prescribed size. A backoff timeout can be provided to rate-limit this
   warning."
   [qname max-circle-size warn-backoff-ms]
-  (let [udt-last-warning (atom nil)]
+  (let [udt-last-warning_ (atom nil)]
     (fn [{:keys [mid-circle-size]}]
       (let [instant (System/currentTimeMillis)]
         (when (and (> mid-circle-size max-circle-size)
-                   (> (- instant (or @udt-last-warning 0))
+                   (> (- instant (or @udt-last-warning_ 0))
                       (or warn-backoff-ms 0)))
-          (reset! udt-last-warning instant)
+          (reset! udt-last-warning_ instant)
           (timbre/warnf "Message queue size warning: %s (mid-circle-size: %s)"
                         qname max-circle-size))))))
 
 (defn worker
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
   named queue. Options:
-   :handler        - (fn [{:keys [mid message attempt]}]) that throws an exception
+   :handler        - (fn [{:keys [mid message attempt]}]) that throws an ex
                      or returns {:status     <#{:success :error :retry}>
                                  :throwable  <Throwable>
                                  :backoff-ms <retry-or-dedupe-backoff-ms}.
-   :monitor        - (fn [{:keys [mid-circle-size ndry-runs poll-reply]}]) called
-                     on each worker loop iteration. Useful for queue
+   :monitor        - (fn [{:keys [mid-circle-size ndry-runs poll-reply]}])
+                     called on each worker loop iteration. Useful for queue
                      monitoring/logging. See also `monitor-fn`.
    :lock-ms        - Max time handler may keep a message before handler
                      considered fatally stalled and message re-queued. Must be
@@ -306,10 +315,9 @@
   [conn-opts qname &
    [{:keys [handler monitor lock-ms eoq-backoff-ms nthreads
             throttle-ms auto-start] :as opts
-     :or   {handler (fn [args] (timbre/infof "%s" args)
-                      {:status :success})
+     :or   {handler (fn [args] (timbre/infof "%s" args) {:status :success})
             monitor (monitor-fn qname 1000 (* 1000 60 60 6))
-            lock-ms        (* 1000 60 60)
+            lock-ms        (encore/ms :hours 1)
             nthreads       1
             throttle-ms    200
             eoq-backoff-ms exp-backoff
