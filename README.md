@@ -1,11 +1,8 @@
 **[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contrib](#contact--contributing) | current [Break Version][]:
 
 ```clojure
-[com.taoensso/carmine "2.7.1"]     ; Stable
-[com.taoensso/carmine "2.8.0-RC1"] ; Dev
+[com.taoensso/carmine "2.8.0"] ; See CHANGELOG for upgrade details
 ```
-
-Please see the [CHANGELOG][] for upgrade details.
 
 # Carmine, a Clojure Redis client & message queue
 

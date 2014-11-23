@@ -1,12 +1,13 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
-## v2.8.0-RC1 / 2014 Nov 19
+## v2.8.0 / 2014 Nov 23
 
 > This is a major but backwards-compatible update focused on performance tuning + general housekeeping.
 
  * **CHANGE** **NB**: Upgraded to Nippy v2.7.0 for serialized data perf+size improvements. See Nippy's [changelog](https://github.com/ptaoussanis/nippy/releases/tag/v2.7.0-RC1) for details.
  * **CHANGE**: Lua scripts are now separated from Clojure code for syntax highlighting + easier debugging.
- * **CHANGE** [#108]: Lua scripts now use one less TCP roundtrip.
+ * **CHANGE** [#108]: result stashing (notably Lua scripts) now uses one less TCP roundtrip.
+ * **CHANGE**: `compare-and-set` optimization: now uses hashing for all arg types.
  * **NEW** [#106]: Experimental: conn specs can now take a `:conn-setup-fn` option (useful for pre-loading Lua scripts, etc.).
  * **NEW** [#107]: Experimental: reply suppression via `parse-suppress` (useful with `atomic`, etc.).
  * **NEW**: Updated to latest [commands.json](https://github.com/antirez/redis-doc/blob/master/commands.json) (2014, Oct 8).
