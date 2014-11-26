@@ -444,22 +444,22 @@
   (close [this] (close-listener this)))
 
 (defmacro with-new-listener
-  "Creates a persistent connection to Redis server and a thread to listen for
+  "Creates a persistent[1] connection to Redis server and a thread to listen for
   server messages on that connection.
 
   Incoming messages will be dispatched (along with current listener state) to
-  binary handler function.
+  (fn handler [reply state-atom]).
 
   Evaluates body within the context of the connection and returns a
   general-purpose Listener containing:
+    1. The underlying persistent connection to facilitate `close-listener` and
+       `with-open-listener`.
+    2. An atom containing the function given to handle incoming server messages.
+    3. An atom containing any other optional listener state.
 
-      1. The underlying persistent connection to facilitate `close-listener` and
-         `with-open-listener`.
-      2. An atom containing the function given to handle incoming server
-         messages.
-      3. An atom containing any other optional listener state.
+  Useful for Pub/Sub, monitoring, etc.
 
-  Useful for pub/sub, monitoring, etc."
+  [1] You probably do *NOT* want a :timeout for your `conn-spec` here."
   [conn-spec handler initial-state & body]
   `(let [handler-atom# (atom ~handler)
          state-atom#   (atom ~initial-state)
@@ -490,21 +490,27 @@
 (defn close-listener [listener] (conns/close-conn (:connection listener)))
 
 (defmacro with-new-pubsub-listener
-  "A wrapper for `with-new-listener`. Creates a persistent connection to Redis
-  server and a thread to listen for published messages from channels that we'll
-  subscribe to using `p/subscribe` commands in body.
+  "A wrapper for `with-new-listener`.
 
-  While listening, incoming messages will be dispatched by source (channel or
-  pattern) to the given message-handler functions:
+  Creates a persistent[1] connection to Redis server and a thread to
+  handle messages published to channels that you subscribe to with
+  `subscribe`/`psubscribe` calls in body.
 
-       {\"channel1\" (fn [message] (prn \"Channel match: \" message))
-        \"user*\"    (fn [message] (prn \"Pattern match: \" message))}
+  Handlers will receive messages of form:
+    [<msg-type> <channel/pattern> <message-content>].
 
-  SUBSCRIBE message:  `[\"message\" channel payload]`
-  PSUBSCRIBE message: `[\"pmessage\" pattern matching-channel payload]`
+  (with-new-pubsub-listener
+    {} ; Connection spec, as per `wcar` docstring [1]
+    {\"channel1\" (fn [[type match content :as msg]] (prn \"Channel match: \" msg))
+     \"user*\"    (fn [[type match content :as msg]] (prn \"Pattern match: \" msg))}
+    (subscribe \"foobar\") ; Subscribe thread conn to \"foobar\" channel
+    (psubscribe \"foo*\")  ; Subscribe thread conn to \"foo*\" channel pattern
+   )
 
   Returns the Listener to allow manual closing and adjustments to
-  message-handlers."
+  message-handlers.
+
+  [1] You probably do *NOT* want a :timeout for your `conn-spec` here."
   [conn-spec message-handlers & subscription-commands]
   `(with-new-listener (assoc ~conn-spec :pubsub-listener? true)
 
