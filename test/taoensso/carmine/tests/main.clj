@@ -497,7 +497,7 @@
 
 ;;;; compare-and-set
 
-(expect [1 1 0 1 1 "final-val"]
+(expect [1 1 nil 1 1 "final-val"]
   (let [tk  (tkey "cas-k")
         cas (partial car/compare-and-set tk)]
     (wcar {}
