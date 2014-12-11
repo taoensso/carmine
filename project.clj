@@ -12,9 +12,9 @@
 
   :dependencies
   [[org.clojure/clojure              "1.4.0"]
-   [com.taoensso/encore              "1.16.1"]
+   [com.taoensso/encore              "1.18.2"]
    [com.taoensso/timbre              "3.3.1"]
-   [com.taoensso/nippy               "2.7.0"]
+   [com.taoensso/nippy               "2.7.1"]
    [org.apache.commons/commons-pool2 "2.2"]
    [commons-codec/commons-codec      "1.10"]
    [org.clojure/data.json            "0.2.5"]]
@@ -28,7 +28,7 @@
                          [org.clojure/test.check  "0.6.1"]
                          [com.taoensso/faraday    "1.5.0"]
                          [clj-aws-s3              "0.3.10"]
-                         [ring/ring-core          "1.3.1"]]
+                         [ring/ring-core          "1.3.2"]]
           :plugins [[lein-expectations "0.0.8"]
                     [lein-autoexpect   "1.4.0"]]}
    :dev
