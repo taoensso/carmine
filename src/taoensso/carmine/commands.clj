@@ -82,14 +82,16 @@
          bytestring-req# (mapv protocol/coerce-bs request#)
 
          cluster-keyslot#
-         (if-not (get-in conn# [:spec :cluster]) request#
+         (if-not (get-in conn# [:spec :cluster])
+           request#
            (let [cluster-key-idx# ~cluster-key-idx
                  _# (assert (pos? cluster-key-idx#))
                  cluster-key#
                  (let [k-uncoerced# (nth request# cluster-key-idx#)]
                    (if (string? k-uncoerced#) (keyslot k-uncoerced#)
                      (let [k-coerced# (nth bytestring-req# cluster-key-idx#)]
-                       (keyslot k-coerced#))))]))
+                       (keyslot k-coerced#))))]
+             cluster-key#))
 
          request# ; User-readable request, nice for debugging
          (with-meta request#

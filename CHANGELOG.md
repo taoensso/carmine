@@ -1,5 +1,13 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.9.0 / 2014 Dec 11
+
+> This release adds more control over connection timeouts and introduces a default (4 second) timeout for _acquiring_ a connection.
+
+ * **CHANGE**: Cleaned up Listener docstrings.
+ * **NEW** [#120]: Connection specs now support `:read-timeout-ms` and `:conn-timeout-ms` (the latter defaults to 4 seconds).
+
+
 ## v2.8.0 / 2014 Nov 23
 
 > This is a major but backwards-compatible update focused on performance tuning + general housekeeping.
