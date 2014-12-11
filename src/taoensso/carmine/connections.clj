@@ -4,7 +4,7 @@
   {:author "Peter Taoussanis"}
   (:require [taoensso.encore           :as encore]
             [taoensso.carmine.protocol :as protocol])
-  (:import  [java.net Socket URI]
+  (:import  [java.net InetSocketAddress Socket URI]
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
             [org.apache.commons.pool2 KeyedPooledObjectFactory]
             [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
@@ -53,13 +53,22 @@
 ;;;
 
 (defn make-new-connection
-  [{:keys [host port password timeout-ms db
-           conn-setup-fn] :as spec}]
-  (let [buff-size 16384 ; Err on the large size since we're pooling
-        socket (doto (Socket. ^String host ^Integer port)
-                 (.setTcpNoDelay true)
-                 (.setKeepAlive true)
-                 (.setSoTimeout ^Integer (or timeout-ms 0)))
+  [{:keys [host port password db conn-setup-fn
+           conn-timeout-ms read-timeout-ms timeout-ms] :as spec
+    :or   {conn-timeout-ms (or timeout-ms 4000)
+           read-timeout-ms timeout-ms}}]
+  (let [socket-address (InetSocketAddress. ^String host ^Integer port)
+        socket (encore/doto-cond [expr (Socket.)]
+                 :always         (.setTcpNoDelay   true)
+                 :always         (.setKeepAlive    true)
+                 :always         (.setReuseAddress true)
+                 ;; :always      (.setSoLinger     true 0)
+                 read-timeout-ms (.setSoTimeout ^Integer expr))
+        _ (if conn-timeout-ms
+            (.connect socket socket-address conn-timeout-ms)
+            (.connect socket socket-address))
+
+        buff-size 16384 ; Err on the large size since we're pooling
         conn (Connection. socket spec
                (-> (.getInputStream socket)
                    (BufferedInputStream. buff-size)
