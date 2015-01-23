@@ -35,6 +35,7 @@
   See also `with-replies`."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   ;; [conn-opts & [s1 & sn :as sigs]]
+  ;; FIXME: conn-opts should be validated!!!! it's way too easy to mess up!
   [conn-opts & sigs]
   `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
 
