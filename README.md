@@ -49,7 +49,8 @@ Add the necessary dependency to your [Leiningen][] `project.clj` and `require` t
 You'll usually want to define a single connection pool, and one connection spec for each of your Redis servers.
 
 ```clojure
-(def server1-conn {:pool {<opts>} :spec {<opts>}}) ; See `wcar` docstring for opts
+; (def server1-conn {:pool {<opts>} :spec {<opts>}}) ; See `wcar` docstring for opts
+(def server1-conn {:spec {:host 172.0.0.3 :port 6378}})
 (defmacro wcar* [& body] `(car/wcar server1-conn ~@body))
 ```
 
