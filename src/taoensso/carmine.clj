@@ -1,7 +1,7 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
-  (:require [clojure.string :as str]
+  (:require [clojure.string       :as str]
             [taoensso.encore      :as encore]
             [taoensso.timbre      :as timbre]
             [taoensso.nippy.tools :as nippy-tools]
@@ -623,10 +623,11 @@
     (->> (hgetall key)
          (parse (parser-comp outer-parser inner-parser)))))
 
-(comment (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
-         (wcar {} (hmset* "hkey" {})) ; ex
-         (wcar {} (hmget* "hkey" :a :b))
-         (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
-         (wcar {} (hmget* "hkey" "a" "b"))
-         (wcar {} (hgetall* "hkey"))
-         (wcar {} (parse str/upper-case (hgetall* "hkey"))))
+(comment
+  (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
+  (wcar {} (hmset* "hkey" {})) ; ex
+  (wcar {} (hmget* "hkey" :a :b))
+  (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
+  (wcar {} (hmget* "hkey" "a" "b"))
+  (wcar {} (hgetall* "hkey"))
+  (wcar {} (parse str/upper-case (hgetall* "hkey"))))
