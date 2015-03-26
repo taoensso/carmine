@@ -1,7 +1,7 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
-  (:require [clojure.string :as str]
+  (:require [clojure.string       :as str]
             [taoensso.encore      :as encore]
             [taoensso.timbre      :as timbre]
             [taoensso.nippy.tools :as nippy-tools]
@@ -9,6 +9,18 @@
              (protocol    :as protocol)
              (connections :as conns)
              (commands    :as commands)]))
+
+;;;; Encore version check
+
+(let [min-encore-version 1.21] ; Let's get folks on newer versions here
+  (if-let [assert! (ns-resolve 'taoensso.encore 'assert-min-encore-version)]
+    (assert! min-encore-version)
+    (throw
+      (ex-info
+        (format
+          "Insufficient com.taoensso/encore version (< %s). You may have a Leiningen dependency conflict (see http://goo.gl/qBbLvC for solution)."
+          min-encore-version)
+        {:min-version min-encore-version}))))
 
 ;;;; Connections
 
@@ -343,10 +355,12 @@
            (loop [idx# 1]
              (try (reset! prelude-result#
                     (protocol/with-replies :as-pipeline (do ~on-success)))
-                  (catch Throwable t# ; nb Throwable to catch assertions, etc.
+                  (catch Throwable t1# ; nb Throwable to catch assertions, etc.
                     ;; Always return conn to normal state:
-                    (protocol/with-replies (discard))
-                    (throw t#)))
+                    (try (protocol/with-replies (discard))
+                         (catch Throwable t2# nil) ; Don't mask t1#
+                         )
+                    (throw t1#)))
              (let [r# (protocol/with-replies (exec))]
                (if-not (nil? r#) ; => empty `multi` or watched key changed
                  ;; Was [] with < Carmine v3
@@ -421,6 +435,8 @@
 
   (wcar {} (multi) (multi))
   ;; ["OK" #<Exception java.lang.Exception: ERR MULTI calls can not be nested>]
+
+  (atomic {} 100 (/ 5 0)) ; Divide by zero
   )
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
@@ -611,10 +627,11 @@
     (->> (hgetall key)
          (parse (parser-comp outer-parser inner-parser)))))
 
-(comment (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
-         (wcar {} (hmset* "hkey" {})) ; ex
-         (wcar {} (hmget* "hkey" :a :b))
-         (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
-         (wcar {} (hmget* "hkey" "a" "b"))
-         (wcar {} (hgetall* "hkey"))
-         (wcar {} (parse str/upper-case (hgetall* "hkey"))))
+(comment
+  (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
+  (wcar {} (hmset* "hkey" {})) ; ex
+  (wcar {} (hmget* "hkey" :a :b))
+  (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
+  (wcar {} (hmget* "hkey" "a" "b"))
+  (wcar {} (hgetall* "hkey"))
+  (wcar {} (parse str/upper-case (hgetall* "hkey"))))

@@ -1,5 +1,16 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.9.1 / 2015 Mar 26
+
+> This is a non-breaking hotfix release.
+
+* **Fix**: `atomic` no longer masks pre-discard exceptions.
+
+```clojure
+[com.taoensso/carmine "2.9.1"]
+```
+
+
 ## v2.9.0 / 2014 Dec 11
 
 > This release adds more control over connection timeouts and introduces a default (4 second) timeout for _acquiring_ a connection.
