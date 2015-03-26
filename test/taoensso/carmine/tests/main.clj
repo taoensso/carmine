@@ -461,6 +461,10 @@
              (car/ping))
            @idx]))
 
+(expect ArithmeticException ; Correct (unmasked) error
+  (car/atomic {} 1 (/ 1 0)))
+
+
 ;;;; Cluster key hashing
 
 (expect [12182 5061 4813] [(commands/keyslot "foo")

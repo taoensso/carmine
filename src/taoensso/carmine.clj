@@ -355,10 +355,12 @@
            (loop [idx# 1]
              (try (reset! prelude-result#
                     (protocol/with-replies :as-pipeline (do ~on-success)))
-                  (catch Throwable t# ; nb Throwable to catch assertions, etc.
+                  (catch Throwable t1# ; nb Throwable to catch assertions, etc.
                     ;; Always return conn to normal state:
-                    (protocol/with-replies (discard))
-                    (throw t#)))
+                    (try (protocol/with-replies (discard))
+                         (catch Throwable t2# nil) ; Don't mask t1#
+                         )
+                    (throw t1#)))
              (let [r# (protocol/with-replies (exec))]
                (if-not (nil? r#) ; => empty `multi` or watched key changed
                  ;; Was [] with < Carmine v3
@@ -433,6 +435,8 @@
 
   (wcar {} (multi) (multi))
   ;; ["OK" #<Exception java.lang.Exception: ERR MULTI calls can not be nested>]
+
+  (atomic {} 100 (/ 5 0)) ; Divide by zero
   )
 
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
