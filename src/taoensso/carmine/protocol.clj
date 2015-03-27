@@ -238,16 +238,17 @@
   `(parse (with-meta identity {:thaw-opts ~thaw-opts}) ~@body))
 
 (defn return
-  "Takes value and returns it unchanged as part of next reply from Redis server.
+  "Takes values and returns them as part of next reply from Redis server.
   Unlike `echo`, does not actually send any data to Redis."
-  [value]
-  (swap! (:req-queue *context*)
-    (fn [[_ q]]
-      [nil (conj q (with-meta [] ; Dummy request
-                     {:parser (parser-comp *parser* ; Nb keep context's parser
-                                (with-meta identity {:dummy-reply value}))
-                      :expected-keyslot nil ; Irrelevant
-                      }))])))
+  ([value & more] (doseq [value (cons value more)] (return value)))
+  ([value]
+   (swap! (:req-queue *context*)
+     (fn [[_ q]]
+       [nil (conj q (with-meta [] ; Dummy request
+                      {:parser (parser-comp *parser* ; Nb keep context's parser
+                                 (with-meta identity {:dummy-reply value}))
+                       :expected-keyslot nil ; Irrelevant
+                       }))]))))
 
 ;;;; Requests
 
