@@ -1,10 +1,22 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.9.2 / 2015 Apr 1
+
+> This is a non-breaking hotfix release
+
+* **Fix**: fragile `make-new-connection` destructuring [@chairmanwow @mavbozo #130]
+* **New**: `return` can now take multiple args
+
+```clojure
+[com.taoensso/carmine "2.9.2"]
+```
+
+
 ## v2.9.1 / 2015 Mar 26
 
-> This is a non-breaking hotfix release.
+> This is a non-breaking hotfix release
 
-* **Fix**: `atomic` no longer masks pre-discard exceptions.
+* **Fix**: `atomic` no longer masks pre-discard exceptions
 
 ```clojure
 [com.taoensso/carmine "2.9.1"]
