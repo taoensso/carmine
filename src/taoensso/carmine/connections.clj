@@ -54,10 +54,15 @@
 
 (defn make-new-connection
   [{:keys [host port password db conn-setup-fn
-           conn-timeout-ms read-timeout-ms timeout-ms] :as spec
-    :or   {conn-timeout-ms (or timeout-ms 4000)
-           read-timeout-ms timeout-ms}}]
-  (let [socket-address (InetSocketAddress. ^String host ^Integer port)
+           conn-timeout-ms read-timeout-ms timeout-ms] :as spec}]
+  (let [;; :timeout-ms controls both :conn-timeout-ms and :read-timeout-ms
+        ;; unless those are specified individually
+        ;; :or   {conn-timeout-ms (or timeout-ms 4000)
+        ;;        read-timeout-ms timeout-ms} ; Ref. http://goo.gl/XULHCd
+        conn-timeout-ms (get spec :conn-timeout-ms (or timeout-ms 4000))
+        read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
+
+        socket-address (InetSocketAddress. ^String host ^Integer port)
         socket (encore/doto-cond [expr (Socket.)]
                  :always         (.setTcpNoDelay   true)
                  :always         (.setKeepAlive    true)
