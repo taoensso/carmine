@@ -207,10 +207,12 @@
                                    :ks-missing ks-missing
                                    :ks-not-missing ks-not-missing})
 
-      (doseq [k ks-not-missing]
-        (->> (mq/enqueue tqname k k :allow-locked-dupe) ; key as msg & mid (deduped)
-             (car/with-replies :as-pipeline) ; Don't pollute pipeline
-             ))
+      (encore/backport-run!
+        (fn [k]
+          (->> (mq/enqueue tqname k k :allow-locked-dupe) ; key as msg & mid (deduped)
+               (car/with-replies :as-pipeline) ; Don't pollute pipeline
+               ))
+        ks-not-missing)
 
       (when-not (empty? ks-missing)
         (let [ex (ex-info "Some dirty key(s) were missing" {:ks ks-missing})]

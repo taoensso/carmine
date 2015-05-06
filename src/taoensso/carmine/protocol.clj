@@ -96,24 +96,28 @@
       <arg data>       crlf ...]"
   ;; {:pre [(vector? requests)]}
   [^BufferedOutputStream out requests]
-  (doseq [req-args requests]
-    (when (pos? (count req-args)) ; [] req is dummy req for `return`
-      (let [bs-args (:bytestring-req (meta req-args))]
+  (encore/backport-run!
+    (fn [req-args]
+      (when (pos? (count req-args)) ; [] req is dummy req for `return`
+        (let [bs-args (:bytestring-req (meta req-args))]
 
-        (send-* out)
-        (.write out (bytestring (str (count bs-args))))
-        (send-crlf out)
+          (send-* out)
+          (.write out (bytestring (str (count bs-args))))
+          (send-crlf out)
 
-        (doseq [^bytes bs-arg bs-args]
-          (let [payload-size (alength bs-arg)]
-            (send-$ out)
-            (.write out (bytestring (str payload-size)))
-            (send-crlf out)
-            ;;
-            (.write out bs-arg 0 payload-size) ; Payload
-            (send-crlf out)))
+          (encore/backport-run!
+            (fn [^bytes bs-arg]
+              (let [payload-size (alength bs-arg)]
+                (send-$ out)
+                (.write out (bytestring (str payload-size)))
+                (send-crlf out)
+                ;;
+                (.write out bs-arg 0 payload-size) ; Payload
+                (send-crlf out)))
+            bs-args)
 
-        (comment (.flush out)))))
+          (comment (.flush out)))))
+    requests)
   (.flush out))
 
 (defn get-unparsed-reply
@@ -240,7 +244,7 @@
 (defn return
   "Takes values and returns them as part of next reply from Redis server.
   Unlike `echo`, does not actually send any data to Redis."
-  ([value & more] (doseq [value (cons value more)] (return value)))
+  ([value & more] (encore/backport-run! return (cons value more)))
   ([value]
    (swap! (:req-queue *context*)
      (fn [[_ q]]
@@ -334,7 +338,7 @@
 
         ;; Restore any stashed replies to underlying stateful context:
         (parse nil ; We already parsed on stashing
-          (doseq [r stashed-replies] (return r)))
+          (encore/backport-run! return stashed-replies))
 
         (if ?throwable
           (throw ?throwable)
