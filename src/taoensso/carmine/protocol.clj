@@ -96,24 +96,28 @@
       <arg data>       crlf ...]"
   ;; {:pre [(vector? requests)]}
   [^BufferedOutputStream out requests]
-  (doseq [req-args requests]
-    (when (pos? (count req-args)) ; [] req is dummy req for `return`
-      (let [bs-args (:bytestring-req (meta req-args))]
+  (encore/backport-run!
+    (fn [req-args]
+      (when (pos? (count req-args)) ; [] req is dummy req for `return`
+        (let [bs-args (:bytestring-req (meta req-args))]
 
-        (send-* out)
-        (.write out (bytestring (str (count bs-args))))
-        (send-crlf out)
+          (send-* out)
+          (.write out (bytestring (str (count bs-args))))
+          (send-crlf out)
 
-        (doseq [^bytes bs-arg bs-args]
-          (let [payload-size (alength bs-arg)]
-            (send-$ out)
-            (.write out (bytestring (str payload-size)))
-            (send-crlf out)
-            ;;
-            (.write out bs-arg 0 payload-size) ; Payload
-            (send-crlf out)))
+          (encore/backport-run!
+            (fn [^bytes bs-arg]
+              (let [payload-size (alength bs-arg)]
+                (send-$ out)
+                (.write out (bytestring (str payload-size)))
+                (send-crlf out)
+                ;;
+                (.write out bs-arg 0 payload-size) ; Payload
+                (send-crlf out)))
+            bs-args)
 
-        (comment (.flush out)))))
+          (comment (.flush out)))))
+    requests)
   (.flush out))
 
 (defn get-unparsed-reply
@@ -237,18 +241,23 @@
 (defmacro parse-nippy [thaw-opts & body]
   `(parse (with-meta identity {:thaw-opts ~thaw-opts}) ~@body))
 
-(defn return
+(def return
   "Takes values and returns them as part of next reply from Redis server.
   Unlike `echo`, does not actually send any data to Redis."
-  ([value & more] (doseq [value (cons value more)] (return value)))
-  ([value]
-   (swap! (:req-queue *context*)
-     (fn [[_ q]]
-       [nil (conj q (with-meta [] ; Dummy request
-                      {:parser (parser-comp *parser* ; Nb keep context's parser
-                                 (with-meta identity {:dummy-reply value}))
-                       :expected-keyslot nil ; Irrelevant
-                       }))]))))
+  (let [return1
+        (fn [context value]
+          (swap! context
+            (fn [[_ q]]
+              [nil (conj q (with-meta [] ; Dummy request
+                             {:parser (parser-comp *parser* ; Nb keep context's parser
+                                        (with-meta identity {:dummy-reply value}))
+                              :expected-keyslot nil ; Irrelevant
+                              }))])))]
+    (fn
+      ([value] (return1 (:req-queue *context*) value))
+      ([value & more]
+       (encore/backport-run! (partial return1 (:req-queue *context*))
+         (cons value more))))))
 
 ;;;; Requests
 
@@ -334,7 +343,7 @@
 
         ;; Restore any stashed replies to underlying stateful context:
         (parse nil ; We already parsed on stashing
-          (doseq [r stashed-replies] (return r)))
+          (encore/backport-run! return stashed-replies))
 
         (if ?throwable
           (throw ?throwable)

@@ -58,18 +58,20 @@
 (defn clear-queues [conn-opts & qnames]
   (when (seq qnames)
     (wcar conn-opts
-      (doseq [qname qnames]
-        (let [qk (partial qkey qname)]
-          (car/del
-            (qk :messages)
-            (qk :locks)
-            (qk :backoffs)
-            (qk :nattempts)
-            (qk :mid-circle)
-            (qk :done)
-            (qk :requeue)
-            (qk :eoq-backoff?)
-            (qk :ndry-runs)))))))
+      (encore/backport-run!
+        (fn [qname]
+          (let [qk (partial qkey qname)]
+            (car/del
+              (qk :messages)
+              (qk :locks)
+              (qk :backoffs)
+              (qk :nattempts)
+              (qk :mid-circle)
+              (qk :done)
+              (qk :requeue)
+              (qk :eoq-backoff?)
+              (qk :ndry-runs))))
+        qnames))))
 
 (defn queue-status [conn-opts qname]
   (let [qk (partial qkey qname)]

@@ -12,7 +12,7 @@
 
 ;;;; Encore version check
 
-(let [min-encore-version 1.21] ; Let's get folks on newer versions here
+(let [min-encore-version 1.28] ; For `backport-run!` support
   (if-let [assert! (ns-resolve 'taoensso.encore 'assert-min-encore-version)]
     (assert! min-encore-version)
     (throw
@@ -69,7 +69,7 @@
        (finally
          (when ?stashed-replies#
            (parse nil ; Already parsed on stashing
-             (doseq [r# ?stashed-replies#] (return r#))))))))
+             (encore/backport-run! return ?stashed-replies#)))))))
 
 (comment
   (wcar {} (ping) "not-a-Redis-command" (ping))
@@ -141,10 +141,12 @@
 
   (redis-call [:set \"foo\" \"bar\"] [:get \"foo\"])"
   [& requests]
-  (doseq [[cmd & args] requests]
-    (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))
-          request   (into (vec cmd-parts) args)]
-      (commands/enqueue-request request (count cmd-parts)))))
+  (encore/backport-run!
+    (fn [[cmd & args]]
+      (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))
+            request   (into (vec cmd-parts) args)]
+        (commands/enqueue-request request (count cmd-parts))))
+    requests))
 
 (comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
                               [:config-get "*max-*-entries*"])))

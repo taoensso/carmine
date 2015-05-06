@@ -1,5 +1,16 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.10.0 / 2015 May 6
+
+> This is a non-breaking performance release
+
+* **Implementation**: switch `doseq` -> (faster) `run!` calls
+
+```clojure
+[com.taoensso/carmine "2.10.0"]
+```
+
+
 ## v2.9.2 / 2015 Apr 1
 
 > This is a non-breaking hotfix release
