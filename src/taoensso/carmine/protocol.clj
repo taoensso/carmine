@@ -241,18 +241,23 @@
 (defmacro parse-nippy [thaw-opts & body]
   `(parse (with-meta identity {:thaw-opts ~thaw-opts}) ~@body))
 
-(defn return
+(def return
   "Takes values and returns them as part of next reply from Redis server.
   Unlike `echo`, does not actually send any data to Redis."
-  ([value & more] (encore/backport-run! return (cons value more)))
-  ([value]
-   (swap! (:req-queue *context*)
-     (fn [[_ q]]
-       [nil (conj q (with-meta [] ; Dummy request
-                      {:parser (parser-comp *parser* ; Nb keep context's parser
-                                 (with-meta identity {:dummy-reply value}))
-                       :expected-keyslot nil ; Irrelevant
-                       }))]))))
+  (let [return1
+        (fn [context value]
+          (swap! context
+            (fn [[_ q]]
+              [nil (conj q (with-meta [] ; Dummy request
+                             {:parser (parser-comp *parser* ; Nb keep context's parser
+                                        (with-meta identity {:dummy-reply value}))
+                              :expected-keyslot nil ; Irrelevant
+                              }))])))]
+    (fn
+      ([value] (return1 (:req-queue *context*) value))
+      ([value & more]
+       (encore/backport-run! (partial return1 (:req-queue *context*))
+         (cons value more))))))
 
 ;;;; Requests
 
