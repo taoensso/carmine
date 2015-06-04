@@ -15,7 +15,7 @@
    [com.taoensso/encore              "1.28.0"]
    [com.taoensso/timbre              "3.4.0"]
    [com.taoensso/nippy               "2.9.0"]
-   [org.apache.commons/commons-pool2 "2.3"]
+   [org.apache.commons/commons-pool2 "2.4.1"]
    [commons-codec/commons-codec      "1.10"]
    [org.clojure/data.json            "0.2.6"]]
 
