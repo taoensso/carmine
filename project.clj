@@ -12,7 +12,7 @@
 
   :dependencies
   [[org.clojure/clojure              "1.4.0"]
-   [com.taoensso/encore              "1.28.0"]
+   [com.taoensso/encore              "1.34.0"]
    [com.taoensso/timbre              "3.4.0"]
    [com.taoensso/nippy               "2.9.0"]
    [org.apache.commons/commons-pool2 "2.4.1"]
@@ -31,7 +31,7 @@
                          [clj-aws-s3              "0.3.10"]
                          [ring/ring-core          "1.3.2"]]
           :plugins [[lein-expectations "0.0.8"]
-                    [lein-autoexpect   "1.4.2"]]}
+                    [lein-autoexpect   "1.5.0"]]}
    :dev
    [:1.7 :test
     {:plugins [[lein-ancient "0.6.4"]
