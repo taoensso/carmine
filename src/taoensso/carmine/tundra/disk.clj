@@ -45,7 +45,7 @@
       (cond
        (instance? Path result) true
        (instance? NoSuchFileException result)
-       (do (mkdirs path) (recur k v))
+       (if (mkdirs path) (recur k v) result)
 
        (instance? Exception result) result
        :else (ex-info (format "Unexpected result: %s" result) {:result result})))))

@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.10.0"
+(defproject com.taoensso/carmine "2.11.0"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
@@ -12,10 +12,10 @@
 
   :dependencies
   [[org.clojure/clojure              "1.4.0"]
-   [com.taoensso/encore              "1.28.0"]
+   [com.taoensso/encore              "1.34.0"]
    [com.taoensso/timbre              "3.4.0"]
-   [com.taoensso/nippy               "2.8.0"]
-   [org.apache.commons/commons-pool2 "2.3"]
+   [com.taoensso/nippy               "2.9.0"]
+   [org.apache.commons/commons-pool2 "2.4.1"]
    [commons-codec/commons-codec      "1.10"]
    [org.clojure/data.json            "0.2.6"]]
 
@@ -24,22 +24,23 @@
    :server-jvm {:jvm-opts ^:replace ["-server"]}
    :1.5  {:dependencies [[org.clojure/clojure     "1.5.1"]]}
    :1.6  {:dependencies [[org.clojure/clojure     "1.6.0"]]}
+   :1.7  {:dependencies [[org.clojure/clojure     "1.7.0-RC1"]]}
    :test {:dependencies [[expectations            "2.1.0"]
                          [org.clojure/test.check  "0.7.0"]
-                         [com.taoensso/faraday    "1.5.0"]
+                         [com.taoensso/faraday    "1.6.0"]
                          [clj-aws-s3              "0.3.10"]
                          [ring/ring-core          "1.3.2"]]
           :plugins [[lein-expectations "0.0.8"]
-                    [lein-autoexpect   "1.4.2"]]}
+                    [lein-autoexpect   "1.5.0"]]}
    :dev
-   [:1.6 :test
+   [:1.7 :test
     {:plugins [[lein-ancient "0.6.4"]
                [codox        "0.8.11"]]}]}
 
   :test-paths ["test" "src"]
 
   :aliases
-  {"test-all"   ["with-profile" "default:+1.5:+1.6" "expectations"]
+  {"test-all"   ["with-profile" "default:+1.5:+1.6:+1.7" "expectations"]
    ;; "test-all"   ["with-profile" "default:+1.6" "expectations"]
    "test-auto"  ["with-profile" "+test" "autoexpect"]
    "deploy-lib" ["do" "deploy" "clojars," "install"]
