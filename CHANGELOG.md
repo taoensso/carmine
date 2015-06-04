@@ -1,5 +1,20 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.11.0 / 2015 June 4
+
+> This is a non-breaking maintenance release
+
+* **Performance**: upgrade to Nippy v2.9.0
+* **New**: update Redis commands.json (May 29)
+* **Fix**: commons-pool losing connections over time [#127 @cespare]
+* **Fix**: Tundra disk store endless loop when failing to create ouput dir
+* **Misc**: bump dependencies (incl. Encore + Faraday)
+
+```clojure
+[com.taoensso/carmine "2.11.0"]
+```
+
+
 ## v2.10.0 / 2015 May 6
 
 > This is a non-breaking performance release
