@@ -27,7 +27,7 @@
    :1.7  {:dependencies [[org.clojure/clojure     "1.7.0-RC1"]]}
    :test {:dependencies [[expectations            "2.1.0"]
                          [org.clojure/test.check  "0.7.0"]
-                         [com.taoensso/faraday    "1.5.0"]
+                         [com.taoensso/faraday    "1.6.0"]
                          [clj-aws-s3              "0.3.10"]
                          [ring/ring-core          "1.3.2"]]
           :plugins [[lein-expectations "0.0.8"]
