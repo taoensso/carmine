@@ -1,7 +1,7 @@
 **[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contrib](#contact--contributing) | current [Break Version][]:
 
 ```clojure
-[com.taoensso/carmine "2.11.0"] ; Stable, see CHANGELOG for details
+[com.taoensso/carmine "2.11.1"] ; Stable, see CHANGELOG for details
 ```
 
 # Carmine, a Clojure Redis client & message queue
@@ -40,7 +40,7 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
 Add the necessary dependency to your [Leiningen][] `project.clj` and `require` the library in your ns:
 
 ```clojure
-[com.taoensso/carmine "2.11.0"] ; project.clj
+[com.taoensso/carmine "2.11.1"] ; project.clj
 (ns my-app (:require [taoensso.carmine :as car :refer (wcar)])) ; ns
 ```
 

@@ -392,10 +392,11 @@
   (atomic {} 100 ; Retry <= 100 times on failed optimistic lock, or throw ex
 
     (watch  :my-int-key) ; Watch key for changes
-    (let [curr-val (-> (wcar {} ; Note additional connection!
-                         (get :my-int-key)) ; Use val of watched key
-                       (as-long)
-                       (or 0))]
+    (let [;; You can grab the value of the watched key using
+          ;; `with-replies` (on the current connection), or
+          ;; a nested `wcar` (on a new connection):
+          curr-val (or (as-long (with-replies (get :my-int-key))) 0)]
+
       (return curr-val)
 
       (multi) ; Start the transaction

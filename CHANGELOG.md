@@ -1,5 +1,16 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.11.1 / 2015 June 5
+
+> This is a non-breaking hotfix release
+
+* **Fix**: message queue workers use 2 conns when they only need 1 [#135 @gfredericks]
+
+```clojure
+[com.taoensso/carmine "2.11.1"]
+```
+
+
 ## v2.11.0 / 2015 June 4
 
 > This is a non-breaking maintenance release
