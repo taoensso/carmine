@@ -44,6 +44,11 @@
   For other pool options, Ref. http://goo.gl/e1p1h3,
                                http://goo.gl/Sz4uN1 (defaults).
 
+  Note that because of thread-binding, you'll probably want to avoid lazy Redis
+  command calls in `wcar`'s body unless you know what you're doing. Compare:
+  `(wcar {} (for   [k [:k1 :k2]] (car/set k :val))` ; Lazy, NO commands run
+  `(wcar {} (doseq [k [:k1 :k2]] (car/set k :val))` ; Not lazy, commands run
+
   See also `with-replies`."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   ;; [conn-opts & [s1 & sn :as sigs]]
