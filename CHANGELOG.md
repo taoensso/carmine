@@ -1,5 +1,22 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.12.0-beta1 / 2015 Aug 31
+
+> This is a significant **feature release** focused on new CAS utils
+
+* **New**: conn spec URIs now support /db path [#113 @olek]
+* **New**: `with-replies` now supports nesting
+* **New**: added experimental CAS utils: `swap`, `hswap`
+* **New**: updated commands.json (2015 Aug 5)
+* **Perf**: minor low-level Redis protocol optimizations
+* **Fix**: Tundra S3 datastore wasn't closing input stream
+* **Docs**: `wcar` docstring now has a warning re: laziness [#138]
+
+```clojure
+[com.taoensso/carmine "2.12.0-beta1"]
+```
+
+
 ## v2.11.1 / 2015 June 5
 
 > This is a non-breaking hotfix release
