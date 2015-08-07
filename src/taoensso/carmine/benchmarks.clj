@@ -39,6 +39,9 @@
 
 (comment
 
+  ;;; 2015 Aug 8, --server
+  ;; {:wcar 39, :ping 798, :set 812, :get 859, :roundtrip 954, :ping-pipelined 3935}
+
   ;;; 2014 Feb 13, cleaned up request-planned design --server
   ;; {:wcar 47, :ping 728, :set 765, :get 763, :roundtrip 946, :ping-pipelined 3741}
 

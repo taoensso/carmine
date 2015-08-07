@@ -1,8 +1,7 @@
 (ns taoensso.carmine.protocol
   "Facilities for actually communicating with Redis server using its
   request/response protocol. Originally adapted from Accession.
-
-  Ref: http://redis.io/topics/protocol"
+  Ref. http://redis.io/topics/protocol"
   {:author "Peter Taoussanis"}
   (:require [clojure.string       :as str]
             [taoensso.encore      :as encore]
@@ -32,7 +31,7 @@
 (def no-context-ex
   (ex-info
     (str "Redis commands must be called within the context of a"
-      " connection to Redis server. See `wcar`.") {}))
+         " connection to Redis server. See `wcar`.") {}))
 
 ;;;;
 
@@ -50,10 +49,9 @@
 ;; the data requires special reply handling
 (def ^{:tag 'bytes} bs-bin (bytestring "\u0000<")) ; Binary data marker
 (def ^{:tag 'bytes} bs-clj (bytestring "\u0000>")) ; Frozen data marker
-(def ^{:tag 'bytes} bs-bin (bytestring "\u0000<"))
 
 (defn- ensure-reserved-first-byte [^bytes ba]
-  (when (= (first ba) 0)
+  (when (and (> (alength ba) 0) (== (aget ba 0) 0))
     (throw (ex-info "Args can't begin with null terminator" {:ba ba})))
   ba)
 
@@ -72,18 +70,17 @@
                              (ensure-reserved-first-byte)))
 
   ;;; Simple number types (Redis understands these)
-  Long    (coerce-bs [x] (bytestring (str x)))
-  Double  (coerce-bs [x] (bytestring (str x)))
-  Float   (coerce-bs [x] (bytestring (str x)))
-  Integer (coerce-bs [x] (bytestring (str x)))
+  Long    (coerce-bs [x] (bytestring (Long/toString    x)))
+  Double  (coerce-bs [x] (bytestring (Double/toString  x)))
+  Float   (coerce-bs [x] (bytestring (Float/toString   x)))
+  Integer (coerce-bs [x] (bytestring (Integer/toString x)))
 
-  ;;;
   WrappedRaw (coerce-bs [x] (:ba x))
+
+  ;;; TODO Would be nice if we could avoid the array copies here:
   nil        (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x)))
   Object     (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x))))
-
-(extend encore/bytes-class IRedisArg
-  {:coerce-bs (fn [x] (encore/ba-concat bs-bin x))})
+(extend encore/bytes-class IRedisArg {:coerce-bs (fn [x] (encore/ba-concat bs-bin x))})
 
 (defmacro ^:private send-*    [out] `(.write ~out bs-*))
 (defmacro ^:private send-$    [out] `(.write ~out bs-$))
@@ -102,16 +99,15 @@
         (let [bs-args (:bytestring-req (meta req-args))]
 
           (send-* out)
-          (.write out (bytestring (str (count bs-args))))
+          (.write out (bytestring (Integer/toString (int (count bs-args)))))
           (send-crlf out)
 
           (encore/backport-run!
             (fn [^bytes bs-arg]
               (let [payload-size (alength bs-arg)]
                 (send-$ out)
-                (.write out (bytestring (str payload-size)))
+                (.write out (bytestring (Integer/toString (int payload-size))))
                 (send-crlf out)
-                ;;
                 (.write out bs-arg 0 payload-size) ; Payload
                 (send-crlf out)))
             bs-args)
@@ -180,7 +176,11 @@
                             (nippy/thaw payload))
                      :bin ; payload
                      ;; Workaround #81 (v2.6.0 may have written _serialized_ bins):
-                     (if (= (take 3 payload) '(78 80 89)) ; Nippy header
+                     (if (and ; Nippy header
+                           (>= (alength payload) 3)
+                           (== (aget payload 0) 78)
+                           (== (aget payload 1) 80)
+                           (== (aget payload 2) 89))
                        (try (nippy/thaw payload) (catch Exception _ payload))
                        payload))
                    (catch Exception e
