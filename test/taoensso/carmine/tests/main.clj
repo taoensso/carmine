@@ -551,6 +551,48 @@
       (cas nil       "final-val")
       (car/get tk))))
 
+(expect
+  ["state1" "state2" "state3" "RETURN" "state4" "state4" "OK"
+   [:this :is :a :big :value :needs :sha :woo]
+   :aborted "tx-value" "OK" :aborted "tx-value"]
+
+  (let [tk      (tkey "swap1")
+        big-val [:this :is :a :big :value :needs :sha]]
+     (wcar {} (car/del tk)) ; Debug
+    (wcar {}
+      (car/swap tk (fn [?old nx?] (if nx? "state1" "_")))
+      (car/swap tk (fn [?old nx?] (if nx? "_" "state2")))
+      (car/swap tk (fn [?old _]   (if (= ?old "state2")  "state3" "_")))
+      (car/parse str/upper-case
+        (car/swap tk (fn [?old _] (encore/swapped "state4" "return"))))
+      (car/get  tk)
+      (car/swap tk (fn [?old _] (encore/swapped "state5" ?old)))
+
+      (car/set  tk big-val)
+      (car/swap tk (fn [?old nx?] (conj ?old :woo)))
+
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        1 :aborted)
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        2 :aborted)
+
+      (car/set tk big-val)
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        1 :aborted)
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        2 :aborted))))
+
+(expect ["nx" 1 1 "ex" 1 ["nx" "val2" "ex" "val4"]]
+  (let [tk (tkey "swap2")]
+    ;; (wcar {} (car/del tk)) ; Debug
+    (wcar {}
+      (car/swap tk "field1" (fn [?old-val nx?] (if nx? "nx" "ex")))
+      (car/hset tk "field2" "val2")
+      (car/hset tk "field3" "val3")
+      (car/swap tk "field3" (fn [?old-val nx?] (if nx? "nx" "ex")))
+      (car/hset tk "field4" "val4")
+      (car/hvals tk))))
+
 ;;;; Benching
 
 (expect (benchmarks/bench {}))

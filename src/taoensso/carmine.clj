@@ -261,32 +261,89 @@
             (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
                      (ping) (ping) (ping)))))
 
+(defn- prep-old-val-cas [x]
+  (let [^bytes bs (protocol/coerce-bs x)
+        just-use-val? (< (alength bs) 40)
+        ?sha (when-not just-use-val?
+               (org.apache.commons.codec.digest.DigestUtils/sha1Hex bs))]
+    [?sha (raw bs)]))
+
+(comment (encore/qb 1000 (prep-old-val-cas "hello there")))
+
 (def compare-and-set
-  "Experimental. Workaround for this not being in Redis core,
+  "Experimental. Workaround for absence from Redis core,
   Ref http://goo.gl/M4Phx8."
-  (let [script (encore/slurp-resource "lua/cas.lua")]
-    (fn [k old-val new-val]
-      (if (= old-val :redis/nx)
-        ;; Could also do with
-        ;; sha = redis.sha1hex(nil) = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
-        ;;    != redis.sha1hex(<serialized-nil>):
-        (setnx k new-val)
-        (let [bs-old-val    (protocol/coerce-bs old-val)
-              just-use-val? (< (count bs-old-val) 40) #_false #_true
-              ?sha
-              (when-not just-use-val?
-                (org.apache.commons.codec.digest.DigestUtils/sha1Hex
-                  ^bytes bs-old-val))]
-          (lua script
-            {:k            k}
-            {:old-val-?sha (if-not ?sha ""   ?sha)
-             :old-?val     (if-not ?sha old-val "")
-             :new-val      new-val}))))))
+  (let [k-script (encore/slurp-resource "lua/compare-and-set.lua")
+        h-script (encore/slurp-resource "lua/compare-and-hset.lua")]
+    (fn
+      ([k old-val new-val] ; cas against key
+       (if (= old-val :redis/nx)
+         (setnx k new-val)
+         (let [[?sha raw-bs] (prep-old-val-cas old-val)]
+           (lua k-script {:k k}
+             {:old-val-?sha (if-not ?sha ""     ?sha)
+              :old-?val     (if-not ?sha raw-bs "")
+              :new-val      new-val}))))
+
+      ([k field old-val new-val] ; cas against hash field
+       (if (= old-val :redis/nx)
+         (hsetnx k field new-val)
+         (let [[?sha raw-bs] (prep-old-val-cas old-val)]
+           (lua h-script {:k k}
+             {:field        field
+              :old-val-?sha (if-not ?sha ""     ?sha)
+              :old-?val     (if-not ?sha raw-bs "")
+              :new-val      new-val})))))))
 
 (comment
   (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx [:foo]))
   (wcar {} (compare-and-set "cas-k" [:foo] [:bar]))
-  (wcar {} (get "cas-k")))
+  (wcar {} (get "cas-k"))
+
+  (wcar {} (del "cas-k") (compare-and-set "cas-k" "field" :redis/nx [:foo]))
+  (wcar {} (compare-and-set "cas-k" "field" [:foo] [:bar]))
+  (wcar {} (hget "cas-k" "field")))
+
+(defn- swap*
+  "Abstracts away CAS from the particular data structure used for storage."
+  [get-fn cas-fn f nmax-attempts abort-val]
+  (loop [nattempt 1]
+    (let [[?old-val nx?] (get-fn) ; Acts as (get _ sentinel)
+          old-val        (if nx? :redis/nx ?old-val)
+          [new-val return-val] (encore/swapped* (f ?old-val nx?))
+          cas-success?         (parse nil (with-replies (cas-fn old-val new-val)))]
+      ;; (println [nattempt old-val new-val return-val cas-success?])
+      (if cas-success?
+        (return return-val)
+        (if (or (nil? nmax-attempts) (< nattempt (long nmax-attempts)))
+          (recur (inc nattempt))
+          (return abort-val)))))
+  nil)
+
+(defn swap "Experimental."
+  ([k       f] (swap k       f nil nil))
+  ([k field f] (swap k field f nil nil))
+
+  ([k f nmax-attempts abort-val]
+   (swap*
+     (fn get-fn [] (let [[?ov ex] (parse nil (with-replies (get k) (exists k)))]
+                    [?ov (= ex 0)]))
+     (fn cas-fn [old-val new-val] (compare-and-set k old-val new-val))
+     f nmax-attempts abort-val))
+
+  ([k field f nmax-attempts abort-val]
+   (swap*
+     (fn get-fn [] (let [[?ov ex] (parse nil (with-replies (hget k field) (hexists k field)))]
+                    [?ov (= ex 0)]))
+     (fn cas-fn [old-val new-val] (compare-and-set k field old-val new-val))
+     f nmax-attempts abort-val)))
+
+(comment
+  (wcar {} (get "swap-k"))
+  (encore/qb 100
+    (wcar {} (kswap "swap-k" (fn [?old _] (inc (or (encore/as-?int ?old) 0))))))
+  (wcar {} (parse str/upper-case
+             (swap "swap-k2" (fn [_ _] (encore/swapped 1 "foo"))))))
 
 ;;;
 
