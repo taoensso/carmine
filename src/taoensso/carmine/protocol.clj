@@ -57,8 +57,11 @@
 
 (defrecord WrappedRaw [ba])
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
-  [x] (if (encore/bytes? x) (WrappedRaw. x)
-        (throw (ex-info "Raw arg must be byte[]" {:x x}))))
+  [x]
+  (cond
+    (encore/bytes?        x) (WrappedRaw. x)
+    (instance? WrappedRaw x) x
+    :else (throw (ex-info "Raw arg must be byte[]" {:x x}))))
 
 (defprotocol IRedisArg
   (coerce-bs [x] "Coerces arbitrary Clojure value to RESP arg, by type."))

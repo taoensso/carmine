@@ -538,13 +538,14 @@
   (do (wcar {} (car/set (tkey "bin-arg") (.getBytes "Foobar" "UTF-8")))
       (seq (wcar {} (car/get (tkey "bin-arg"))))))
 
-;;;; compare-and-set
+;;;; CAS stuff
 
-(expect [1 1 nil 1 1 "final-val"]
+(expect ["OK" 1 0 1 1 "final-val"]
   (let [tk  (tkey "cas-k")
         cas (partial car/compare-and-set tk)]
+    ;; (wcar {} (car/del tk))
     (wcar {}
-      (cas :redis/nx 0)
+      (car/set tk    0)
       (cas 0         1)
       (cas 22        23)  ; Will be ignored
       (cas 1         nil) ; Serialized nil
@@ -558,7 +559,7 @@
 
   (let [tk      (tkey "swap1")
         big-val [:this :is :a :big :value :needs :sha]]
-     (wcar {} (car/del tk)) ; Debug
+    ;; (wcar {} (car/del tk)) ; Debug
     (wcar {}
       (car/swap tk (fn [?old nx?] (if nx? "state1" "_")))
       (car/swap tk (fn [?old nx?] (if nx? "_" "state2")))
@@ -582,15 +583,27 @@
       (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
         2 :aborted))))
 
-(expect ["nx" 1 1 "ex" 1 ["nx" "val2" "ex" "val4"]]
+(expect
+  ["nx" 1 1 "3" "tx-value1" :aborted "tx-value3" 0 ["nx" "val2" "tx-value3" "val4"]]
   (let [tk (tkey "swap2")]
     ;; (wcar {} (car/del tk)) ; Debug
     (wcar {}
-      (car/swap tk "field1" (fn [?old-val nx?] (if nx? "nx" "ex")))
-      (car/hset tk "field2" "val2")
-      (car/hset tk "field3" "val3")
-      (car/swap tk "field3" (fn [?old-val nx?] (if nx? "nx" "ex")))
-      (car/hset tk "field4" "val4")
+      (car/hswap tk "field1" (fn [?old-val nx?] (if nx? "nx" "ex")))
+      (car/hset  tk "field2" "val2")
+      (car/hset  tk "field3" 3)
+      (car/hswap tk "field3" (fn [?old-val nx?] ?old-val))
+
+      (car/hswap tk "field3"
+        (fn [?old nx?] (wcar {} (car/hset tk "field4" "non-tx-value1")) "tx-value1")
+        1 :aborted)
+      (car/hswap tk "field3"
+        (fn [?old nx?] (wcar {} (car/hset tk "field3" "non-tx-value2")) "tx-value2")
+        1 :aborted)
+      (car/hswap tk "field3"
+        (fn [?old nx?] (wcar {} (car/hset tk "field3" "non-tx-value3")) "tx-value3")
+        2 :aborted)
+
+      (car/hset  tk "field4" "val4")
       (car/hvals tk))))
 
 ;;;; Benching
