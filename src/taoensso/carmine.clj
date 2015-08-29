@@ -562,7 +562,7 @@
   (wcar {} (hset-cas "cas-k" "field" [:foo] [:bar]))
   (wcar {} (hget "cas-k" "field")))
 
-(def set-lua-swap "Experimental Lua-based key swap."
+(def set-swap "Experimental Lua-based key swap."
   (let [script               (encore/slurp-resource "lua/cas-set.lua")
         cas-get (let [script (encore/slurp-resource "lua/cas-get.lua")]
                   (fn [k] (lua script {:k k} {})))]
@@ -585,7 +585,7 @@
               (recur (inc idx))
               (return abort-val))))))))
 
-(def hset-lua-swap "Experimental Lua-based field swap."
+(def hset-swap "Experimental Lua-based field swap."
   (let [script                (encore/slurp-resource "lua/cas-hset.lua")
         cas-hget (let [script (encore/slurp-resource "lua/cas-hget.lua")]
                    (fn [k] (lua script {:k k} {})))]
@@ -610,42 +610,6 @@
               (return abort-val))))))))
 
 (comment (encore/qb 100 (wcar {} (set-lua-swap "swap-k" (fn [?old _] ?old)))))
-
-(defn set-multi-swap "Experimental multi-based key swap."
-  [k f & [nmax-attempts abort-val]]
-  (loop [idx 1]
-    ;; (println idx)
-    (parse-suppress (watch k))
-    (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
-          nx?          (= ex 0)
-          [new-val return-val] (encore/swapped* (f old-val nx?))
-          cas-success? (parse nil
-                         (with-replies
-                           (parse-suppress (multi) (set k new-val))
-                           (exec)))]
-      (if cas-success?
-        (return return-val)
-        (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
-          (recur (inc idx))
-          (return abort-val))))))
-
-(defn hset-multi-swap "Experimental multi-based field swap."
-  [k f field & [nmax-attempts abort-val]]
-  (loop [idx 1]
-    ;; (println idx)
-    (parse-suppress (watch k)) ; Watches entire hash key
-    (let [[old-val ex] (parse nil (with-replies (hget k field) (hexists k field)))
-          nx?          (= ex 0)
-          [new-val return-val] (encore/swapped* (f old-val nx?))
-          cas-success? (parse nil
-                         (with-replies
-                           (parse-suppress (multi) (hset k field new-val))
-                           (exec)))]
-      (if cas-success?
-        (return return-val)
-        (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
-          (recur (inc idx))
-          (return abort-val))))))
 
 ;;;; Deprecated
 
