@@ -261,90 +261,6 @@
             (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
                      (ping) (ping) (ping)))))
 
-(defn- prep-old-val-cas [x]
-  (let [^bytes bs (protocol/coerce-bs x)
-        just-use-val? (< (alength bs) 40)
-        ?sha (when-not just-use-val?
-               (org.apache.commons.codec.digest.DigestUtils/sha1Hex bs))]
-    [?sha (raw bs)]))
-
-(comment (encore/qb 1000 (prep-old-val-cas "hello there")))
-
-(def compare-and-set
-  "Experimental. Workaround for absence from Redis core,
-  Ref http://goo.gl/M4Phx8."
-  (let [k-script (encore/slurp-resource "lua/compare-and-set.lua")
-        h-script (encore/slurp-resource "lua/compare-and-hset.lua")]
-    (fn
-      ([k old-val new-val] ; cas against key
-       (if (= old-val :redis/nx)
-         (setnx k new-val)
-         (let [[?sha raw-bs] (prep-old-val-cas old-val)]
-           (lua k-script {:k k}
-             {:old-val-?sha (if-not ?sha ""     ?sha)
-              :old-?val     (if-not ?sha raw-bs "")
-              :new-val      new-val}))))
-
-      ([k field old-val new-val] ; cas against hash field
-       (if (= old-val :redis/nx)
-         (hsetnx k field new-val)
-         (let [[?sha raw-bs] (prep-old-val-cas old-val)]
-           (lua h-script {:k k}
-             {:field        field
-              :old-val-?sha (if-not ?sha ""     ?sha)
-              :old-?val     (if-not ?sha raw-bs "")
-              :new-val      new-val})))))))
-
-(comment
-  (wcar {} (del "cas-k") (compare-and-set "cas-k" :redis/nx [:foo]))
-  (wcar {} (compare-and-set "cas-k" [:foo] [:bar]))
-  (wcar {} (get "cas-k"))
-
-  (wcar {} (del "cas-k") (compare-and-set "cas-k" "field" :redis/nx [:foo]))
-  (wcar {} (compare-and-set "cas-k" "field" [:foo] [:bar]))
-  (wcar {} (hget "cas-k" "field")))
-
-(defn- swap*
-  "Abstracts away CAS from the particular data structure used for storage."
-  [get-fn cas-fn f nmax-attempts abort-val]
-  (loop [nattempt 1]
-    (let [[?old-val nx?] (get-fn) ; Acts as (get _ sentinel)
-          old-val        (if nx? :redis/nx ?old-val)
-          [new-val return-val] (encore/swapped* (f ?old-val nx?))
-          cas-success?         (parse nil (with-replies (cas-fn old-val new-val)))]
-      ;; (println [nattempt old-val new-val return-val cas-success?])
-      (if cas-success?
-        (return return-val)
-        (if (or (nil? nmax-attempts) (< nattempt (long nmax-attempts)))
-          (recur (inc nattempt))
-          (return abort-val)))))
-  nil)
-
-(defn swap "Experimental."
-  ([k       f] (swap k       f nil nil))
-  ([k field f] (swap k field f nil nil))
-
-  ([k f nmax-attempts abort-val]
-   (swap*
-     (fn get-fn [] (let [[?ov ex] (parse nil (with-replies (get k) (exists k)))]
-                    [?ov (= ex 0)]))
-     (fn cas-fn [old-val new-val] (compare-and-set k old-val new-val))
-     f nmax-attempts abort-val))
-
-  ([k field f nmax-attempts abort-val]
-   (swap*
-     (fn get-fn [] (let [[?ov ex] (parse nil (with-replies (hget k field) (hexists k field)))]
-                    [?ov (= ex 0)]))
-     (fn cas-fn [old-val new-val] (compare-and-set k field old-val new-val))
-     f nmax-attempts abort-val)))
-
-(comment
-  (wcar {} (get "swap-k"))
-  (encore/qb 100
-    (wcar {} (kswap "swap-k" (fn [?old _] (inc (or (encore/as-?int ?old) 0))))))
-  (wcar {} (parse str/upper-case
-             (swap "swap-k2" (fn [_ _] (encore/swapped 1 "foo"))))))
-
 ;;;
 
 (defn hmset* "Like `hmset` but takes a map argument."
@@ -603,7 +519,137 @@
      ~message-handlers ; Initial state
      ~@subscription-commands))
 
+;;;; Experimental CAS tools
+;; Working around the lack of simple CAS in Redis core, Ref http://goo.gl/M4Phx8
+
+(defn- prep-old-val-cas [x]
+  (let [^bytes bs (protocol/coerce-bs x)
+        ?sha (when (> (alength bs) 40)
+               (org.apache.commons.codec.digest.DigestUtils/sha1Hex bs))]
+    [?sha (raw bs)]))
+
+(comment (encore/qb 1000 (prep-old-val-cas "hello there")))
+
+(def set-cas "Experimental Lua-based key CAS."
+  (let [script (encore/slurp-resource "lua/cas-set.lua")]
+    (fn [k old-val new-val]
+      (if (= old-val :redis/nx)
+        (setnx k new-val)
+        (let [[?sha raw-bs] (prep-old-val-cas old-val)]
+          (lua script {:k k}
+            {:old-?sha (or ?sha "")
+             :old-?val (if ?sha "" old-val)
+             :new-val  new-val}))))))
+
+(def hset-cas "Experimental Lua-based field CAS."
+  (let [script (encore/slurp-resource "lua/cas-hset.lua")]
+    (fn [k field old-val new-val]
+      (if (= old-val :redis/nx)
+        (hsetnx k field new-val)
+        (let [[?sha raw-bs] (prep-old-val-cas old-val)]
+          (lua script {:k k}
+            {:field    field
+             :old-?sha (or ?sha "")
+             :old-?val (if ?sha "" old-val)
+             :new-val  new-val}))))))
+
+(comment
+  (wcar {} (del "cas-k") (set-cas "cas-k" :redis/nx [:foo]))
+  (wcar {} (set-cas "cas-k" [:foo] [:bar]))
+  (wcar {} (get "cas-k"))
+
+  (wcar {} (del "cas-k") (hset-cas "cas-k" "field" :redis/nx [:foo]))
+  (wcar {} (hset-cas "cas-k" "field" [:foo] [:bar]))
+  (wcar {} (hget "cas-k" "field")))
+
+(def set-lua-swap "Experimental Lua-based key swap."
+  (let [script               (encore/slurp-resource "lua/cas-set.lua")
+        cas-get (let [script (encore/slurp-resource "lua/cas-get.lua")]
+                  (fn [k] (lua script {:k k} {})))]
+    (fn [k f & [nmax-attempts abort-val]]
+      (loop [idx 1]
+        (let [[old-val ex sha] (parse nil (with-replies (cas-get k))) ; 2x rt
+              nx?  (= ex 0)
+              ?sha (when-not (= sha "") sha)
+              [new-val return-val] (encore/swapped* (f old-val nx?))
+              cas-success? ; 2x rt
+              (parse nil
+                (with-replies
+                  (lua script {:k k}
+                    {:old-?sha (or ?sha "")
+                     :old-?val (if ?sha "" old-val)
+                     :new-val  new-val})))]
+          (if cas-success?
+            (return return-val)
+            (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
+              (recur (inc idx))
+              (return abort-val))))))))
+
+(def hset-lua-swap "Experimental Lua-based field swap."
+  (let [script                (encore/slurp-resource "lua/cas-hset.lua")
+        cas-hget (let [script (encore/slurp-resource "lua/cas-hget.lua")]
+                   (fn [k] (lua script {:k k} {})))]
+    (fn [k f field & [nmax-attempts abort-val]]
+      (loop [idx 1]
+        (let [[old-val ex sha] (parse nil (with-replies (cas-hget k field))) ; 2x rt
+              nx?  (= ex 0)
+              ?sha (when-not (= sha "") sha)
+              [new-val return-val] (encore/swapped* (f old-val nx?))
+              cas-success? ; 2x rt
+              (parse nil
+                (with-replies
+                  (lua script {:k k}
+                    {:field    field
+                     :old-?sha (or ?sha "")
+                     :old-?val (if ?sha "" old-val)
+                     :new-val  new-val})))]
+          (if cas-success?
+            (return return-val)
+            (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
+              (recur (inc idx))
+              (return abort-val))))))))
+
+(comment (encore/qb 100 (wcar {} (set-lua-swap "swap-k" (fn [?old _] ?old)))))
+
+(defn set-multi-swap "Experimental multi-based key swap."
+  [k f & [nmax-attempts abort-val]]
+  (loop [idx 1]
+    ;; (println idx)
+    (parse-suppress (watch k))
+    (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
+          nx?          (= ex 0)
+          [new-val return-val] (encore/swapped* (f old-val nx?))
+          cas-success? (parse nil
+                         (with-replies
+                           (parse-suppress (multi) (set k new-val))
+                           (exec)))]
+      (if cas-success?
+        (return return-val)
+        (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
+          (recur (inc idx))
+          (return abort-val))))))
+
+(defn hset-multi-swap "Experimental multi-based field swap."
+  [k f field & [nmax-attempts abort-val]]
+  (loop [idx 1]
+    ;; (println idx)
+    (parse-suppress (watch k)) ; Watches entire hash key
+    (let [[old-val ex] (parse nil (with-replies (hget k field) (hexists k field)))
+          nx?          (= ex 0)
+          [new-val return-val] (encore/swapped* (f old-val nx?))
+          cas-success? (parse nil
+                         (with-replies
+                           (parse-suppress (multi) (hset k field new-val))
+                           (exec)))]
+      (if cas-success?
+        (return return-val)
+        (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
+          (recur (inc idx))
+          (return abort-val))))))
+
 ;;;; Deprecated
+
+(def compare-and-set cas-set) ; DEPRECATED alias
 
 (def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
 (def as-double "DEPRECATED: Use `as-float` instead." as-double)
