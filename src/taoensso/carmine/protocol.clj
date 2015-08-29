@@ -319,19 +319,41 @@
 
 ;;;; General-purpose macros
 
+(def ^:dynamic *nested-stashed-reqs*     nil)
+(def ^:dynamic *nested-stash-consumed?_* nil)
+
 (defn with-replies* "Implementation detail."
   [body-fn as-pipeline?]
   (let [{:keys [conn req-queue]} *context*
-        stashed-reqs (pull-requests req-queue)]
+        ?nested-stashed-reqs     *nested-stashed-reqs*
+        newly-stashed-reqs       (pull-requests req-queue)
+
+        ;; We'll pass down the stash until the first stash consumer:
+        stashed-reqs (if-let [nsr ?nested-stashed-reqs]
+                       (into nsr newly-stashed-reqs)
+                       newly-stashed-reqs)]
+
     (if (empty? stashed-reqs) ; Common case
       (let [_        (body-fn)
             new-reqs (pull-requests req-queue)]
         (execute-requests conn new-reqs :get-replies as-pipeline?))
-      (let [stash-size   (count stashed-reqs)
-            ?throwable   (try (body-fn) nil (catch Throwable t t))
-            new-reqs     (pull-requests req-queue)
-            all-reqs     (into stashed-reqs new-reqs)
-            all-replies  (execute-requests conn all-reqs :get-replies :as-pipeline)
+
+      (let [nested-stash-consumed?_ (atom false)
+            stash-size (count stashed-reqs)
+
+            ?throwable ; Binding to support nested `with-replies` in body-fn:
+            (binding [*nested-stashed-reqs*     stashed-reqs
+                      *nested-stash-consumed?_* nested-stash-consumed?_]
+              (try (body-fn) nil (catch Throwable t t)))
+
+            new-reqs (pull-requests req-queue)
+            all-reqs (if @nested-stash-consumed?_
+                       new-reqs
+                       (into stashed-reqs new-reqs))
+
+            all-replies (execute-requests conn all-reqs :get-replies :as-pipeline)
+            _           (when-let [nsc?_ *nested-stash-consumed?_*]
+                          (reset! nsc?_ true))
 
             [stashed-replies requested-replies]
             [(subvec all-replies 0 stash-size)

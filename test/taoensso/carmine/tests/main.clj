@@ -328,6 +328,45 @@
                  (car/ping)))))
   (expect k-val (wcar* (car/get k))))
 
+;;;; with-replies
+
+(expect ["1" "2" ["3" "4"] "5"]
+  (wcar {}
+    (car/echo 1)
+    (car/echo 2)
+    (car/return (car/with-replies (car/echo 3) (car/echo 4)))
+    (car/echo 5)))
+
+(expect ["1" "2" ["3" "4" ["5" "6"]] "7"] ; Nested `with-replies`
+  (wcar {}
+    (car/echo 1)
+    (car/echo 2)
+    (car/return (car/with-replies (car/echo 3) (car/echo 4)
+                  (car/return (car/with-replies (car/echo 5) (car/echo 6)))))
+    (car/echo 7)))
+
+(expect ["A" "b" ["c" "D"] ["E" "F"] "g"] ; `with-replies` vs parsers
+  (wcar {}
+    (car/parse str/upper-case (car/echo :a))
+    (car/echo :b)
+    (car/return (car/with-replies (car/echo :c) (car/parse str/upper-case (car/echo :d))))
+    (car/return
+      (car/parse str/upper-case
+        (car/with-replies (car/echo :e) (car/echo :f))))
+    (car/echo :g)))
+
+(expect ["a" "b" ["c" "d" ["e" "f"]] "g"] ; Nested `with-replies` vs parsers
+  (wcar {}
+    (car/echo :a)
+    (car/echo :b)
+    (car/return
+      (car/parse #(cond (string? %) (str/lower-case %)
+                        (vector? %) (mapv str/lower-case %))
+        (car/with-replies (car/echo :c) (car/echo :d)
+          (car/return (car/parse str/upper-case
+                        (car/with-replies (car/echo :e) (car/echo :f)))))))
+    (car/echo :g)))
+
 ;;;; Parsers
 ;; Like middleware, comp order can get confusing
 
