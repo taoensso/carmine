@@ -327,19 +327,15 @@
       (let [_        (body-fn)
             new-reqs (pull-requests req-queue)]
         (execute-requests conn new-reqs :get-replies as-pipeline?))
-      (let [stash-marker (Object.)
-            _            (parse nil (return stash-marker))
+      (let [stash-size   (count stashed-reqs)
             ?throwable   (try (body-fn) nil (catch Throwable t t))
             new-reqs     (pull-requests req-queue)
             all-reqs     (into stashed-reqs new-reqs)
-            all-replies  (execute-requests conn all-reqs :get-replies
-                           :as-pipeline)
-            marker-idx   (.indexOf ^clojure.lang.PersistentVector
-                           all-replies stash-marker)
+            all-replies  (execute-requests conn all-reqs :get-replies :as-pipeline)
 
             [stashed-replies requested-replies]
-            [(subvec all-replies 0 marker-idx)
-             (subvec all-replies (inc marker-idx))]]
+            [(subvec all-replies 0 stash-size)
+             (subvec all-replies stash-size)]]
 
         ;; Restore any stashed replies to underlying stateful context:
         (parse nil ; We already parsed on stashing
