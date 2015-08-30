@@ -168,13 +168,14 @@
     (let [^URI uri (if (instance? URI uri) uri (URI. uri))
           [user password] (.split (str (.getUserInfo uri)) ":")
           port (.getPort uri)
-          db (if-let [db-str (last (re-matches #"/(\d+)" (.getPath uri)))] (Integer. ^String db-str))]
+          db (if-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
+               (Integer. ^String db-str))]
       (-> {:host (.getHost uri)}
           (#(if (pos? port)        (assoc % :port     port)     %))
           (#(if (and db (pos? db)) (assoc % :db       db)       %))
           (#(if password           (assoc % :password password) %))))))
 
-(comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/"))
+(comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/7"))
 
 (def conn-spec
   (memoize
