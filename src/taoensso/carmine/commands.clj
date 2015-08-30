@@ -145,7 +145,7 @@
   "Returns parsed JSON official command reference.
   From https://github.com/antirez/redis-doc/blob/master/commands.json"
   []
-  (-> (encore/slurp-resource "commands/commands.json")
+  (-> (encore/slurp-resource #_"commands.json" "commands/commands.json")
       (clojure.data.json/read-str :key-fn keyword)))
 
 (defmacro defcommands []
@@ -162,7 +162,9 @@
 
 (comment ; Debug
   (let [refspec (get-command-reference)]
-    (spit "src/commands/commands.list" ; println
+    (spit
+      "src/commands/commands.list"
+      #_"commands.list"
       (with-out-str
         (println (format "%s commands in refspec:\n---" (count (keys refspec))))
         (doseq [rk (sort (keys refspec))]
