@@ -51,8 +51,7 @@
 
   See also `with-replies`."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
-  ;; [conn-opts & [s1 & sn :as sigs]]
-  [conn-opts & sigs]
+  [conn-opts & sigs] ; [conn-opts & [s1 & sn :as sigs]]
   `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
 
          ;; To support `wcar` nesting with req planning, we mimic
@@ -87,7 +86,7 @@
   (def setupf (fn [_] (println "boo")))
   (wcar {:spec {:conn-setup-fn setupf}}))
 
-;;;; Misc
+;;;; Misc core
 
 (encore/defalias as-bool     encore/as-?bool)
 (encore/defalias as-int      encore/as-?int)
@@ -137,8 +136,6 @@
 
 (commands/defcommands) ; This kicks ass - big thanks to Andreas Bielk!
 
-;;;; Helper commands
-
 (defn redis-call
   "Sends low-level requests to Redis. Useful for DSLs, certain kinds of command
   composition, and for executing commands that haven't yet been added to the
@@ -156,10 +153,12 @@
 (comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
                               [:config-get "*max-*-entries*"])))
 
-;;; Lua scripts
+;;;; Lua/scripting support
 
-(defn- str-sha [x] (org.apache.commons.codec.digest.DigestUtils/sha1Hex (str x)))
-(def script-hash (memoize (fn [script] (str-sha script))))
+(defn- sha1-str [x]         (org.apache.commons.codec.digest.DigestUtils/sha1Hex (str x)))
+(defn- sha1-ba  [^bytes ba] (org.apache.commons.codec.digest.DigestUtils/sha1Hex ba))
+
+(def script-hash (memoize (fn [script] (sha1-str script))))
 
 (defn evalsha* "Like `evalsha` but automatically computes SHA1 hash for script."
   [script numkeys key & args] (apply evalsha (script-hash script) numkeys key args))
@@ -170,9 +169,9 @@
   reply. Redis Cluster note: keys need to all be on same shard."
   [script numkeys key & args]
   (let [parser ; Respect :raw-bulk, otherwise ignore parser:
-        (if-not (:raw-bulk? (meta protocol/*parser*)) nil
-          (with-meta identity {:raw-bulk? true}) ; As `parse-raw`
-          )
+        (if-not (:raw-bulk? (meta protocol/*parser*))
+          nil ; As `parse-raw`:
+          (with-meta identity {:raw-bulk? true}))
         [r & _] ; & _ for :as-pipeline
         (parse parser (with-replies :as-pipeline
                         (apply evalsha* script numkeys key args)))]
@@ -197,8 +196,9 @@
                     ;; Stop ":foo" replacing ":foo-bar" w/o need for insane Regex:
                     (sort-by #(- (.length ^String (first %))))))))))
 
-(comment (script-subst-vars "_:k1 _:a1 _:k2! _:a _:k3? _:k _:a2 _:a _:a3 _:a-4"
-           [:k3? :k1 :k2! :k] [:a2 :a-4 :a3 :a :a1]))
+(comment
+  (script-subst-vars "_:k1 _:a1 _:k2! _:a _:k3? _:k _:a2 _:a _:a3 _:a-4"
+    [:k3? :k1 :k2! :k] [:a2 :a-4 :a3 :a :a1]))
 
 (defn- script-prep-vars "-> [<key-vars> <arg-vars> <var-vals>]"
   [keys args]
@@ -207,8 +207,9 @@
    (into (vec (if (map? keys) (vals keys) keys))
               (if (map? args) (vals args) args))])
 
-(comment (script-prep-vars {:k1 :K1 :k2 :K2} {:a1 :A1 :a2 :A2})
-         (script-prep-vars [:K1 :K2] {:a1 :A1 :a2 :A2}))
+(comment
+  (script-prep-vars {:k1 :K1 :k2 :K2} {:a1 :A1 :a2 :A2})
+  (script-prep-vars [:K1 :K2] {:a1 :A1 :a2 :A2}))
 
 (defn lua
   "All singing, all dancing Lua script helper. Like `eval*` but allows script
@@ -221,14 +222,15 @@
   [script keys args]
   (let [[key-vars arg-vars var-vals] (script-prep-vars keys args)]
     (apply eval* (script-subst-vars script key-vars arg-vars)
-           (count keys) ; Not key-vars!
-           var-vals)))
+      (count keys) ; Not key-vars!
+      var-vals)))
 
-(comment (wcar {}
-           (lua "redis.call('set', _:my-key, _:my-val)
-                 return redis.call('get', 'foo')"
-                {:my-key "foo"}
-                {:my-val "bar"})))
+(comment
+  (wcar {}
+    (lua "redis.call('set', _:my-key, _:my-val)
+          return redis.call('get', 'foo')"
+      {:my-key "foo"}
+      {:my-val "bar"})))
 
 (def ^:private scripts-loaded-locally "#{[<conn-spec> <sha>]...}" (atom #{}))
 (defn lua-local
@@ -248,26 +250,26 @@
           (swap! scripts-loaded-locally conj [conn-spec sha])
           (evalsha)))))
 
-(comment (wcar {} (lua       "return redis.call('ping')" {:_ "_"} {}))
-         (wcar {} (lua-local "return redis.call('ping')" {:_ "_"} {}))
+(comment
+  (wcar {} (lua       "return redis.call('ping')" {:_ "_"} {}))
+  (wcar {} (lua-local "return redis.call('ping')" {:_ "_"} {}))
 
-         (clojure.core/time
-          (dotimes [_ 10000]
-            (wcar {} (ping) (lua "return redis.call('ping')" {:_ "_"} {})
-                     (ping) (ping) (ping))))
+  (encore/qb 1000
+    (wcar {} (ping) (lua "return redis.call('ping')" {:_ "_"} {})
+      (ping) (ping) (ping))) ; ~140
 
-         (clojure.core/time
-          (dotimes [_ 10000]
-            (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
-                     (ping) (ping) (ping)))))
+  (encore/qb 1000
+    (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
+      (ping) (ping) (ping))) ; ~135 (localhost)
+  )
 
-;;;
+;;;; Misc helpers
+;; These are pretty rusty + kept around mostly for back-compatibility
 
 (defn hmset* "Like `hmset` but takes a map argument."
   [key m] (apply hmset key (reduce concat m)))
 
-(defn info*
-  "Like `info` but automatically coerces reply into a hash-map."
+(defn info* "Like `info` but automatically coerces reply into a hash-map."
   [& [clojureize?]]
   (->> (info)
        (parse
@@ -283,17 +285,13 @@
 
 (comment (wcar {} (info* :clojurize)))
 
-(defn zinterstore*
-  "Like `zinterstore` but automatically counts keys."
-  [dest-key source-keys & options]
-  (apply zinterstore dest-key
-         (count source-keys) (concat source-keys options)))
+(defn zinterstore* "Like `zinterstore` but automatically counts keys."
+  [dest-key source-keys & opts]
+  (apply zinterstore dest-key (count source-keys) (concat source-keys opts)))
 
-(defn zunionstore*
-  "Like `zunionstore` but automatically counts keys."
-  [dest-key source-keys & options]
-  (apply zunionstore dest-key
-         (count source-keys) (concat source-keys options)))
+(defn zunionstore* "Like `zunionstore` but automatically counts keys."
+  [dest-key source-keys & opts]
+  (apply zunionstore dest-key (count source-keys) (concat source-keys opts)))
 
 ;; Adapted from redis-clojure
 (defn- parse-sort-args [args]
@@ -302,17 +300,12 @@
       out
       (let [[type & args] remaining-args]
         (case type
-          :by (let [[pattern & rest] args]
-                (recur (conj out "BY" pattern) rest))
-          :limit (let [[offset count & rest] args]
-                   (recur (conj out "LIMIT" offset count) rest))
-          :get (let [[pattern & rest] args]
-                 (recur (conj out "GET" pattern) rest))
-          :mget (let [[patterns & rest] args]
-                  (recur (into out (interleave (repeat "GET")
-                                               patterns)) rest))
-          :store (let [[dest & rest] args]
-                   (recur (conj out "STORE" dest) rest))
+          :by    (let [[pattern & rest] args]      (recur (conj out "BY" pattern) rest))
+          :limit (let [[offset count & rest] args] (recur (conj out "LIMIT" offset count) rest))
+          :get   (let [[pattern & rest] args]      (recur (conj out "GET" pattern) rest))
+          :mget  (let [[patterns & rest] args]     (recur (into out (interleave (repeat "GET")
+                                                                      patterns)) rest))
+          :store (let [[dest & rest] args]         (recur (conj out "STORE" dest) rest))
           :alpha (recur (conj out "ALPHA") args)
           :asc   (recur (conj out "ASC")   args)
           :desc  (recur (conj out "DESC")  args)
@@ -324,104 +317,7 @@
   :alpha, :asc, :desc."
   [key & sort-args] (apply sort key (parse-sort-args sort-args)))
 
-(defmacro atomic* "Alpha - subject to change. Low-level transaction util."
-  [conn-opts max-cas-attempts on-success on-failure]
-    (assert (>= max-cas-attempts 1))
-  `(let [conn-opts#  ~conn-opts
-         max-idx#    ~max-cas-attempts
-         prelude-result# (atom nil)
-         exec-result#
-         (wcar conn-opts# ; Hold 1 conn for all attempts
-           (loop [idx# 1]
-             (try (reset! prelude-result#
-                    (protocol/with-replies :as-pipeline (do ~on-success)))
-                  (catch Throwable t1# ; nb Throwable to catch assertions, etc.
-                    ;; Always return conn to normal state:
-                    (try (protocol/with-replies (discard))
-                         (catch Throwable t2# nil) ; Don't mask t1#
-                         )
-                    (throw t1#)))
-             (let [r# (protocol/with-replies (exec))]
-               (if-not (nil? r#) ; => empty `multi` or watched key changed
-                 ;; Was [] with < Carmine v3
-                 (return r#)
-                 (if (= idx# max-idx#)
-                   (do ~on-failure)
-                   (recur (inc idx#)))))))]
-
-     [@prelude-result#
-      (protocol/return-parsed-replies exec-result# (not :as-pipeline))]))
-
-(defmacro atomic
-  "Alpha - subject to change!
-  Tool to ease Redis transactions for fun & profit. Wraps body in a `wcar`
-  call that terminates with `exec`, cleans up reply, and supports automatic
-  retry for failed optimistic locking.
-
-  Body must contain a `multi` call and may contain calls to: `watch`, `unwatch`,
-  `discard`, etc. Ref. http://redis.io/topics/transactions for more info.
-
-  `return` and `parse` NOT supported after `multi` has been called.
-
-  Like `swap!` fn, body may be called multiple times so should avoid impure or
-  expensive ops.
-
-  ;;; Atomically increment integer key without using INCR
-  (atomic {} 100 ; Retry <= 100 times on failed optimistic lock, or throw ex
-
-    (watch  :my-int-key) ; Watch key for changes
-    (let [;; You can grab the value of the watched key using
-          ;; `with-replies` (on the current connection), or
-          ;; a nested `wcar` (on a new connection):
-          curr-val (or (as-long (with-replies (get :my-int-key))) 0)]
-
-      (return curr-val)
-
-      (multi) ; Start the transaction
-        (set :my-int-key (inc curr-val))
-        (get :my-int-key)
-      ))
-  => [[\"OK\" nil \"OK\" \"QUEUED\" \"QUEUED\"] ; Prelude replies
-      [\"OK\" \"1\"] ; Transaction replies (`exec` reply)
-      ]
-
-  See also `lua` as alternative way to get transactional behaviour."
-  [conn-opts max-cas-attempts & body]
-  `(atomic* ~conn-opts ~max-cas-attempts (do ~@body)
-     (throw (ex-info (format "`atomic` failed after %s attempt(s)"
-                       ~max-cas-attempts)
-              {:nattempts ~max-cas-attempts}))))
-
-(comment
-  ;; Error before exec (=> syntax, etc.)
-  (wcar {} (multi) (redis-call [:invalid]) (ping) (exec))
-  ;; ["OK" #<Exception: ERR unknown command 'INVALID'> "QUEUED"
-  ;;  #<Exception: EXECABORT Transaction discarded because of previous errors.>]
-
-  ;; Error during exec (=> datatype, etc.)
-  (wcar {} (set "aa" "string") (multi) (ping) (incr "aa") (ping) (exec))
-  ;; ["OK" "OK" "QUEUED" "QUEUED" "QUEUED"
-  ;;  ["PONG" #<Exception: ERR value is not an integer or out of range> "PONG"]]
-
-  (wcar {} (multi) (ping) (discard)) ; ["OK" "QUEUED" "OK"]
-  (wcar {} (multi) (ping) (discard) (exec))
-  ;; ["OK" "QUEUED" "OK" #<Exception: ERR EXEC without MULTI>]
-
-  (wcar {} (watch "aa") (set "aa" "string") (multi) (ping) (exec))
-  ;; ["OK" "OK" "OK" "QUEUED" []]  ; Old reply fn
-  ;; ["OK" "OK" "OK" "QUEUED" nil] ; New reply fn
-
-  (wcar {} (watch "aa") (set "aa" "string") (unwatch) (multi) (ping) (exec))
-  ;; ["OK" "OK" "OK" "OK" "QUEUED" ["PONG"]]
-
-  (wcar {} (multi) (multi))
-  ;; ["OK" #<Exception java.lang.Exception: ERR MULTI calls can not be nested>]
-
-  (atomic {} 100 (/ 5 0)) ; Divide by zero
-  )
-
 ;;;; Persistent stuff (monitoring, pub/sub, etc.)
-
 ;; Once a connection to Redis issues a command like `p/subscribe` or `monitor`
 ;; it enters an idiosyncratic state:
 ;;
@@ -519,13 +415,134 @@
      ~message-handlers ; Initial state
      ~@subscription-commands))
 
-;;;; Experimental CAS tools
+;;;; Atomic macro
+;; The design here's a little on the heavy side; I'd suggest instead reaching
+;; for the (newer) CAS tools or (if you need more flexibility), using a Lua
+;; script or adhoc `multi`+`watch`+`exec` loop.
+
+(defmacro atomic* "Alpha - subject to change. Low-level transaction util."
+  [conn-opts max-cas-attempts on-success on-failure]
+    (assert (>= max-cas-attempts 1))
+  `(let [conn-opts#  ~conn-opts
+         max-idx#    ~max-cas-attempts
+         prelude-result# (atom nil)
+         exec-result#
+         (wcar conn-opts# ; Hold 1 conn for all attempts
+           (loop [idx# 1]
+             (try (reset! prelude-result#
+                    (protocol/with-replies :as-pipeline (do ~on-success)))
+                  (catch Throwable t1# ; nb Throwable to catch assertions, etc.
+                    ;; Always return conn to normal state:
+                    (try (protocol/with-replies (discard))
+                         (catch Throwable t2# nil) ; Don't mask t1#
+                         )
+                    (throw t1#)))
+             (let [r# (protocol/with-replies (exec))]
+               (if-not (nil? r#) ; => empty `multi` or watched key changed
+                 ;; Was [] with < Carmine v3
+                 (return r#)
+                 (if (= idx# max-idx#)
+                   (do ~on-failure)
+                   (recur (inc idx#)))))))]
+
+     [@prelude-result#
+      (protocol/return-parsed-replies
+        exec-result# (not :as-pipeline))]))
+
+(defmacro atomic
+  "Alpha - subject to change!
+  Tool to ease Redis transactions for fun & profit. Wraps body in a `wcar`
+  call that terminates with `exec`, cleans up reply, and supports automatic
+  retry for failed optimistic locking.
+
+  Body must contain a `multi` call and may contain calls to: `watch`, `unwatch`,
+  `discard`, etc. Ref. http://redis.io/topics/transactions for more info.
+
+  `return` and `parse` NOT supported after `multi` has been called.
+
+  Like `swap!` fn, body may be called multiple times so should avoid impure or
+  expensive ops.
+
+  ;;; Atomically increment integer key without using INCR
+  (atomic {} 100 ; Retry <= 100 times on failed optimistic lock, or throw ex
+
+    (watch  :my-int-key) ; Watch key for changes
+    (let [;; You can grab the value of the watched key using
+          ;; `with-replies` (on the current connection), or
+          ;; a nested `wcar` (on a new connection):
+          curr-val (or (as-long (with-replies (get :my-int-key))) 0)]
+
+      (return curr-val)
+
+      (multi) ; Start the transaction
+        (set :my-int-key (inc curr-val))
+        (get :my-int-key)
+      ))
+  => [[\"OK\" nil \"OK\" \"QUEUED\" \"QUEUED\"] ; Prelude replies
+      [\"OK\" \"1\"] ; Transaction replies (`exec` reply)
+      ]
+
+  See also `lua` as alternative way to get transactional behaviour."
+  [conn-opts max-cas-attempts & body]
+  `(atomic* ~conn-opts ~max-cas-attempts (do ~@body)
+     (throw (ex-info (format "`atomic` failed after %s attempt(s)"
+                       ~max-cas-attempts)
+              {:nattempts ~max-cas-attempts}))))
+
+(comment
+  ;; Error before exec (=> syntax, etc.)
+  (wcar {} (multi) (redis-call [:invalid]) (ping) (exec))
+  ;; ["OK" #<Exception: ERR unknown command 'INVALID'> "QUEUED"
+  ;;  #<Exception: EXECABORT Transaction discarded because of previous errors.>]
+
+  ;; Error during exec (=> datatype, etc.)
+  (wcar {} (set "aa" "string") (multi) (ping) (incr "aa") (ping) (exec))
+  ;; ["OK" "OK" "QUEUED" "QUEUED" "QUEUED"
+  ;;  ["PONG" #<Exception: ERR value is not an integer or out of range> "PONG"]]
+
+  (wcar {} (multi) (ping) (discard)) ; ["OK" "QUEUED" "OK"]
+  (wcar {} (multi) (ping) (discard) (exec))
+  ;; ["OK" "QUEUED" "OK" #<Exception: ERR EXEC without MULTI>]
+
+  (wcar {} (watch "aa") (set "aa" "string") (multi) (ping) (exec))
+  ;; ["OK" "OK" "OK" "QUEUED" []]  ; Old reply fn
+  ;; ["OK" "OK" "OK" "QUEUED" nil] ; New reply fn
+
+  (wcar {} (watch "aa") (set "aa" "string") (unwatch) (multi) (ping) (exec))
+  ;; ["OK" "OK" "OK" "OK" "QUEUED" ["PONG"]]
+
+  (wcar {} (multi) (multi))
+  ;; ["OK" #<Exception java.lang.Exception: ERR MULTI calls can not be nested>]
+
+  (atomic {} 100 (/ 5 0)) ; Divide by zero
+  )
+
+(comment
+  (defn swap "`multi`-based `swap`"
+    [k f & [nmax-attempts abort-val]]
+    (loop [idx 1]
+      ;; (println idx)
+      (parse-suppress (watch k))
+      (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
+            nx?          (= ex 0)
+            [new-val return-val] (encore/swapped* (f old-val nx?))
+            cas-success? (parse nil
+                           (with-replies
+                             (parse-suppress (multi) (set k new-val))
+                             (exec)))]
+        (if cas-success?
+          (return return-val)
+          (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
+            (recur (inc idx))
+            (return abort-val)))))))
+
+;;;; CAS tools (experimental!)
 ;; Working around the lack of simple CAS in Redis core, Ref http://goo.gl/M4Phx8
 
 (defn- prep-cas-old-val [x]
   (let [^bytes bs (protocol/coerce-bs x)
-        ?sha      (when (> (alength bs) 40)
-                    (org.apache.commons.codec.digest.DigestUtils/sha1Hex bs))]
+        ;; Don't bother with sha when actual value would be shorter:
+        ?sha      (when (> (alength bs) 40) (sha1-ba bs))]
     [?sha (raw bs)]))
 
 (comment (encore/qb 1000 (prep-cas-old-val "hello there")))
@@ -707,22 +724,3 @@
   (wcar {} (hmget* "hkey" "a" "b"))
   (wcar {} (hgetall* "hkey"))
   (wcar {} (parse str/upper-case (hgetall* "hkey"))))
-
-(comment
-  (defn swap "`multi`-based `swap`"
-    [k f & [nmax-attempts abort-val]]
-    (loop [idx 1]
-      ;; (println idx)
-      (parse-suppress (watch k))
-      (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
-            nx?          (= ex 0)
-            [new-val return-val] (encore/swapped* (f old-val nx?))
-            cas-success? (parse nil
-                           (with-replies
-                             (parse-suppress (multi) (set k new-val))
-                             (exec)))]
-        (if cas-success?
-          (return return-val)
-          (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
-            (recur (inc idx))
-            (return abort-val)))))))

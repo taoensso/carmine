@@ -83,6 +83,7 @@
   ;;; TODO Would be nice if we could avoid the array copies here:
   nil        (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x)))
   Object     (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x))))
+
 (extend encore/bytes-class IRedisArg {:coerce-bs (fn [x] (encore/ba-concat bs-bin x))})
 
 (defmacro ^:private send-*    [out] `(.write ~out bs-*))
@@ -266,7 +267,7 @@
 
 (def ^:const suppressed-reply-kw :carmine/suppressed-reply)
 (defn-       suppressed-reply? [parsed-reply]
-  (encore/kw-identical? parsed-reply suppressed-reply-kw))
+  (identical? parsed-reply suppressed-reply-kw))
 
 (defn- return-parsed-reply "Implementation detail."
   [preply] (if (instance? Exception preply) (throw preply) preply))
@@ -385,7 +386,7 @@
   leaking into your internal logic."
   {:arglists '([:as-pipeline & body] [& body])}
   [& [s1 & sn :as sigs]]
-  (let [as-pipeline? (encore/kw-identical? s1 :as-pipeline)
+  (let [as-pipeline? (identical? s1 :as-pipeline)
         body         (if as-pipeline? sn sigs)]
     `(with-replies* (fn [] ~@body) ~as-pipeline?)))
 
