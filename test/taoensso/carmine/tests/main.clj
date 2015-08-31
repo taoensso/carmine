@@ -328,6 +328,45 @@
                  (car/ping)))))
   (expect k-val (wcar* (car/get k))))
 
+;;;; with-replies
+
+(expect ["1" "2" ["3" "4"] "5"]
+  (wcar {}
+    (car/echo 1)
+    (car/echo 2)
+    (car/return (car/with-replies (car/echo 3) (car/echo 4)))
+    (car/echo 5)))
+
+(expect ["1" "2" ["3" "4" ["5" "6"]] "7"] ; Nested `with-replies`
+  (wcar {}
+    (car/echo 1)
+    (car/echo 2)
+    (car/return (car/with-replies (car/echo 3) (car/echo 4)
+                  (car/return (car/with-replies (car/echo 5) (car/echo 6)))))
+    (car/echo 7)))
+
+(expect ["A" "b" ["c" "D"] ["E" "F"] "g"] ; `with-replies` vs parsers
+  (wcar {}
+    (car/parse str/upper-case (car/echo :a))
+    (car/echo :b)
+    (car/return (car/with-replies (car/echo :c) (car/parse str/upper-case (car/echo :d))))
+    (car/return
+      (car/parse str/upper-case
+        (car/with-replies (car/echo :e) (car/echo :f))))
+    (car/echo :g)))
+
+(expect ["a" "b" ["c" "d" ["e" "f"]] "g"] ; Nested `with-replies` vs parsers
+  (wcar {}
+    (car/echo :a)
+    (car/echo :b)
+    (car/return
+      (car/parse #(cond (string? %) (str/lower-case %)
+                        (vector? %) (mapv str/lower-case %))
+        (car/with-replies (car/echo :c) (car/echo :d)
+          (car/return (car/parse str/upper-case
+                        (car/with-replies (car/echo :e) (car/echo :f)))))))
+    (car/echo :g)))
+
 ;;;; Parsers
 ;; Like middleware, comp order can get confusing
 
@@ -499,18 +538,73 @@
   (do (wcar {} (car/set (tkey "bin-arg") (.getBytes "Foobar" "UTF-8")))
       (seq (wcar {} (car/get (tkey "bin-arg"))))))
 
-;;;; compare-and-set
+;;;; CAS stuff
 
-(expect [1 1 nil 1 1 "final-val"]
+(expect ["OK" 1 0 1 1 "final-val"]
   (let [tk  (tkey "cas-k")
         cas (partial car/compare-and-set tk)]
+    ;; (wcar {} (car/del tk))
     (wcar {}
-      (cas :redis/nx 0)
+      (car/set tk    0)
       (cas 0         1)
       (cas 22        23)  ; Will be ignored
       (cas 1         nil) ; Serialized nil
       (cas nil       "final-val")
       (car/get tk))))
+
+(expect
+  ["state1" "state2" "state3" "RETURN" "state4" "state4" "OK"
+   [:this :is :a :big :value :needs :sha :woo]
+   :aborted "tx-value" "OK" :aborted "tx-value"]
+
+  (let [tk      (tkey "swap1")
+        big-val [:this :is :a :big :value :needs :sha]]
+    ;; (wcar {} (car/del tk)) ; Debug
+    (wcar {}
+      (car/swap tk (fn [?old nx?] (if nx? "state1" "_")))
+      (car/swap tk (fn [?old nx?] (if nx? "_" "state2")))
+      (car/swap tk (fn [?old _]   (if (= ?old "state2")  "state3" "_")))
+      (car/parse str/upper-case
+        (car/swap tk (fn [?old _] (encore/swapped "state4" "return"))))
+      (car/get  tk)
+      (car/swap tk (fn [?old _] (encore/swapped "state5" ?old)))
+
+      (car/set  tk big-val)
+      (car/swap tk (fn [?old nx?] (conj ?old :woo)))
+
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        1 :aborted)
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        2 :aborted)
+
+      (car/set tk big-val)
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        1 :aborted)
+      (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+        2 :aborted))))
+
+(expect
+  ["nx" 1 1 "3" "tx-value1" :aborted "tx-value3" 0 ["nx" "val2" "tx-value3" "val4"]]
+  (let [tk (tkey "swap2")]
+    ;; (wcar {} (car/del tk)) ; Debug
+    (wcar {}
+      (car/hswap tk "field1" (fn [?old-val nx?] (if nx? "nx" "ex")))
+      (car/hset  tk "field2" "val2")
+      (car/hset  tk "field3" 3)
+      (car/hswap tk "field3" (fn [?old-val nx?] ?old-val))
+
+      (car/hswap tk "field3"
+        (fn [?old nx?] (wcar {} (car/hset tk "field4" "non-tx-value1")) "tx-value1")
+        1 :aborted)
+      (car/hswap tk "field3"
+        (fn [?old nx?] (wcar {} (car/hset tk "field3" "non-tx-value2")) "tx-value2")
+        1 :aborted)
+      (car/hswap tk "field3"
+        (fn [?old nx?] (wcar {} (car/hset tk "field3" "non-tx-value3")) "tx-value3")
+        2 :aborted)
+
+      (car/hset  tk "field4" "val4")
+      (car/hvals tk))))
 
 ;;;; Benching
 

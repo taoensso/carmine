@@ -101,7 +101,7 @@
     :done-awaiting-gc     - Finished handling, awaiting GC.
     :done-with-backoff    - Finished handling, awaiting dedupe timeout.
   nil                   - Already GC'd or invalid message id."
-  (let [script (encore/slurp-resource "lua/mq/msg_status.lua")]
+  (let [script (encore/slurp-resource "lua/mq/msg-status.lua")]
     (fn [qname mid]
       (car/parse-keyword
         (car/lua script

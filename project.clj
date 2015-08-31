@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.11.1"
+(defproject com.taoensso/carmine "2.12.0-beta1"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
@@ -11,11 +11,11 @@
                 *assert* true}
 
   :dependencies
-  [[org.clojure/clojure              "1.4.0"]
-   [com.taoensso/encore              "1.34.0"]
-   [com.taoensso/timbre              "3.4.0"]
+  [[org.clojure/clojure              "1.5.1"]
+   [com.taoensso/encore              "2.5.0"]
+   [com.taoensso/timbre              "4.1.1"]
    [com.taoensso/nippy               "2.9.0"]
-   [org.apache.commons/commons-pool2 "2.4.1"]
+   [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.10"]
    [org.clojure/data.json            "0.2.6"]]
 
@@ -24,12 +24,12 @@
    :server-jvm {:jvm-opts ^:replace ["-server"]}
    :1.5  {:dependencies [[org.clojure/clojure     "1.5.1"]]}
    :1.6  {:dependencies [[org.clojure/clojure     "1.6.0"]]}
-   :1.7  {:dependencies [[org.clojure/clojure     "1.7.0-RC1"]]}
+   :1.7  {:dependencies [[org.clojure/clojure     "1.7.0"]]}
    :test {:dependencies [[expectations            "2.1.0"]
                          [org.clojure/test.check  "0.7.0"]
-                         [com.taoensso/faraday    "1.6.0"]
+                         [com.taoensso/faraday    "1.7.1"]
                          [clj-aws-s3              "0.3.10"]
-                         [ring/ring-core          "1.3.2"]]
+                         [ring/ring-core          "1.4.0"]]
           :plugins [[lein-expectations "0.0.8"]
                     [lein-autoexpect   "1.5.0"]]}
    :dev

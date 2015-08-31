@@ -17,6 +17,7 @@
 
 ;;;; TODO
 ;; * Redis 2.8+ http://redis.io/topics/notifications
+;; * Could do with a minor refactor (incl. reduce-based perf, etc.)
 
 ;;;; Public interfaces
 
@@ -83,7 +84,7 @@
 (def ^:private extend-exists
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
-  (let [script (encore/slurp-resource "lua/tundra/extend_exists.lua")]
+  (let [script (encore/slurp-resource "lua/tundra/extend-exists.lua")]
     (fn [ttl-ms keys] (car/lua script keys [(or ttl-ms 0)]))))
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
