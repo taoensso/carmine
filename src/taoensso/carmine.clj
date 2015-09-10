@@ -88,28 +88,27 @@
 
 ;;;; Misc core
 
-(encore/defalias as-bool     encore/as-?bool)
-(encore/defalias as-int      encore/as-?int)
-(encore/defalias as-float    encore/as-?float)
-(encore/defalias as-map      encore/as-map)
+;;; Mostly deprecated; prefer using encore stuff directly
+(defn as-int   [x] (when x (encore/as-int   x)))
+(defn as-float [x] (when x (encore/as-float x)))
+(defn as-bool  [x] (when x (encore/as-bool  x)))
+(defn as-map   [x]         (encore/as-map   x))
+
 (encore/defalias parse       protocol/parse)
 (encore/defalias parser-comp protocol/parser-comp)
-
-;;; Note that 'parse' has different meanings in Carmine/Encore context:
-(defmacro parse-int     [& body] `(parse as-int    ~@body))
-(defmacro parse-float   [& body] `(parse as-float  ~@body))
-(defmacro parse-bool    [& body] `(parse as-bool   ~@body))
-(defmacro parse-keyword [& body] `(parse keyword   ~@body))
-
-(defmacro parse-suppress "Experimental." [& body]
-  `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
-
-(comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
-
 (encore/defalias parse-raw   protocol/parse-raw)
 (encore/defalias parse-nippy protocol/parse-nippy)
 
+(defmacro parse-int      [& body] `(parse as-int   ~@body))
+(defmacro parse-float    [& body] `(parse as-float ~@body))
+(defmacro parse-bool     [& body] `(parse as-bool  ~@body))
+(defmacro parse-keyword  [& body] `(parse keyword  ~@body))
+(defmacro parse-suppress [& body]
+  `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
+
 (defmacro parse-map [form & [kf vf]] `(parse #(encore/as-map % ~kf ~vf) ~form))
+
+(comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
 
 (defn key
   "Joins parts to form an idiomatic compound Redis key name. Suggested style:
