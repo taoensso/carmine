@@ -10,17 +10,9 @@
              (connections :as conns)
              (commands    :as commands)]))
 
-;;;; Encore version check
-
-(let [min-encore-version 1.28] ; For `backport-run!` support
-  (if-let [assert! (ns-resolve 'taoensso.encore 'assert-min-encore-version)]
-    (assert! min-encore-version)
-    (throw
-      (ex-info
-        (format
-          "Insufficient com.taoensso/encore version (< %s). You may have a Leiningen dependency conflict (see http://goo.gl/qBbLvC for solution)."
-          min-encore-version)
-        {:min-version min-encore-version}))))
+(if (vector? taoensso.encore/encore-version)
+  (encore/assert-min-encore-version [2 11 0])
+  (encore/assert-min-encore-version  2.11))
 
 ;;;; Connections
 
@@ -629,7 +621,7 @@
 ;;;; Deprecated
 
 (def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
-(def as-double "DEPRECATED: Use `as-float` instead." as-double)
+(def as-double "DEPRECATED: Use `as-float` instead." as-float)
 (defmacro parse-long "DEPRECATED: Use `parse-int` instead."
   [& body] `(parse as-long   ~@body))
 (defmacro parse-double "DEPRECATED: Use `parse-float` instead."
