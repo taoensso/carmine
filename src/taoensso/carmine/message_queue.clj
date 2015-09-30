@@ -23,6 +23,8 @@
             [taoensso.carmine :as car :refer (wcar)]
             [taoensso.encore  :as encore]))
 
+;; TODO Ability to enqueue something with an init backoff
+
 ;;;; Ideas to avoid polling
 ;; 1. Lua brpoplpush - doesn't currently exist, unlikely to in future.
 ;; 2. Redis 2.8+ Pub/Sub keyspace notifications? Maybe with reliable Pub/Sub?

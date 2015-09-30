@@ -1,6 +1,6 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
-## v2.12.0-beta1 / 2015 Aug 31
+## v2.12.0 / 2015 Sep 30
 
 > This is a significant **feature release** focused on new CAS utils
 
@@ -8,12 +8,13 @@
 * **New**: `with-replies` now supports nesting
 * **New**: added experimental CAS utils: `swap`, `hswap`
 * **New**: updated commands.json (2015 Aug 5)
+* **Perf**: bumped Nippy dependency to v2.10.0
 * **Perf**: minor low-level Redis protocol optimizations
 * **Fix**: Tundra S3 datastore wasn't closing input stream
 * **Docs**: `wcar` docstring now has a warning re: laziness [#138]
 
 ```clojure
-[com.taoensso/carmine "2.12.0-beta1"]
+[com.taoensso/carmine "2.12.0"]
 ```
 
 

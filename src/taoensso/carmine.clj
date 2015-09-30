@@ -1,5 +1,5 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
-  {:author "Peter Taoussanis"}
+  {:author "Peter Taoussanis (@ptaoussanis)"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
   (:require [clojure.string       :as str]
             [taoensso.encore      :as encore]
@@ -10,17 +10,9 @@
              (connections :as conns)
              (commands    :as commands)]))
 
-;;;; Encore version check
-
-(let [min-encore-version 1.28] ; For `backport-run!` support
-  (if-let [assert! (ns-resolve 'taoensso.encore 'assert-min-encore-version)]
-    (assert! min-encore-version)
-    (throw
-      (ex-info
-        (format
-          "Insufficient com.taoensso/encore version (< %s). You may have a Leiningen dependency conflict (see http://goo.gl/qBbLvC for solution)."
-          min-encore-version)
-        {:min-version min-encore-version}))))
+(if (vector? taoensso.encore/encore-version)
+  (encore/assert-min-encore-version [2 11 0])
+  (encore/assert-min-encore-version  2.11))
 
 ;;;; Connections
 
@@ -88,28 +80,27 @@
 
 ;;;; Misc core
 
-(encore/defalias as-bool     encore/as-?bool)
-(encore/defalias as-int      encore/as-?int)
-(encore/defalias as-float    encore/as-?float)
-(encore/defalias as-map      encore/as-map)
+;;; Mostly deprecated; prefer using encore stuff directly
+(defn as-int   [x] (when x (encore/as-int   x)))
+(defn as-float [x] (when x (encore/as-float x)))
+(defn as-bool  [x] (when x (encore/as-bool  x)))
+(defn as-map   [x]         (encore/as-map   x))
+
 (encore/defalias parse       protocol/parse)
 (encore/defalias parser-comp protocol/parser-comp)
-
-;;; Note that 'parse' has different meanings in Carmine/Encore context:
-(defmacro parse-int     [& body] `(parse as-int    ~@body))
-(defmacro parse-float   [& body] `(parse as-float  ~@body))
-(defmacro parse-bool    [& body] `(parse as-bool   ~@body))
-(defmacro parse-keyword [& body] `(parse keyword   ~@body))
-
-(defmacro parse-suppress "Experimental." [& body]
-  `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
-
-(comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
-
 (encore/defalias parse-raw   protocol/parse-raw)
 (encore/defalias parse-nippy protocol/parse-nippy)
 
+(defmacro parse-int      [& body] `(parse as-int   ~@body))
+(defmacro parse-float    [& body] `(parse as-float ~@body))
+(defmacro parse-bool     [& body] `(parse as-bool  ~@body))
+(defmacro parse-keyword  [& body] `(parse keyword  ~@body))
+(defmacro parse-suppress [& body]
+  `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
+
 (defmacro parse-map [form & [kf vf]] `(parse #(encore/as-map % ~kf ~vf) ~form))
+
+(comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
 
 (defn key
   "Joins parts to form an idiomatic compound Redis key name. Suggested style:
@@ -630,7 +621,7 @@
 ;;;; Deprecated
 
 (def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
-(def as-double "DEPRECATED: Use `as-float` instead." as-double)
+(def as-double "DEPRECATED: Use `as-float` instead." as-float)
 (defmacro parse-long "DEPRECATED: Use `parse-int` instead."
   [& body] `(parse as-long   ~@body))
 (defmacro parse-double "DEPRECATED: Use `parse-float` instead."
