@@ -45,7 +45,7 @@
                            :attrs [:redis-key :frozen-val]}})
                  (table) ; [{:frozen-val _ :redis-key _} ...]
                  (far/items-by-attrs :redis-key)
-                 (encore/map-kvs nil :frozen-val)
+                 (encore/map-vals :frozen-val)
                  (reduce merge {}))
             (catch Throwable t (zipmap ks (repeat t))))]
       (mapv #(get vals-map % (ex-info "Missing value" {})) ks))))
@@ -66,9 +66,20 @@
                                   :key-ns key-ns}))
 
 (comment
+  (def client-opts creds)
   (ensure-table client-opts {:throughput {:read 1 :write 1}})
   (far/describe-table client-opts default-table)
   (def dstore  (faraday-datastore client-opts))
   (def hardkey (tundra/>urlsafe-str "foo:bar /♡\\:baz "))
   (tundra/put-key dstore hardkey (.getBytes "hello world"))
-  (String. (first (tundra/fetch-keys dstore [hardkey]))))
+  (String. ^bytes (first (tundra/fetch-keys dstore [hardkey])))
+
+  (def tstore (tundra/tundra-store dstore))
+  (def worker (tundra/worker tstore client-opts {}))
+
+  (require '[taoensso.carmine :as car])
+  (car/wcar {} (car/hmset* "ted" {:name "ted"}))
+  (car/wcar {} (tundra/dirty tstore "ted"))
+  (car/wcar {} (car/del "ted"))
+  (car/wcar {} (tundra/ensure-ks tstore "ted"))
+  (car/wcar {} (car/hget "ted" :name)))
