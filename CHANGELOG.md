@@ -1,5 +1,14 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.12.1 / 2015 Nov 30
+
+* **Hotfix**: broken Faraday data store for Tundra [#147]
+
+```clojure
+[com.taoensso/carmine "2.12.1"]
+```
+
+
 ## v2.12.0 / 2015 Sep 30
 
 > This is a significant **feature release** focused on new CAS utils
