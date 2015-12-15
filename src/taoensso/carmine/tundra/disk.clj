@@ -20,7 +20,8 @@
 
 (defn- read-ba  [path] (Files/readAllBytes (path* path)))
 (defn- write-ba [path ba]
-  (Files/write (path* path) ba
+  (Files/write ^Path (path* path) ^bytes ba
+    ^"[Ljava.nio.file.OpenOption;"
     (into-array OpenOption [StandardOpenOption/CREATE
                             StandardOpenOption/TRUNCATE_EXISTING
                             StandardOpenOption/WRITE
