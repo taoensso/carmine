@@ -323,7 +323,7 @@
 
 (declare close-listener)
 
-(defrecord Listener [connection handler state]
+(defrecord Listener [connection handler state future]
   java.io.Closeable
   (close [this] (close-listener this)))
 
@@ -349,20 +349,19 @@
          state-atom#   (atom ~initial-state)
          {:as conn# in# :in} (conns/make-new-connection
                               (assoc (conns/conn-spec ~conn-spec)
-                                :listener? true))]
-
-     (future-call ; Thread to long-poll for messages
-      (bound-fn []
-        (while true ; Closes when conn closes
-          (let [reply# (protocol/get-unparsed-reply in# {})]
-            (try
-              (@handler-atom# reply# @state-atom#)
-              (catch Throwable t#
-                (timbre/error t# "Listener handler exception")))))))
+                                     :listener? true))
+         future# (future-call ; Thread to long-poll for messages
+                  (bound-fn []
+                    (while true ; Closes when conn closes
+                      (let [reply# (protocol/get-unparsed-reply in# {})]
+                        (try
+                          (@handler-atom# reply# @state-atom#)
+                          (catch Throwable t#
+                            (timbre/error t# "Listener handler exception")))))))]
 
      (protocol/with-context conn# ~@body
        (protocol/execute-requests (not :get-replies) nil))
-     (Listener. conn# handler-atom# state-atom#)))
+     (Listener. conn# handler-atom# state-atom# future#)))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's preexisting persistent
@@ -371,7 +370,9 @@
   `(protocol/with-context (:connection ~listener) ~@body
      (protocol/execute-requests (not :get-replies) nil)))
 
-(defn close-listener [listener] (conns/close-conn (:connection listener)))
+(defn close-listener [listener]
+  (conns/close-conn (:connection listener))
+  (future-cancel (:future listener)))
 
 (defmacro with-new-pubsub-listener
   "A wrapper for `with-new-listener`.
