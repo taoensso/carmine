@@ -12,8 +12,8 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.26.1"]
-   [com.taoensso/timbre              "4.1.4"]
+   [com.taoensso/encore              "2.32.0"]
+   [com.taoensso/timbre              "4.2.1"]
    [com.taoensso/nippy               "2.10.0"]
    [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.10"]
@@ -25,8 +25,10 @@
    :1.5  {:dependencies [[org.clojure/clojure     "1.5.1"]]}
    :1.6  {:dependencies [[org.clojure/clojure     "1.6.0"]]}
    :1.7  {:dependencies [[org.clojure/clojure     "1.7.0"]]}
-   :1.8  {:dependencies [[org.clojure/clojure     "1.8.0-RC2"]]}
-   :test {:dependencies [[expectations            "2.1.3"]
+   :1.8  {:dependencies [[org.clojure/clojure     "1.8.0-RC5"]]}
+   :test {:dependencies [;; 2.1.4 has breaking changes
+                         ;; TODO Migrate expectations->clojure.test
+                         [expectations            "2.1.3"]
                          [org.clojure/test.check  "0.9.0"]
                          [com.taoensso/faraday    "1.8.0"]
                          [clj-aws-s3              "0.3.10"]
@@ -36,9 +38,13 @@
    :dev
    [:1.7 :test
     {:plugins [[lein-ancient "0.6.4"]
-               [codox        "0.8.11"]]}]}
+               [lein-codox   "0.9.1"]]}]}
 
   :test-paths ["test" "src"]
+
+  :codox
+  {:language :clojure
+   :source-uri "https://github.com/ptaoussanis/carmine/blob/master/{filepath}#L{line}"}
 
   :aliases
   {"test-all"   ["with-profile" "+1.5:+1.6:+1.7:+1.8" "expectations"]
