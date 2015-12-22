@@ -31,7 +31,11 @@ Carmine is an attempt to **cohesively bring together the best bits from each cli
   * Includes _Tundra_, an API for **replicating data to an additional datastore**. (Redis 2.6+, v2+)
 
 ## 3rd-party tools, etc.
- * [redlock-clj](https://github.com/lantiga/redlock-clj) by [Luca Antiga](https://github.com/lantiga) - distributed locks for uncoordinated Redis clusters.
+
+Link                     | Description
+------------------------ | -----------------------------------------------------
+[@lantiga/redlock-clj]   | Distributed locks for uncoordinated Redis clusters
+Your link here?          | **PR's welcome!**
 
 ## Getting started
 
@@ -385,3 +389,5 @@ Copyright &copy; 2012-2015 Peter Taoussanis. Distributed under the [Eclipse Publ
 [CDS]: http://clojure-doc.org/
 [ClojureWerkz]: http://clojurewerkz.org/
 [Eclipse Public License]: https://raw2.github.com/ptaoussanis/carmine/master/LICENSE
+
+[@lantiga/redlock-clj]: https://github.com/lantiga/redlock-clj
