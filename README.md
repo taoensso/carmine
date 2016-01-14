@@ -4,7 +4,7 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.12.1"] ; Stable
+[com.taoensso/carmine "2.12.2"] ; Stable
 ```
 
 # Carmine
@@ -41,7 +41,7 @@ Your link here?          | **PR's welcome!**
 Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "2.12.1"]
+[com.taoensso/carmine "2.12.2"]
 ```
 
 And setup your namespace imports:

@@ -5,7 +5,7 @@
 * **Hotfix**: broken Faraday data store for Tundra [#147]
 
 ```clojure
-[com.taoensso/carmine "2.12.1"]
+[com.taoensso/carmine "2.12.2"]
 ```
 
 
