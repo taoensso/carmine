@@ -1,34 +1,33 @@
-**[API docs][]** | **[CHANGELOG][]** | [other Clojure libs][] | [Twitter][] | [contact/contrib](#contact--contributing) | current [Break Version][]:
+<a href="https://www.taoensso.com" title="More stuff by @ptaoussanis at www.taoensso.com">
+<img src="https://www.taoensso.com/taoensso-open-source.png" alt="Taoensso open-source" width="400"/></a>
+
+**[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.12.1"] ; See CHANGELOG for details
+[com.taoensso/carmine "2.12.1"] ; Stable
 ```
 
-# Carmine, a Clojure Redis client & message queue
+# Carmine
 
-[Redis](http://www.redis.io/) is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
+### A Clojure Redis client & message queue
 
-##### Aren't there already a bunch of clients?
+[Redis] is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
 
-Plenty: there's [redis-clojure](https://github.com/tavisrudd/redis-clojure), [clj-redis](https://github.com/mmcgrana/clj-redis) based on [Jedis](https://github.com/xetorthio/jedis), [Accession](https://github.com/abedra/accession), and (the newest) [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure). Each has its strengths but these strengths often fail to overlap, leaving one with no easy answer to an obvious question: _which one should you use_?
-
-Carmine is an attempt to **cohesively bring together the best bits from each client**. And by bringing together the work of others I'm hoping to encourage more folks to **pool their efforts** and get behind one banner. (Rah-rah and all that).
-
-## What's in the box™?
-  * Small, uncomplicated **all-Clojure** library.
-  * **Fully documented**, [up-to-date API](https://github.com/ptaoussanis/carmine/blob/master/src/commands/commands.list), with full support for the latest Redis versions.
-  * **Great performance**.
-  * Industrial strength **connection pooling**.
-  * Composable, **first-class command functions**.
-  * Flexible, high-performance **binary-safe serialization** using [Nippy](https://github.com/ptaoussanis/nippy).
-  * Full support for **Lua scripting**, **Pub/Sub**, etc.
-  * Full support for custom **reply parsing**.
-  * **Command helpers** (`atomic`, `lua`, `sort*`, etc.).
-  * **Ring session-store**.
-  * Simple, high-performance **message queue** (Redis 2.6+, stable v2+).
-  * Simple, high-performance **distributed lock** (Redis 2.6+, stable v2+).
-  * Pluggable **compression** and **encryption** support. (v2+)
-  * Includes _Tundra_, an API for **replicating data to an additional datastore**. (Redis 2.6+, v2+)
+## Features
+ * Small, simple **all-Clojure** library
+ * **Fully documented**, [up-to-date API] with full support for the latest Redis versions
+ * **Great performance**
+ * Industrial strength **connection pooling**
+ * Composable, **first-class command functions**
+ * Flexible, high-performance **binary-safe serialization** using [Nippy]
+ * Full support for **Lua scripting**, **Pub/Sub**, etc.
+ * Full support for custom **reply parsing**
+ * **Command helpers** (`atomic`, `lua`, `sort*`, etc.)
+ * **Ring session-store**
+ * Simple, high-performance **message queue** (v2+, Redis 2.6+)
+ * Simple, high-performance **distributed lock** (v2+, Redis 2.6+)
+ * Pluggable **compression** and **encryption** support (v2+)
+ * Includes _Tundra_, an API for **replicating data to an additional datastore** (v2+, Redis 2.6+)
 
 ## 3rd-party tools, etc.
 
@@ -39,13 +38,17 @@ Your link here?          | **PR's welcome!**
 
 ## Getting started
 
-### Dependencies
-
-Add the necessary dependency to your [Leiningen][] `project.clj` and `require` the library in your ns:
+Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "2.12.1"] ; project.clj
-(ns my-app (:require [taoensso.carmine :as car :refer (wcar)])) ; ns
+[com.taoensso/carmine "2.12.1"]
+```
+
+And setup your namespace imports:
+
+```clojure
+(ns my-app 
+  (:require [taoensso.carmine :as car :refer (wcar)]))
 ```
 
 ### Connections
@@ -68,7 +71,7 @@ Sending commands is easy:
 => ["PONG" "OK" "bar"]
 ```
 
-Note that sending multiple commands at once like this will employ [pipelining](http://redis.io/topics/pipelining). The replies will be queued server-side and returned all at once as a vector. By default, if a single command is in the body of `wcar` the value of the command is returned. To always return a vector, add the `:as-pipeline` argument to `wcar`.
+Note that sending multiple commands at once like this will employ [pipelining]. The replies will be queued server-side and returned all at once as a vector. By default, if a single command is in the body of `wcar` the value of the command is returned. To always return a vector, add the `:as-pipeline` argument to `wcar`.
 
 If the server responds with an error, an exception is thrown:
 
@@ -88,7 +91,7 @@ But what if we're pipelining?
 
 ### Serialization
 
-The only value type known to Redis internally is the [byte string](http://redis.io/topics/data-types). But Carmine uses [Nippy](https://github.com/ptaoussanis/nippy) under the hood and understands all of Clojure's [rich datatypes](http://clojure.org/datatypes), letting you use them with Redis painlessly:
+The only value type known to Redis internally is the [byte string]. But Carmine uses [Nippy] under the hood and understands all of Clojure's [rich datatypes], letting you use them with Redis painlessly:
 
 ```clojure
 (wcar* (car/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
@@ -105,16 +108,19 @@ The only value type known to Redis internally is the [byte string](http://redis.
 ```
 
 Types are handled as follows:
- * Clojure strings become Redis strings.
- * Keywords become Redis strings. (v2+)
- * Simple Clojure numbers (integers, longs, floats, doubles) become Redis strings.
- * Everything else gets automatically de/serialized.
+
+Clojure type             | Redis type
+------------------------ | --------------------------
+Strings                  | Redis strings
+Keywords                 | Redis strings (v2+)
+Simple numbers           | Redis strings
+Everything else          | Auto de/serialized with [Nippy]
 
 You can force automatic de/serialization for an argument of any type by wrapping it with `car/serialize`.
 
 ### Documentation and command coverage
 
-Like [labs-redis-clojure](https://github.com/wallrat/labs-redis-clojure), Carmine uses the [official Redis command reference](https://github.com/antirez/redis-doc/blob/master/commands.json) to generate its own command API. Which means that not only is Carmine's command coverage *always complete*, but it's also **fully documented**:
+Like [labs-redis-clojure], Carmine uses the [official Redis command reference] to generate its own command API. Which means that not only is Carmine's command coverage *always complete*, but it's also **fully documented**:
 
 ```clojure
 (use 'clojure.repl)
@@ -127,8 +133,6 @@ Available since: 1.0.0.
 
 Time complexity: O(N+M*log(M)) where N is the number of elements in the list or set to sort, and M the number of returned elements. When the elements are not sorted, complexity is currently O(N) as there is a copy step that will be avoided in next releases."
 ```
-
-*Yeah*. Andreas Bielk, you rock.
 
 ### Lua
 
@@ -147,7 +151,7 @@ Redis 2.6 introduced a remarkably powerful feature: server-side Lua scripting! A
 => ["OK" "lua bar"]
 ```
 
-Script primitives are also provided: `eval`, `eval-sha`, `eval*`, `eval-sha*`. See the [Lua scripting docs](http://redis.io/commands/eval) for more info.
+Script primitives are also provided: `eval`, `eval-sha`, `eval*`, `eval-sha*`. See the [Lua scripting docs] for more info.
 
 ### Helpers
 
@@ -197,7 +201,7 @@ And since real functions can compose, so can Carmine's. By nesting `wcar` calls,
 
 ### Listeners & Pub/Sub
 
-Carmine has a flexible **Listener** API to support persistent-connection features like [monitoring](http://redis.io/commands/monitor) and Redis's fantastic [Publish/Subscribe](http://redis.io/topics/pubsub) feature:
+Carmine has a flexible **Listener** API to support persistent-connection features like [monitoring] and Redis's fantastic [Publish/Subscribe] facility:
 
 ```clojure
 (def listener
@@ -265,7 +269,7 @@ Carmine's serializer has no problem handling arbitrary byte[] data. But the seri
 
 ### Message queue
 
-Redis makes a great [message queue server](http://antirez.com/post/250):
+Redis makes a great [message queue server]:
 
 ```clojure
 (:require [taoensso.carmine.message-queue :as car-mq]) ; Add to `ns` macro
@@ -285,12 +289,12 @@ Redis makes a great [message queue server](http://antirez.com/post/250):
 Look simple? It is. But it's also distributed, fault-tolerant, and _fast_.
 
 Guarantees:
-  * Messages are persistent (durable) as per Redis config.
-  * Each message will be handled once and only once.
-  * Handling is fault-tolerant: a message cannot be lost due to handler crash.
-  * Message de-duplication can be requested on an ad hoc (per message) basis. In these cases, the same message cannot ever be entered into the queue more than once simultaneously or within a (per message) specifiable post-handling backoff period.
+ * Messages are persistent (durable) as per Redis config
+ * Each message will be handled once and only once
+ * Handling is fault-tolerant: a message cannot be lost due to handler crash
+ * Message de-duplication can be requested on an ad hoc (per message) basis. In these cases, the same message cannot ever be entered into the queue more than once simultaneously or within a (per message) specifiable post-handling backoff period.
 
-See the [API docs](http://ptaoussanis.github.io/carmine/taoensso.carmine.message-queue.html) for details.
+See the relevant [API] docs for details.
 
 ### Distributed locks
 
@@ -304,16 +308,18 @@ See the [API docs](http://ptaoussanis.github.io/carmine/taoensso.carmine.message
   (println "This was printed under lock!"))
 ```
 
-Again: simple, distributed, fault-tolerant, and _fast_. See the `taoensso.carmine.locks` namespace for details.
+Again: simple, distributed, fault-tolerant, and _fast_.
+
+See the relevant [API] docs for details.
 
 ## Tundra (beta)
 
 Redis is a beautifully designed datastore that makes some explicit engineering tradeoffs. Probably the most important: your data _must_ fit in memory. Tundra helps relax this limitation: only your **hot** data need fit in memory. How does it work?
 
-  1. Use Tundra's `dirty` command **any time you modify/create evictable keys**.
-  2. Use `worker` to create a threaded worker that'll **automatically replicate dirty keys to your secondary datastore**.
-  3. When a dirty key hasn't been used in a specified TTL, it will be **automatically evicted from Redis** (eviction is optional if you just want to use Tundra as a backup/just-in-case mechanism).
-  4. Use `ensure-ks` **any time you want to use evictable keys**. This will extend their TTL or fetch them from your datastore as necessary.
+ 1. Use Tundra's `dirty` command **any time you modify/create evictable keys**
+ 2. Use `worker` to create a threaded worker that'll **automatically replicate dirty keys to your secondary datastore**
+ 3. When a dirty key hasn't been used in a specified TTL, it will be **automatically evicted from Redis** (eviction is optional if you just want to use Tundra as a backup/just-in-case mechanism)
+ 4. Use `ensure-ks` **any time you want to use evictable keys** - this'll extend their TTL or fetch them from your datastore as necessary
 
 That's it: two Redis commands, and a worker! Tundra uses Redis' own dump/restore mechanism for replication, and Carmine's own message queue to coordinate the replication worker.
 
@@ -339,15 +345,15 @@ Tundra can be _very_ easily extended to **any K/V-capable datastore**. Implement
 
 Note that this API makes it convenient to use several different datastores simultaneously (perhaps for different purposes with different latency requirements).
 
-See the relevant [docstrings](http://ptaoussanis.github.io/carmine/taoensso.carmine.tundra.html) for details.
+See the relevant [API] docs for details.
 
 ## Performance
 
-Redis is probably most famous for being [fast](http://redis.io/topics/benchmarks). Carmine does what it can to hold up its end and currently performs well:
+Redis is probably most famous for being [fast]. Carmine does what it can to hold up its end and currently performs well:
 
-![Performance comparison chart](https://github.com/ptaoussanis/carmine/raw/master/benchmarks.png)
+![benchmarks-png]
 
-[Detailed benchmark information](https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE) is available on Google Docs. Note that these numbers are for _unpipelined_ requests: you could do a _lot_ more with pipelining.
+[Detailed benchmark info] is available on Google Docs. Note that these numbers are for _unpipelined_ requests: you could do a _lot_ more with pipelining.
 
 In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort but please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again for composable commands. 
 
@@ -355,39 +361,58 @@ Likewise, I'll happily trade a little less throughput for simpler code.
 
 ##### YourKit
 
-Carmine was developed with the help of the [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp). YourKit, LLC kindly supports open source projects by offering an open source license. They also make the [YourKit .NET Profiler](http://www.yourkit.com/.net/profiler/index.jsp).
+Carmine was developed with the help of the [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp). YourKit, LLC kindly supports open source projects by offering an open source license.
 
-## This project supports the CDS and ![ClojureWerkz](https://raw.github.com/clojurewerkz/clojurewerkz.org/master/assets/images/logos/clojurewerkz_long_h_50.png) goals
+## This project supports the ![ClojureWerkz-logo] goals
 
-  * [CDS][], the **Clojure Documentation Site**, is a **contributer-friendly** community project aimed at producing top-notch, **beginner-friendly** Clojure tutorials and documentation. Awesome resource.
+ * [ClojureWerkz] is a growing collection of open-source, **batteries-included Clojure libraries** that emphasise modern targets, great documentation, and thorough testing.
 
-  * [ClojureWerkz][] is a growing collection of open-source, **batteries-included Clojure libraries** that emphasise modern targets, great documentation, and thorough testing. They've got a ton of great stuff, check 'em out!
+## Contacting me / contributions
 
-## Contact & contributing
+Please use the project's [GitHub issues page] for all questions, ideas, etc. **Pull requests welcome**. See the project's [GitHub contributors page] for a list of contributors.
 
-`lein start-dev` to get a (headless) development repl that you can connect to with [Cider][] (Emacs) or your IDE.
+Otherwise, you can reach me at [Taoensso.com]. Happy hacking!
 
-Please use the project's GitHub [issues page][] for project questions/comments/suggestions/whatever **(pull requests welcome!)**. Am very open to ideas if you have any!
-
-Otherwise reach me (Peter Taoussanis) at [taoensso.com][] or on [Twitter][]. Cheers!
+\- [Peter Taoussanis]
 
 ## License
 
-Copyright &copy; 2012-2015 Peter Taoussanis. Distributed under the [Eclipse Public License][], the same as Clojure.
+Distributed under the [EPL v1.0] \(same as Clojure).  
+Copyright &copy; 2012-2016 [Peter Taoussanis].
 
-
-[API docs]: http://ptaoussanis.github.io/carmine/
-[CHANGELOG]: https://github.com/ptaoussanis/carmine/releases
-[other Clojure libs]: https://www.taoensso.com/clojure
-[taoensso.com]: https://www.taoensso.com
-[Twitter]: https://twitter.com/ptaoussanis
-[issues page]: https://github.com/ptaoussanis/carmine/issues
-[commit history]: https://github.com/ptaoussanis/carmine/commits/master
+<!--- Standard links -->
+[Taoensso.com]: https://www.taoensso.com
+[Peter Taoussanis]: https://www.taoensso.com
+[@ptaoussanis]: https://www.taoensso.com
+[More by @ptaoussanis]: https://www.taoensso.com
 [Break Version]: https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md
-[Leiningen]: http://leiningen.org/
-[Cider]: https://github.com/clojure-emacs/cider
-[CDS]: http://clojure-doc.org/
-[ClojureWerkz]: http://clojurewerkz.org/
-[Eclipse Public License]: https://raw2.github.com/ptaoussanis/carmine/master/LICENSE
 
+<!--- Standard links (repo specific) -->
+[CHANGELOG]: https://github.com/ptaoussanis/carmine/releases
+[API]: http://ptaoussanis.github.io/carmine/
+[GitHub issues page]: https://github.com/ptaoussanis/carmine/issues
+[GitHub contributors page]: https://github.com/ptaoussanis/carmine/graphs/contributors
+[EPL v1.0]: https://raw.githubusercontent.com/ptaoussanis/carmine/master/LICENSE
+[Hero]: https://raw.githubusercontent.com/ptaoussanis/carmine/master/hero.png "Title"
+
+<!--- Unique links -->
+[Redis]: http://www.redis.io/
+[up-to-date API]: https://github.com/ptaoussanis/carmine/blob/master/src/commands/commands.list
+[Nippy]: https://github.com/ptaoussanis/nippy
 [@lantiga/redlock-clj]: https://github.com/lantiga/redlock-clj
+[pipelining]: http://redis.io/topics/pipelining
+[byte string]: http://redis.io/topics/data-types
+[rich datatypes]: http://clojure.org/datatypes
+[labs-redis-clojure]: https://github.com/wallrat/labs-redis-clojure
+[official Redis command reference]: https://github.com/antirez/redis-doc/blob/master/commands.json
+[Lua scripting docs]: http://redis.io/commands/eval
+[monitoring]: http://redis.io/commands/monitor
+[Publish/Subscribe]: http://redis.io/topics/pubsub
+[message queue server]: http://antirez.com/post/250
+[fast]: http://redis.io/topics/benchmarks
+[benchmarks-png]: https://github.com/ptaoussanis/carmine/raw/master/benchmarks.png
+[Detailed benchmark info]: https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE
+[YourKit Java Profiler]: http://www.yourkit.com/java/profiler/index.jsp
+
+[ClojureWerkz-logo]: https://raw.github.com/clojurewerkz/clojurewerkz.org/master/assets/images/logos/clojurewerkz_long_h_50.png
+[ClojureWerkz]: http://clojurewerkz.org/
