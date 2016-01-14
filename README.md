@@ -286,8 +286,6 @@ Redis makes a great [message queue server]:
 (car-mq/stop my-worker)
 ```
 
-Look simple? It is. But it's also distributed, fault-tolerant, and _fast_.
-
 Guarantees:
  * Messages are persistent (durable) as per Redis config
  * Each message will be handled once and only once

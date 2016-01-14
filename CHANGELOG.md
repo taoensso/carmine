@@ -1,11 +1,23 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.12.2 / 2016 Jan 14
+
+> This is a minor, non-breaking release
+
+* **New**: Allow reclaiming resources for pub/sub on closing [#149 @mpenet]
+* **Fix**: Add missing Tundra disk store type hint
+
+```clojure
+[com.taoensso/carmine "2.12.2"]
+```
+
+
 ## v2.12.1 / 2015 Nov 30
 
 * **Hotfix**: broken Faraday data store for Tundra [#147]
 
 ```clojure
-[com.taoensso/carmine "2.12.2"]
+[com.taoensso/carmine "2.12.1"]
 ```
 
 
