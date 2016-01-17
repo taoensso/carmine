@@ -35,6 +35,16 @@
 
 ;;;;
 
+(def *keyslots-server-cache* (atom {}))
+
+(defn- update-keyslots-cache! [keyslot address]
+  (swap! *keyslots-server-cache* assoc keyslot address))
+
+(defn- keyslot-move! [moved-exception]
+  (let [cause (.getMessage moved-exception)
+        [_ keyslot address] (clojure.string/split cause #" ")]
+    (update-keyslots-cache! keyslot address)))
+
 (defn- bytestring
   "Redis communicates with clients using a (binary-safe) byte string protocol.
   This is the equivalent of the byte array representation of a Java String."
@@ -284,6 +294,86 @@
 (defn pull-requests "Implementation detail." [req-queue]
   (-> (swap! req-queue (fn [[_ q]] [q []])) (nth 0)))
 
+(defn execute-requests*
+  [conn requests get-replies? as-pipeline?]
+  (let [nreqs (count requests)]
+    (when (pos? nreqs)
+      (let [{:keys [in out]} conn]
+        (when-not (and in out) (throw no-context-ex))
+        ;; (println "Sending requests: " requests)
+        (send-requests out requests)
+        (when get-replies?
+          (if (or (> nreqs 1) as-pipeline?)
+            (let [parsed-replies
+                  (reduce
+                   (fn [v-acc req-in]
+                     (let [parsed-reply (get-parsed-reply in
+                                                          (:parser (meta req-in)))]
+                       (if (suppressed-reply? parsed-reply)
+                         v-acc
+                         (conj v-acc parsed-reply))))
+                   []
+                   requests)
+                  nparsed-replies (count parsed-replies)]
+              (return-parsed-replies parsed-replies as-pipeline?))
+            (let [req (nth requests 0)
+                  one-reply (get-parsed-reply in (:parser (meta req)))]
+              (return-parsed-reply one-reply))))))))
+
+(defn keyslot-index-reducer [result request]
+  (let [[keyslots indexes] result
+        i (count indexes)
+        expected-keyslot (:expected-keyslot (meta request))
+        j (count (get-in keyslots [expected-keyslot]))
+        keyslots (update-in keyslots [expected-keyslot] conj request)
+        indexes (assoc indexes i [expected-keyslot j] )]
+    [keyslots indexes]))
+
+
+
+(defn- read-futures [index request-futures]
+  (loop [max (count index)
+         i 0
+         values []
+         retries []]
+
+    (if (< i max)
+      (let [_ (println "read-futures" i)
+            [keyslot j] (index i)
+
+            request-results (deref (request-futures keyslot) 1000 :timeout)
+
+            value (get request-results j)
+            values (conj values value)
+            retry? (= value :timeout)
+            retries (if retry? (conj retries i) retries)]
+
+        (recur max (inc i) values retries))
+
+      [values retries])))
+
+(declare create-futures)
+
+(defn execute-requests-cluster*
+  [conn requests get-replies? as-pipeline?]
+
+
+  (loop [results requests
+         retry-indexes (range (count requests))]
+
+    (println "looping in execute for retry-indexes " retry-indexes)
+
+    (let [selected-requests (map #(get requests %) retry-indexes)
+          [keyslot-groups index] (reduce keyslot-index-reducer [] selected-requests)
+          request-futures (create-futures keyslot-groups get-replies? as-pipeline?)
+          [results retry-indexes] (read-futures index request-futures)]
+
+      (println results "<--result")
+
+      #_(if (empty? retry-indexes)
+        (recur results retry-indexes)
+        results))))
+
 (defn execute-requests
   "Implementation detail.
   Sends given/dynamic requests to given/dynamic Redis server and optionally
@@ -297,29 +387,9 @@
 
   ;; For use with Cluster, etc.:
   ([conn requests get-replies? as-pipeline?]
-     (let [nreqs (count requests)]
-       (when (pos? nreqs)
-         (let [{:keys [in out]} conn]
-           (when-not (and in out) (throw no-context-ex))
-           ;; (println "Sending requests: " requests)
-           (send-requests out requests)
-           (when get-replies?
-             (if (or (> nreqs 1) as-pipeline?)
-               (let [parsed-replies
-                     (reduce
-                       (fn [v-acc req-in]
-                         (let [parsed-reply (get-parsed-reply in
-                                              (:parser (meta req-in)))]
-                           (if (suppressed-reply? parsed-reply)
-                             v-acc
-                             (conj v-acc parsed-reply))))
-                       []
-                       requests)
-                     nparsed-replies (count parsed-replies)]
-                 (return-parsed-replies parsed-replies as-pipeline?))
-               (let [req (nth requests 0)
-                     one-reply (get-parsed-reply in (:parser (meta req)))]
-                 (return-parsed-reply one-reply)))))))))
+     (if (get-in conn [:spec :cluster])
+       (execute-requests-cluster* conn requests get-replies? as-pipeline?)
+       (execute-requests* conn requests get-replies? as-pipeline?))))
 
 ;;;; General-purpose macros
 
@@ -395,3 +465,30 @@
   `(binding [*context* (Context. ~conn (atom [nil []]))
              *parser*  nil]
      ~@body))
+
+(defmacro with-cached-spec [keyslot & body]
+  `(if-let [spec# (@*keyslots-server-cache* ~keyslot)]
+     (let [get-conn# (:get-conn *context*)
+           release-conn# (:release-conn)
+           conn# (get-conn# spec#)]
+       (try
+         (with-context conn#  ~@body)
+         (finally
+           (release-conn# conn#))))
+     (do ~@body)))
+
+
+(defn- create-futures [keyslot-groups get-replies? as-pipeline?]
+
+  (reduce (fn [c [keyslot requests]]
+
+            (let [a-future
+                  (future (with-cached-spec keyslot
+                            (execute-requests* (:conn *context*)
+                                               (vec requests)
+                                               get-replies?
+                                               as-pipeline?)))]
+
+              (assoc c keyslot a-future)))
+
+          {} keyslot-groups))

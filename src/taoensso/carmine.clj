@@ -53,7 +53,11 @@
            (protocol/execute-requests :get-replies :as-pipeline))]
 
      (try
-       (let [response# (protocol/with-context conn#
+
+       (let [get-conn# (fn [opts#] (conns/get-conn pool# opts#))
+             release-conn# (fn [c#] (conns/release-conn pool# c#))
+             conn2# (assoc conn# :get-conn get-conn# :release-conn release-conn#)
+             response# (protocol/with-context conn2#
                          (protocol/with-replies ~@sigs))]
          (conns/release-conn pool# conn#)
          response#)
