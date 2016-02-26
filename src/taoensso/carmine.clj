@@ -11,8 +11,8 @@
              (commands    :as commands)]))
 
 (if (vector? taoensso.encore/encore-version)
-  (encore/assert-min-encore-version [2 11 0])
-  (encore/assert-min-encore-version  2.11))
+  (encore/assert-min-encore-version [2 36 0])
+  (encore/assert-min-encore-version  2.36))
 
 ;;;; Connections
 

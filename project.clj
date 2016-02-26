@@ -12,9 +12,9 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.32.0"]
-   [com.taoensso/timbre              "4.2.1"]
-   [com.taoensso/nippy               "2.10.0"]
+   [com.taoensso/encore              "2.36.2"]
+   [com.taoensso/timbre              "4.3.0"]
+   [com.taoensso/nippy               "2.11.1"]
    [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.10"]
    [org.clojure/data.json            "0.2.6"]]
@@ -25,7 +25,7 @@
    :1.5  {:dependencies [[org.clojure/clojure     "1.5.1"]]}
    :1.6  {:dependencies [[org.clojure/clojure     "1.6.0"]]}
    :1.7  {:dependencies [[org.clojure/clojure     "1.7.0"]]}
-   :1.8  {:dependencies [[org.clojure/clojure     "1.8.0-RC5"]]}
+   :1.8  {:dependencies [[org.clojure/clojure     "1.8.0"]]}
    :test {:dependencies [;; 2.1.4 has breaking changes
                          ;; TODO Migrate expectations->clojure.test
                          [expectations            "2.1.3"]
@@ -38,7 +38,7 @@
    :dev
    [:1.7 :test
     {:plugins [[lein-ancient "0.6.4"]
-               [lein-codox   "0.9.1"]]}]}
+               [lein-codox   "0.9.4"]]}]}
 
   :test-paths ["test" "src"]
 
