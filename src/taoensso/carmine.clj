@@ -2,7 +2,7 @@
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
   (:require [clojure.string       :as str]
-            [taoensso.encore      :as encore]
+            [taoensso.encore      :as enc]
             [taoensso.timbre      :as timbre]
             [taoensso.nippy.tools :as nippy-tools]
             [taoensso.carmine
@@ -10,13 +10,13 @@
              (connections :as conns)
              (commands    :as commands)]))
 
-(if (vector? taoensso.encore/encore-version)
-  (encore/assert-min-encore-version [2 36 0])
-  (encore/assert-min-encore-version  2.36))
+(if (vector? taoensso.enc/encore-version)
+  (enc/assert-min-encore-version [2 36 0])
+  (enc/assert-min-encore-version  2.36))
 
 ;;;; Connections
 
-(encore/defalias with-replies protocol/with-replies)
+(enc/defalias with-replies protocol/with-replies)
 
 (defmacro wcar
   "Evaluates body in the context of a fresh thread-bound pooled connection to
@@ -65,7 +65,7 @@
        (finally
          (when ?stashed-replies#
            (parse nil ; Already parsed on stashing
-             (encore/backport-run! return ?stashed-replies#)))))))
+             (enc/backport-run! return ?stashed-replies#)))))))
 
 (comment
   (wcar {} (ping) "not-a-Redis-command" (ping))
@@ -81,15 +81,15 @@
 ;;;; Misc core
 
 ;;; Mostly deprecated; prefer using encore stuff directly
-(defn as-int   [x] (when x (encore/as-int   x)))
-(defn as-float [x] (when x (encore/as-float x)))
-(defn as-bool  [x] (when x (encore/as-bool  x)))
-(defn as-map   [x]         (encore/as-map   x))
+(defn as-int   [x] (when x (enc/as-int   x)))
+(defn as-float [x] (when x (enc/as-float x)))
+(defn as-bool  [x] (when x (enc/as-bool  x)))
+(defn as-map   [x]         (enc/as-map   x))
 
-(encore/defalias parse       protocol/parse)
-(encore/defalias parser-comp protocol/parser-comp)
-(encore/defalias parse-raw   protocol/parse-raw)
-(encore/defalias parse-nippy protocol/parse-nippy)
+(enc/defalias parse       protocol/parse)
+(enc/defalias parser-comp protocol/parser-comp)
+(enc/defalias parse-raw   protocol/parse-raw)
+(enc/defalias parse-nippy protocol/parse-nippy)
 
 (defmacro parse-int      [& body] `(parse as-int   ~@body))
 (defmacro parse-float    [& body] `(parse as-float ~@body))
@@ -98,7 +98,7 @@
 (defmacro parse-suppress [& body]
   `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
 
-(defmacro parse-map [form & [kf vf]] `(parse #(encore/as-map % ~kf ~vf) ~form))
+(defmacro parse-map [form & [kf vf]] `(parse #(enc/as-map % ~kf ~vf) ~form))
 
 (comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
 
@@ -108,18 +108,18 @@
     * Singular category names (\"account\" rather than \"accounts\").
     * Plural _field_ names when appropriate (\"account:friends\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
-  [& parts] (str/join ":" (mapv #(if (keyword? %) (encore/fq-name %) (str %))
+  [& parts] (str/join ":" (mapv #(if (keyword? %) (enc/fq-name %) (str %))
                                 parts)))
 
 (comment (key :foo/bar :baz "qux" nil 10))
 
-(encore/defalias raw            protocol/raw)
-(encore/defalias with-thaw-opts nippy-tools/with-thaw-opts)
-(encore/defalias freeze         nippy-tools/wrap-for-freezing
+(enc/defalias raw            protocol/raw)
+(enc/defalias with-thaw-opts nippy-tools/with-thaw-opts)
+(enc/defalias freeze         nippy-tools/wrap-for-freezing
   "Forces argument of any type (incl. keywords, simple numbers, and binary types)
   to be subject to automatic de/serialization with Nippy.")
 
-(encore/defalias return protocol/return)
+(enc/defalias return protocol/return)
 (comment (wcar {} (return :foo) (ping) (return :bar))
          (wcar {} (parse name (return :foo)) (ping) (return :bar)))
 
@@ -134,7 +134,7 @@
 
   (redis-call [:set \"foo\" \"bar\"] [:get \"foo\"])"
   [& requests]
-  (encore/backport-run!
+  (enc/backport-run!
     (fn [[cmd & args]]
       (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))
             request   (into (vec cmd-parts) args)]
@@ -245,11 +245,11 @@
   (wcar {} (lua       "return redis.call('ping')" {:_ "_"} {}))
   (wcar {} (lua-local "return redis.call('ping')" {:_ "_"} {}))
 
-  (encore/qb 1000
+  (enc/qb 1000
     (wcar {} (ping) (lua "return redis.call('ping')" {:_ "_"} {})
       (ping) (ping) (ping))) ; ~140
 
-  (encore/qb 1000
+  (enc/qb 1000
     (wcar {} (ping) (lua-local "return redis.call('ping')" {:_ "_"} {})
       (ping) (ping) (ping))) ; ~135 (localhost)
   )
@@ -517,7 +517,7 @@
       (parse-suppress (watch k))
       (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
             nx?          (= ex 0)
-            [new-val return-val] (encore/swapped* (f old-val nx?))
+            [new-val return-val] (enc/swapped* (f old-val nx?))
             cas-success? (parse nil
                            (with-replies
                              (parse-suppress (multi) (set k new-val))
@@ -537,10 +537,10 @@
         ?sha      (when (> (alength bs) 40) (sha1-ba bs))]
     [?sha (raw bs)]))
 
-(comment (encore/qb 1000 (prep-cas-old-val "hello there")))
+(comment (enc/qb 1000 (prep-cas-old-val "hello there")))
 
 (def compare-and-set "Experimental."
-  (let [script (encore/slurp-resource "lua/cas-set.lua")]
+  (let [script (enc/slurp-resource "lua/cas-set.lua")]
     (fn self
       ([k old-val ?sha new-val]
        (lua script {:k k}
@@ -553,7 +553,7 @@
          (self k raw-bs ?sha new-val))))))
 
 (def compare-and-hset "Experimental."
-  (let [script (encore/slurp-resource "lua/cas-hset.lua")]
+  (let [script (enc/slurp-resource "lua/cas-hset.lua")]
     (fn self
       ([k field old-val ?sha new-val]
        (lua script {:k k}
@@ -576,14 +576,14 @@
   (wcar {} (hget "cas-k" "field")))
 
 (def swap "Experimental."
-  (let [cas-get (let [script (encore/slurp-resource "lua/cas-get.lua")]
+  (let [cas-get (let [script (enc/slurp-resource "lua/cas-get.lua")]
                   (fn [k] (lua script {:k k} {})))]
     (fn [k f & [nmax-attempts abort-val]]
       (loop [idx 1]
         (let [[old-val ex sha]     (parse nil (with-replies (cas-get k)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (encore/swapped* (f old-val nx?))
+              [new-val return-val] (enc/swapped* (f old-val nx?))
               cas-success?         (= 1 (parse nil
                                           (with-replies
                                             (if nx?
@@ -597,14 +597,14 @@
               (return abort-val))))))))
 
 (def hswap "Experimental."
-  (let [cas-hget (let [script (encore/slurp-resource "lua/cas-hget.lua")]
+  (let [cas-hget (let [script (enc/slurp-resource "lua/cas-hget.lua")]
                    (fn [k field] (lua script {:k k} {:field field})))]
     (fn [k field f & [nmax-attempts abort-val]]
       (loop [idx 1]
         (let [[old-val ex sha]     (parse nil (with-replies (cas-hget k field)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (encore/swapped* (f old-val nx?))
+              [new-val return-val] (enc/swapped* (f old-val nx?))
               cas-success?         (= 1 (parse nil
                                           (with-replies
                                             (if nx?
@@ -617,7 +617,7 @@
               (recur (inc idx))
               (return abort-val))))))))
 
-(comment (encore/qb 100 (wcar {} (swap "swap-k" (fn [?old _] ?old)))))
+(comment (enc/qb 100 (wcar {} (swap "swap-k" (fn [?old _] ?old)))))
 
 ;;;; Deprecated
 

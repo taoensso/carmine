@@ -19,9 +19,9 @@
   Ref. http://antirez.com/post/250 for basic implementation details."
   {:author "Peter Taoussanis"}
   (:require [clojure.string   :as str]
+            [taoensso.encore  :as enc]
             [taoensso.timbre  :as timbre]
-            [taoensso.carmine :as car :refer (wcar)]
-            [taoensso.encore  :as encore]))
+            [taoensso.carmine :as car :refer (wcar)]))
 
 ;; TODO Ability to enqueue something with an init backoff
 
@@ -60,7 +60,7 @@
 (defn clear-queues [conn-opts & qnames]
   (when (seq qnames)
     (wcar conn-opts
-      (encore/backport-run!
+      (enc/backport-run!
         (fn [qname]
           (let [qk (partial qkey qname)]
             (car/del
@@ -103,7 +103,7 @@
     :done-awaiting-gc     - Finished handling, awaiting GC.
     :done-with-backoff    - Finished handling, awaiting dedupe timeout.
   nil                   - Already GC'd or invalid message id."
-  (let [script (encore/slurp-resource "lua/mq/msg-status.lua")]
+  (let [script (enc/slurp-resource "lua/mq/msg-status.lua")]
     (fn [qname mid]
       (car/parse-keyword
         (car/lua script
@@ -123,7 +123,7 @@
                            unique id will be auto-generated.
     * allow-requeue?     - When true, allow buffered escrow-requeue for a
                            message in the :locked or :done-with-backoff state."
-  (let [script (encore/slurp-resource "lua/mq/enqueue.lua")]
+  (let [script (enc/slurp-resource "lua/mq/enqueue.lua")]
     (fn [qname message & [unique-message-id allow-requeue?]]
       (car/parse
         #(if (vector? %) (first %) {:carmine.mq/error (keyword %)})
@@ -146,7 +146,7 @@
     nil             - If msg GC'd, locked, or set to backoff.
     \"eoq-backoff\" - If circle uninitialized or end-of-circle marker reached.
     [<mid> <mcontent> <attempt>] - If message should be (re)handled now."
-  (let [script (encore/slurp-resource "lua/mq/dequeue.lua")]
+  (let [script (enc/slurp-resource "lua/mq/dequeue.lua")]
     (fn [qname & [{:keys [lock-ms eoq-backoff-ms]
                   :or   {lock-ms (* 1000 60 60) eoq-backoff-ms exp-backoff}}]]
       (let [;; Precomp 5 backoffs so that `dequeue` can init the backoff
@@ -321,7 +321,7 @@
             throttle-ms auto-start] :as opts
      :or   {handler (fn [args] (timbre/infof "%s" args) {:status :success})
             monitor (monitor-fn qname 1000 (* 1000 60 60 6))
-            lock-ms        (encore/ms :hours 1)
+            lock-ms        (enc/ms :hours 1)
             nthreads       1
             throttle-ms    200
             eoq-backoff-ms exp-backoff

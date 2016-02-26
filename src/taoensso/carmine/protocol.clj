@@ -4,7 +4,7 @@
   Ref. http://redis.io/topics/protocol"
   {:author "Peter Taoussanis"}
   (:require [clojure.string       :as str]
-            [taoensso.encore      :as encore]
+            [taoensso.encore      :as enc]
             [taoensso.nippy       :as nippy]
             [taoensso.nippy.tools :as nippy-tools])
   (:import  [java.io DataInputStream BufferedOutputStream]
@@ -59,7 +59,7 @@
 (defn raw "Forces byte[] argument to be sent to Redis as raw, unencoded bytes."
   [x]
   (cond
-    (encore/bytes?        x) (WrappedRaw. x)
+    (enc/bytes?        x) (WrappedRaw. x)
     (instance? WrappedRaw x) x
     :else (throw (ex-info "Raw arg must be byte[]" {:x x}))))
 
@@ -69,7 +69,7 @@
 (extend-protocol IRedisArg
   String  (coerce-bs [x] (-> (bytestring x)
                              (ensure-reserved-first-byte)))
-  Keyword (coerce-bs [x] (-> (bytestring ^String (encore/fq-name x))
+  Keyword (coerce-bs [x] (-> (bytestring ^String (enc/fq-name x))
                              (ensure-reserved-first-byte)))
 
   ;;; Simple number types (Redis understands these)
@@ -81,10 +81,10 @@
   WrappedRaw (coerce-bs [x] (:ba x))
 
   ;;; TODO Would be nice if we could avoid the array copies here:
-  nil        (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x)))
-  Object     (coerce-bs [x] (encore/ba-concat bs-clj (nippy-tools/freeze x))))
+  nil        (coerce-bs [x] (enc/ba-concat bs-clj (nippy-tools/freeze x)))
+  Object     (coerce-bs [x] (enc/ba-concat bs-clj (nippy-tools/freeze x))))
 
-(extend encore/bytes-class IRedisArg {:coerce-bs (fn [x] (encore/ba-concat bs-bin x))})
+(extend enc/bytes-class IRedisArg {:coerce-bs (fn [x] (enc/ba-concat bs-bin x))})
 
 (defmacro ^:private send-*    [out] `(.write ~out bs-*))
 (defmacro ^:private send-$    [out] `(.write ~out bs-$))
@@ -97,7 +97,7 @@
       <arg data>       crlf ...]"
   ;; {:pre [(vector? requests)]}
   [^BufferedOutputStream out requests]
-  (encore/backport-run!
+  (enc/backport-run!
     (fn [req-args]
       (when (pos? (count req-args)) ; [] req is dummy req for `return`
         (let [bs-args (:bytestring-req (meta req-args))]
@@ -106,7 +106,7 @@
           (.write out (bytestring (Integer/toString (int (count bs-args)))))
           (send-crlf out)
 
-          (encore/backport-run!
+          (enc/backport-run!
             (fn [^bytes bs-arg]
               (let [payload-size (alength bs-arg)]
                 (send-$ out)
@@ -160,7 +160,7 @@
                             (let [h (byte-array 2)]
                               (.mark      in 2)
                               (.readFully in h 0 2)
-                              (condp encore/ba= h
+                              (condp enc/ba= h
                                 bs-clj :clj
                                 bs-bin :bin
                                 :str)))
@@ -194,7 +194,7 @@
 
       \* (let [bulk-count (Integer/parseInt (.readLine in))]
            (if (== bulk-count -1) nil ; Nb was [] with < Carmine v3
-             (encore/repeatedly-into* [] bulk-count
+             (enc/repeatedly-into* [] bulk-count
                (get-unparsed-reply in req-opts))))
 
       (throw (ex-info (format "Server returned unknown reply type: %s"
@@ -260,7 +260,7 @@
     (fn
       ([value] (return1 (:req-queue *context*) value))
       ([value & more]
-       (encore/backport-run! (partial return1 (:req-queue *context*))
+       (enc/backport-run! (partial return1 (:req-queue *context*))
          (cons value more))))))
 
 ;;;; Requests
@@ -365,7 +365,7 @@
 
         ;; Restore any stashed replies to underlying stateful context:
         (parse nil ; We already parsed on stashing
-          (encore/backport-run! return stashed-replies))
+          (enc/backport-run! return stashed-replies))
 
         (if ?throwable
           (throw ?throwable)

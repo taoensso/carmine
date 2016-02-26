@@ -10,7 +10,7 @@
   (:require [taoensso.nippy         :as nippy]
             [taoensso.nippy.tools   :as nippy-tools]
             [taoensso.timbre        :as timbre]
-            [taoensso.encore        :as encore]
+            [taoensso.encore        :as enc]
             [taoensso.carmine       :as car :refer (wcar)]
             [taoensso.carmine.message-queue :as mq])
   (:import  [java.net URLDecoder URLEncoder]))
@@ -84,7 +84,7 @@
 (def ^:private extend-exists
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
-  (let [script (encore/slurp-resource "lua/tundra/extend-exists.lua")]
+  (let [script (enc/slurp-resource "lua/tundra/extend-exists.lua")]
     (fn [ttl-ms keys] (car/lua script keys [(or ttl-ms 0)]))))
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))
@@ -122,9 +122,9 @@
 (def fetch-keys-delayed
   "Used to prevent multiple threads from rushing the datastore to get the same
   keys, unnecessarily duplicating work."
-  (encore/memoize* 5000 fetch-keys))
+  (enc/memoize* 5000 fetch-keys))
 
-(defn- prep-ks [ks] (vec (distinct (mapv encore/fq-name ks))))
+(defn- prep-ks [ks] (vec (distinct (mapv enc/fq-name ks))))
 (comment (prep-ks [nil]) ; Throws
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
@@ -174,7 +174,7 @@
               (->> dvals-missing
                    (mapv (fn [k dv]
                            (if (throwable? dv) (car/return dv)
-                               (if-not (encore/bytes? dv)
+                               (if-not (enc/bytes? dv)
                                  (car/return
                                    (ex-info "Malformed fetch data" {:dv dv}))
                                  (car/restore k (or redis-ttl-ms 0) (car/raw dv)))))
@@ -208,7 +208,7 @@
                                    :ks-missing ks-missing
                                    :ks-not-missing ks-not-missing})
 
-      (encore/backport-run!
+      (enc/backport-run!
         (fn [k]
           (->> (mq/enqueue tqname k k :allow-locked-dupe) ; key as msg & mid (deduped)
                (car/with-replies :as-pipeline) ; Don't pollute pipeline

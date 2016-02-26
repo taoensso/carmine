@@ -2,7 +2,7 @@
   "EXPERIMENTAL support for Redis Cluster atop Carmine."
   {:author "Ben Poweski"}
   (:require [clojure.string   :as str]
-            [taoensso.encore  :as encore]
+            [taoensso.encore  :as enc]
             [taoensso.carmine :as car]
             [taoensso.carmine
              (utils       :as utils)

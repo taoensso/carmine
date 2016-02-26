@@ -2,14 +2,14 @@
   "Handles socket connection lifecycle. Pool is implemented with Apache Commons
   pool. Originally adapted from redis-clojure."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.encore           :as encore]
+  (:require [taoensso.encore           :as enc]
             [taoensso.carmine.protocol :as protocol])
   (:import  [java.net InetSocketAddress Socket URI]
             [java.io BufferedInputStream DataInputStream BufferedOutputStream]
             [org.apache.commons.pool2 KeyedPooledObjectFactory]
             [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
 
-(encore/declare-remote taoensso.carmine/ping
+(enc/declare-remote taoensso.carmine/ping
                        taoensso.carmine/auth
                        taoensso.carmine/select)
 
@@ -63,7 +63,7 @@
         read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
 
         socket-address (InetSocketAddress. ^String host ^Integer port)
-        socket (encore/doto-cond [expr (Socket.)]
+        socket (enc/doto-cond [expr (Socket.)]
                  :always         (.setTcpNoDelay   true)
                  :always         (.setKeepAlive    true)
                  :always         (.setReuseAddress true)
@@ -138,7 +138,7 @@
 
 (def ^:private pool-cache "{<pool-opts> <pool>}" (atom {}))
 (defn conn-pool ^java.io.Closeable [pool-opts & [use-cache?]]
-  @(encore/swap-val! pool-cache pool-opts
+  @(enc/swap-val! pool-cache pool-opts
      (fn [?dv]
        (if (and ?dv use-cache?) ?dv
          (delay
