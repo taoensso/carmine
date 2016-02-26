@@ -1,11 +1,11 @@
 (ns taoensso.carmine.benchmarks
   {:author "Peter Taoussanis"}
-  (:require [taoensso.encore  :as encore]
+  (:require [taoensso.encore  :as enc]
             [taoensso.carmine :as car :refer (wcar)]))
 
 (def bench-data  (apply str (repeat 32 "x")))
 (def bench-key   "carmine:temp:benchmark:data-key")
-(defmacro bench* [& body] `(encore/bench 10000 {:warmup-laps 5000} ~@body))
+(defmacro bench* [& body] `(enc/bench 10000 {:warmup-laps 5000} ~@body))
 
 (defn bench [{:keys [laps unpooled?] :or {laps 1}}]
   (println)

@@ -1,7 +1,7 @@
 (ns taoensso.carmine.tundra.disk
   "Simple disk-based DataStore implementation for Tundra."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.encore         :as encore]
+  (:require [taoensso.encore         :as enc]
             [taoensso.timbre         :as timbre]
             [taoensso.carmine.tundra :as tundra])
   (:import  [taoensso.carmine.tundra IDataStore]
@@ -36,7 +36,7 @@
       (mapv fetch1 ks)))
 
   (put-key [this k v]
-    (assert (encore/bytes? v))
+    (assert (enc/bytes? v))
     (let [result
           (try (let [path-full-temp (format "%s/tmp-%s" (path* path) (uuid))
                      path-full      (format "%s/%s"     (path* path) k)]

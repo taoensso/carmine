@@ -7,7 +7,7 @@
   (:require [clojure.string    :as str]
             [clojure.java.io   :as io]
             [clojure.data.json :as json]
-            [taoensso.encore           :as encore]
+            [taoensso.encore           :as enc]
             [taoensso.carmine.utils    :as utils]
             [taoensso.carmine.protocol :as protocol]))
 
@@ -50,8 +50,8 @@
   "Returns the Redis Cluster key slot ℕ∈[0,num-keyslots) for given key arg using
   the CRC16 algorithm, Ref. http://redis.io/topics/cluster-spec Appendix A."
   [x]
-  (encore/cond-throw
-   (encore/bytes? x) (mod (utils/crc16 x) num-keyslots)
+  (enc/cond-throw
+   (enc/bytes? x) (mod (utils/crc16 x) num-keyslots)
    (string?       x)
    (let [;; Hash only *first* '{<part>}' when present + non-empty:
          tag     (nth (re-find #"\{(.*?)\}" x) 1)
@@ -145,7 +145,7 @@
   "Returns parsed JSON official command reference.
   From https://github.com/antirez/redis-doc/blob/master/commands.json"
   []
-  (-> (encore/slurp-resource #_"commands.json" "commands/commands.json")
+  (-> (enc/slurp-resource #_"commands.json" "commands/commands.json")
       (clojure.data.json/read-str :key-fn keyword)))
 
 (defmacro defcommands []
