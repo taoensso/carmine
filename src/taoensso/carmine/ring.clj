@@ -14,7 +14,7 @@
         (if ttl-secs
           (car/setex k ttl-secs data)
           (car/set   k          data)))
-      key)))
+      k)))
 
 (defn carmine-store
   "Creates and returns a Carmine-backed Ring SessionStore. Use `expiration-secs`
