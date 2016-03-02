@@ -619,6 +619,24 @@
 
 (comment (enc/qb 100 (wcar {} (swap "swap-k" (fn [?old _] ?old)))))
 
+;;;;
+
+(defn reduce-scan
+  "For use with `scan`, `zscan`, etc. Takes:
+    - (fn rf      [acc scan-result]) -> next accumulator
+    - (fn scan-fn [cursor]) -> next scan result"
+  ([rf          scan-fn] (reduce-scan rf nil scan-fn))
+  ([rf acc-init scan-fn]
+   (loop [cursor "0" acc acc-init]
+     (let [[next-cursor in] (scan-fn cursor)]
+       (if (= next-cursor "0")
+         (rf acc in)
+         (recur next-cursor (rf acc in)))))))
+
+(comment
+  (reduce-scan (fn rf [acc in] (into acc in))
+    [] (fn scan-fn [cursor] (wcar {} (scan cursor)))))
+
 ;;;; Deprecated
 
 (def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
