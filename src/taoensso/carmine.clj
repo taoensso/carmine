@@ -699,11 +699,9 @@
 
 (defn hgetall* "DEPRECATED: Use `parse-map` instead."
   [key & [keywordize?]]
-  (let [keywordize-map (fn [m] (reduce-kv (fn [m k v] (assoc m (keyword k) v))
-                                         {} (or m {})))
-        inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+  (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
         outer-parser (if keywordize?
-                       #(keywordize-map (apply hash-map %))
+                       #(enc/map-keys keyword (apply hash-map %))
                        #(apply hash-map %))]
     (->> (hgetall key)
          (parse (parser-comp outer-parser inner-parser)))))
