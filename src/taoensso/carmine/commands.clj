@@ -50,7 +50,7 @@
   "Returns the Redis Cluster key slot ℕ∈[0,num-keyslots) for given key arg using
   the CRC16 algorithm, Ref. http://redis.io/topics/cluster-spec Appendix A."
   [x]
-  (enc/cond-throw
+  (enc/cond!
    (enc/bytes? x) (mod (utils/crc16 x) num-keyslots)
    (string?       x)
    (let [;; Hash only *first* '{<part>}' when present + non-empty:
