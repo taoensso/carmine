@@ -414,32 +414,31 @@
 
 (defmacro atomic* "Alpha - subject to change. Low-level transaction util."
   [conn-opts max-cas-attempts on-success on-failure]
-    (assert (>= max-cas-attempts 1))
   `(let [conn-opts#  ~conn-opts
-         max-idx#    ~max-cas-attempts
-         prelude-result# (atom nil)
-         exec-result#
-         (wcar conn-opts# ; Hold 1 conn for all attempts
-           (loop [idx# 1]
-             (try (reset! prelude-result#
-                    (protocol/with-replies :as-pipeline (do ~on-success)))
-                  (catch Throwable t1# ; nb Throwable to catch assertions, etc.
-                    ;; Always return conn to normal state:
-                    (try (protocol/with-replies (discard))
-                         (catch Throwable t2# nil) ; Don't mask t1#
-                         )
-                    (throw t1#)))
-             (let [r# (protocol/with-replies (exec))]
-               (if-not (nil? r#) ; => empty `multi` or watched key changed
-                 ;; Was [] with < Carmine v3
-                 (return r#)
-                 (if (= idx# max-idx#)
-                   (do ~on-failure)
-                   (recur (inc idx#)))))))]
-
-     [@prelude-result#
-      (protocol/return-parsed-replies
-        exec-result# (not :as-pipeline))]))
+         max-idx#    ~max-cas-attempts]
+     (assert (>= max-idx# 1))
+     (let [prelude-result# (atom nil)
+           exec-result#
+           (wcar conn-opts# ; Hold 1 conn for all attempts
+                 (loop [idx# 1]
+                   (try (reset! prelude-result#
+                                (protocol/with-replies :as-pipeline (do ~on-success)))
+                        (catch Throwable t1# ; nb Throwable to catch assertions, etc.
+                          ;; Always return conn to normal state:
+                          (try (protocol/with-replies (discard))
+                               (catch Throwable t2# nil) ; Don't mask t1#
+                               )
+                          (throw t1#)))
+                   (let [r# (protocol/with-replies (exec))]
+                     (if-not (nil? r#) ; => empty `multi` or watched key changed
+                       ;; Was [] with < Carmine v3
+                       (return r#)
+                       (if (= idx# max-idx#)
+                         (do ~on-failure)
+                         (recur (inc idx#)))))))]
+       [@prelude-result#
+        (protocol/return-parsed-replies
+         exec-result# (not :as-pipeline))])))
 
 (defmacro atomic
   "Alpha - subject to change!
