@@ -414,9 +414,9 @@
 
 (defmacro atomic* "Alpha - subject to change. Low-level transaction util."
   [conn-opts max-cas-attempts on-success on-failure]
-    (assert (>= max-cas-attempts 1))
   `(let [conn-opts#  ~conn-opts
          max-idx#    ~max-cas-attempts
+         _# (assert (>= max-idx# 1))
          prelude-result# (atom nil)
          exec-result#
          (wcar conn-opts# ; Hold 1 conn for all attempts
