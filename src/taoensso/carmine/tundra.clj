@@ -1,23 +1,24 @@
 (ns taoensso.carmine.tundra
-  "Semi-automatic datastore layer for Carmine. It's like the magix.
+  "Semi-automatic archival datastore layer for Carmine.
   Use multiple Redis instances (recommended) or Redis databases for local key
   namespacing.
 
   Redis keys:
-    * carmine:tundra:evictable -> set, keys for which `ensure-ks` fetch failure
-                                  should throw an error."
-  {:author "Peter Taoussanis"}
-  (:require [taoensso.nippy         :as nippy]
-            [taoensso.nippy.tools   :as nippy-tools]
-            [taoensso.timbre        :as timbre]
-            [taoensso.encore        :as enc]
-            [taoensso.carmine       :as car :refer (wcar)]
+    * carmine:tundra:evictable - set, ks for which `ensure-ks` fail should throw"
+
+  {:author "Peter Taoussanis (@ptaoussanis)"}
+  (:require [taoensso.encore      :as enc]
+            [taoensso.nippy       :as nippy]
+            [taoensso.nippy.tools :as nippy-tools]
+            [taoensso.timbre      :as timbre]
+            [taoensso.carmine     :as car :refer (wcar)]
             [taoensso.carmine.message-queue :as mq])
   (:import  [java.net URLDecoder URLEncoder]))
 
-;;;; TODO
-;; * Redis 2.8+ http://redis.io/topics/notifications
-;; * Could do with a minor refactor (incl. reduce-based perf, etc.)
+;;;; TODO v2/refactor
+;; - General refactor (reduce-based flow, refactor stores, etc.)
+;; - Drop mq for a simpler zset {<k> <udt-last-dirty>} based model:
+;;   atomic-pull ks on verified write when udt unchanged against write val
 
 ;;;; Public interfaces
 
