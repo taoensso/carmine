@@ -29,7 +29,7 @@
   IConnection
   (conn-alive? [this]
     (if (:listener? spec)
-      true ; TODO Waiting on Ref. http://goo.gl/LPhIO
+      true ; TODO Waiting on Ref. https://github.com/antirez/redis/issues/420
       (= "PONG"
         (try
           (protocol/with-context this
@@ -58,7 +58,7 @@
   (let [;; :timeout-ms controls both :conn-timeout-ms and :read-timeout-ms
         ;; unless those are specified individually
         ;; :or   {conn-timeout-ms (or timeout-ms 4000)
-        ;;        read-timeout-ms timeout-ms} ; Ref. http://goo.gl/XULHCd
+        ;;        read-timeout-ms timeout-ms} ; Ref. https://github.com/ptaoussanis/carmine/issues/130
         conn-timeout-ms (get spec :conn-timeout-ms (or timeout-ms 4000))
         read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
 
@@ -147,7 +147,7 @@
            ;; Pass through pre-made pools (note that test reflects):
            (satisfies? IConnectionPool pool-opts) pool-opts
            :else
-           (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
+           (let [jedis-defaults ; Ref. https://github.com/xetorthio/jedis/blob/master/src/main/java/redis/clients/jedis/JedisPoolConfig.java
                  {:test-while-idle?              true  ; from false
                   :num-tests-per-eviction-run    -1    ; from 3
                   :min-evictable-idle-time-ms    60000 ; from 1800000

@@ -33,8 +33,9 @@
 
   A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
   to skip connection pooling (not recommended).
-  For other pool options, Ref. http://goo.gl/e1p1h3,
-                               http://goo.gl/Sz4uN1 (defaults).
+  For other pool options, Ref.:
+  - https://commons.apache.org/proper/commons-pool/api-2.0/org/apache/commons/pool2/impl/GenericKeyedObjectPool.html
+  - Defaults: https://commons.apache.org/proper/commons-pool/api-2.0/constant-values.html#org.apache.commons.pool2.impl.GenericKeyedObjectPoolConfig.DEFAULT_MAX_TOTAL
 
   Note that because of thread-binding, you'll probably want to avoid lazy Redis
   command calls in `wcar`'s body unless you know what you're doing. Compare:
@@ -529,7 +530,9 @@
             (return abort-val)))))))
 
 ;;;; CAS tools (experimental!)
-;; Working around the lack of simple CAS in Redis core, Ref http://goo.gl/M4Phx8
+;; Working around the lack of simple CAS in Redis core, Ref
+;; https://groups.google.com/forum/#!topic/redis-db/a4zK2k1Lefo
+;; ("CAS and why I don't want to add it to Redis")
 
 (defn- prep-cas-old-val [x]
   (let [^bytes bs (protocol/coerce-bs x)
