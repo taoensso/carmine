@@ -49,7 +49,7 @@ Add the necessary dependency to your project:
 And setup your namespace imports:
 
 ```clojure
-(ns my-app 
+(ns my-app
   (:require [taoensso.carmine :as car :refer (wcar)]))
 ```
 
@@ -64,16 +64,24 @@ You'll usually want to define a single connection pool, and one connection spec 
 
 ### Basic commands
 
-Sending commands is easy:
+Executing commands is easy:
 
 ```clojure
-(wcar* (car/ping)
-       (car/set "foo" "bar")
-       (car/get "foo"))
-=> ["PONG" "OK" "bar"]
+(wcar* (car/ping)) ; => "PONG" (1 command -> 1 reply)
+
+(wcar*
+  (car/ping)
+  (car/set "foo" "bar")
+  (car/get "foo")) ; => ["PONG" "OK" "bar"] (3 commands -> 3 replies)
 ```
 
-Note that sending multiple commands at once like this will employ [pipelining]. The replies will be queued server-side and returned all at once as a vector. By default, if a single command is in the body of `wcar` the value of the command is returned. To always return a vector, add the `:as-pipeline` argument to `wcar`.
+Note that executing multiple Redis commands in a single `wcar` request uses efficient Redis [pipelining] under the hood, and returns a pipeline reply (vector) for easy destructuring, etc.
+
+If the number of commands you'll be calling might vary, it's possible to request that Carmine _always_ return a destructurable pipeline-style reply:
+
+```clojure
+(wcar* :as-pipeline (car/ping)) ; => ["PONG"] ; Note the pipeline-style reply
+```
 
 If the server responds with an error, an exception is thrown:
 
