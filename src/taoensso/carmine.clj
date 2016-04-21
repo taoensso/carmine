@@ -102,14 +102,17 @@
 
 (comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
 
+(enc/compile-if enc/str-join
+  (defn key* [parts] (enc/str-join ":" (map #(if (keyword? %) (enc/as-qname %) (str %))) parts))
+  (defn key* [parts] (str/join     ":" (map #(if (keyword? %) (enc/as-qname %) (str %))  parts))))
+
 (defn key
   "Joins parts to form an idiomatic compound Redis key name. Suggested style:
     * \"category:subcategory:id:field\" basic form.
     * Singular category names (\"account\" rather than \"accounts\").
     * Plural _field_ names when appropriate (\"account:friends\").
     * Dashes for long names (\"email-address\" rather than \"emailAddress\", etc.)."
-  [& parts] (str/join ":" (mapv #(if (keyword? %) (enc/fq-name %) (str %))
-                                parts)))
+  [& parts] (key* parts))
 
 (comment (key :foo/bar :baz "qux" nil 10))
 
