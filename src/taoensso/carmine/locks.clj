@@ -6,7 +6,8 @@
   Redis keys:
     * carmine:lock:<lock-name> -> ttl str, lock owner's UUID.
 
-  Ref. http://goo.gl/5UalQ for implementation details."
+  Ref. http://www.dr-josiah.com/2012/01/creating-lock-with-redis.html for
+  implementation details."
   (:require [taoensso.timbre  :as timbre]
             [taoensso.carmine :as car :refer (wcar)]))
 
@@ -14,7 +15,8 @@
 
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
-  ;; TODO Waiting on http://goo.gl/YemR7 for simpler (non-Lua) solution
+  ;; TODO Waiting on https://github.com/antirez/redis/issues/931 for
+  ;; simpler (non-Lua) solution
   [conn-opts lock-name timeout-ms wait-ms]
   (let [max-udt (+ wait-ms (System/currentTimeMillis))
         uuid    (str (java.util.UUID/randomUUID))]
