@@ -79,7 +79,7 @@
          _# (when-not req-queue# (throw protocol/no-context-ex))
          parser#  protocol/*parser*
          request# ~request
-         bytestring-req# (mapv protocol/coerce-bs request#)
+         bytestring-req# (mapv protocol/byte-str request#)
 
          cluster-keyslot#
          (if-not (get-in conn# [:spec :cluster])

@@ -11,8 +11,8 @@
              (commands    :as commands)]))
 
 (if (vector? taoensso.encore/encore-version)
-  (enc/assert-min-encore-version [2 36 0])
-  (enc/assert-min-encore-version  2.36))
+  (enc/assert-min-encore-version [2 50 0])
+  (enc/assert-min-encore-version  2.50))
 
 ;;;; Connections
 
@@ -535,7 +535,7 @@
 ;; Working around the lack of simple CAS in Redis core, Ref http://goo.gl/M4Phx8
 
 (defn- prep-cas-old-val [x]
-  (let [^bytes bs (protocol/coerce-bs x)
+  (let [^bytes bs (protocol/byte-str x)
         ;; Don't bother with sha when actual value would be shorter:
         ?sha      (when (> (alength bs) 40) (sha1-ba bs))]
     [?sha (raw bs)]))

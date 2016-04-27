@@ -9,9 +9,10 @@
             [org.apache.commons.pool2 KeyedPooledObjectFactory]
             [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
 
-(enc/declare-remote taoensso.carmine/ping
-                       taoensso.carmine/auth
-                       taoensso.carmine/select)
+(enc/declare-remote
+  taoensso.carmine/ping
+  taoensso.carmine/auth
+  taoensso.carmine/select)
 
 ;;; Outline/nomenclature
 ;; connection -> Connection object.
@@ -178,7 +179,7 @@
 (comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/7"))
 
 (def conn-spec
-  (memoize
+  (enc/memoize_
    (fn [{:keys [uri host port password timeout-ms db
                conn-setup-fn ; nb must be var-level for fn equality
                ] :as spec-opts}]
