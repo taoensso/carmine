@@ -112,8 +112,8 @@
     (destroyObject   [_ spec pooled-obj] (let [conn (.getObject pooled-obj)]
                                            (close-conn conn)))))
 
-(defn set-pool-option [^GenericKeyedObjectPool pool [opt v]]
-  (case opt
+(defn- set-pool-option [^GenericKeyedObjectPool pool k v]
+  (case k
 
     ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
     :min-idle-per-key  (.setMinIdlePerKey  pool v) ; 0
@@ -134,34 +134,32 @@
     :test-while-idle? (.setTestWhileIdle pool v) ; false
     :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v) ; -1
 
-    (throw (ex-info (str "Unknown pool option: " opt) {:option opt})))
+    (throw (ex-info (str "Unknown pool option: " k) {:option k})))
   pool)
 
-(def ^:private pool-cache "{<pool-opts> <pool>}" (atom {}))
-(defn conn-pool ^java.io.Closeable [pool-opts & [use-cache?]]
-  @(enc/swap-val! pool-cache pool-opts
-     (fn [?dv]
-       (if (and ?dv use-cache?) ?dv
-         (delay
-          (cond
-           (identical? pool-opts :none) (->NonPooledConnectionPool)
-           ;; Pass through pre-made pools (note that test reflects):
-           (satisfies? IConnectionPool pool-opts) pool-opts
-           :else
-           (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
-                 {:test-while-idle?              true  ; from false
-                  :num-tests-per-eviction-run    -1    ; from 3
-                  :min-evictable-idle-time-ms    60000 ; from 1800000
-                  :time-between-eviction-runs-ms 30000 ; from -1
-                  }
-                 carmine-defaults
-                 {:max-total-per-key 16 ; from 8
-                  }]
-             (ConnectionPool.
-              (reduce set-pool-option
-                (GenericKeyedObjectPool. (make-connection-factory))
-                (merge jedis-defaults carmine-defaults pool-opts))))))))))
+(def conn-pool
+  (enc/memoize_
+    (fn [pool-opts]
+      (cond
+        (identical? pool-opts :none) (->NonPooledConnectionPool)
+        ;; Pass through pre-made pools (note that test reflects):
+        (satisfies? IConnectionPool pool-opts) pool-opts
+        :else
+        (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
+              {:test-while-idle?              true  ; from false
+               :num-tests-per-eviction-run    -1    ; from 3
+               :min-evictable-idle-time-ms    60000 ; from 1800000
+               :time-between-eviction-runs-ms 30000 ; from -1
+               }
+              carmine-defaults
+              {:max-total-per-key 16 ; from 8
+               }]
+          (ConnectionPool.
+            (reduce-kv set-pool-option
+              (GenericKeyedObjectPool. (make-connection-factory))
+              (merge jedis-defaults carmine-defaults pool-opts))))))))
 
+;; (defn uncached-conn-pool [pool-opts] (conn-pool :mem/fresh pool-opts))
 (comment (conn-pool :none) (conn-pool {}))
 
 (defn- parse-uri [uri]
@@ -189,14 +187,15 @@
                        spec-opts)]
        (merge defaults spec-opts (parse-uri uri))))))
 
-(defn pooled-conn "Returns [<open-pool> <pooled-connection>]."
-  ;; [pool-opts spec-opts]
+(defn pooled-conn "Returns [<open-pool> <pooled-connection>]"
   [{:as conn-opts pool-opts :pool spec-opts :spec}]
   (let [spec (conn-spec spec-opts)
-        pool (conn-pool pool-opts :use-cache)]
-    (try (try [pool (get-conn pool spec)]
-              (catch IllegalStateException e ; Cached pool's gone bad
-                (let [pool (conn-pool pool-opts)]
-                  [pool (get-conn pool spec)])))
-         (catch Exception e
-           (throw (ex-info "Carmine connection error" {} e))))))
+        pool (conn-pool pool-opts)]
+    (try
+      (try
+        [pool (get-conn pool spec)]
+        (catch IllegalStateException e ; Cached pool's gone bad
+          (let [pool (conn-pool :mem/fresh pool-opts)]
+            [pool (get-conn pool spec)])))
+      (catch Exception e
+        (throw (ex-info "Carmine connection error" {} e))))))
