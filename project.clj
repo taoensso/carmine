@@ -12,7 +12,7 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.40.0"]
+   [com.taoensso/encore              "2.50.0"]
    [com.taoensso/timbre              "4.3.1"]
    [com.taoensso/nippy               "2.11.1"]
    [org.apache.commons/commons-pool2 "2.4.2"]
