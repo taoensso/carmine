@@ -357,15 +357,7 @@ See the relevant [API] docs for details.
 
 ## Performance
 
-Redis is probably most famous for being [fast]. Carmine does what it can to hold up its end and currently performs well:
-
-![benchmarks-png]
-
-[Detailed benchmark info] is available on Google Docs. Note that these numbers are for _unpipelined_ requests: you could do a _lot_ more with pipelining.
-
-In principle it should be possible to get close to the theoretical maximum performance of a JVM-based client. This will be an ongoing effort but please note that my first concern for Carmine is **performance-per-unit-power** rather than *absolute performance*. For example Carmine willingly pays a small throughput penalty to support binary-safe arguments and again for composable commands. 
-
-Likewise, I'll happily trade a little less throughput for simpler code.
+Redis is probably most famous for being [fast]. Carmine hold up its end and usu. performs w/in ~10% of the official C `redis-benchmark` utility despite offering features like command composition, reply parsing, etc.
 
 ##### YourKit
 
