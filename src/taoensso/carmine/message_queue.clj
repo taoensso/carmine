@@ -16,14 +16,12 @@
     * carmine:mq:<qname>:ndry-runs    - int, number of times worker(s) have
                                         burnt through queue w/o work to do.
 
-  Ref. http://antirez.com/post/250 for basic implementation details."
-  {:author "Peter Taoussanis"}
+  Ref. http://antirez.com/post/250 for basic implementation details"
+  {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require [clojure.string   :as str]
             [taoensso.encore  :as enc]
             [taoensso.timbre  :as timbre]
             [taoensso.carmine :as car :refer (wcar)]))
-
-;; TODO Ability to enqueue something with an init backoff
 
 ;;;; Ideas to avoid polling
 ;; 1. Lua brpoplpush - doesn't currently exist, unlikely to in future.
@@ -32,30 +30,17 @@
 ;; 4. Leave it as is since we'd want a polling worker anyway for gc, lock
 ;;    checks, etc.
 
-;;;; Public utils
+;;;; Utils
 
-(defn get-expected-throughput
-  "Returns ~n msgs handled per second, excluding gc + queue maintenance."
-  [nthreads ?throttle-ms]
-  (* 0.5 nthreads (/ 1000 (or ?throttle-ms 0.5))))
-
-(comment
-  (get-expected-throughput 1 100)
-  (get-expected-throughput 10 nil))
-
-(defn exp-backoff "Returns binary exponential backoff value."
-  [attempt & [{:keys [factor min max] :or {factor 2200}}]]
-  (let [binary-exp (Math/pow 2 (dec attempt))
-        time       (* (+ binary-exp (rand binary-exp)) 0.5 factor)]
-    (long (let [time (if min (clojure.core/max min time) time)
-                time (if max (clojure.core/min max time) time)]
-            time))))
+(enc/defalias exp-backoff enc/exp-backoff)
 
 (comment (mapv #(exp-backoff % {}) (range 5)))
 
-;;;; Admin
+(def ^:private qkey (enc/memoize_ (partial car/key :carmine :mq)))
 
-(def qkey "Prefixed queue key" (memoize (partial car/key :carmine :mq)))
+(comment (qkey :foo))
+
+;;;; Admin
 
 (defn clear-queues [conn-opts & qnames]
   (when (seq qnames)
@@ -112,7 +97,7 @@
            :qk-backoffs (qkey qname :backoffs)
            :qk-done     (qkey qname :done)
            :qk-requeue  (qkey qname :requeue)}
-          {:now         (System/currentTimeMillis)
+          {:now         (enc/now-udt)
            :mid         mid})))))
 
 (def enqueue
@@ -123,10 +108,11 @@
                            unique id will be auto-generated.
     * allow-requeue?     - When true, allow buffered escrow-requeue for a
                            message in the :locked or :done-with-backoff state."
+  ;; TODO Option to enqueue something with an init backoff?
   (let [script (enc/slurp-resource "lua/mq/enqueue.lua")]
     (fn [qname message & [unique-message-id allow-requeue?]]
       (car/parse
-        #(if (vector? %) (first %) {:carmine.mq/error (keyword %)})
+        #(if (vector? %) (get % 0) {:carmine.mq/error (keyword %)})
         (car/lua script
           {:qk-messages    (qkey qname :messages)
            :qk-locks       (qkey qname :locks)
@@ -135,8 +121,8 @@
            :qk-mid-circle  (qkey qname :mid-circle)
            :qk-done        (qkey qname :done)
            :qk-requeue     (qkey qname :requeue)}
-          {:now            (System/currentTimeMillis)
-           :mid            (or unique-message-id (str (java.util.UUID/randomUUID)))
+          {:now            (enc/now-udt)
+           :mid            (or unique-message-id (enc/uuid-str))
            :mcontent       (car/freeze message)
            :allow-requeue? (if allow-requeue? "true" "false")})))))
 
@@ -148,7 +134,7 @@
     [<mid> <mcontent> <attempt>] - If message should be (re)handled now."
   (let [script (enc/slurp-resource "lua/mq/dequeue.lua")]
     (fn [qname & [{:keys [lock-ms eoq-backoff-ms]
-                  :or   {lock-ms (* 1000 60 60) eoq-backoff-ms exp-backoff}}]]
+                   :or   {lock-ms (enc/ms :mins 60) eoq-backoff-ms exp-backoff}}]]
       (let [;; Precomp 5 backoffs so that `dequeue` can init the backoff
             ;; atomically. This is hackish, but a decent tradeoff.
             eoq-backoff-ms-vec
@@ -157,6 +143,7 @@
               (integer? eoq-backoff-ms) (mapv (constantly eoq-backoff-ms) (range 5))
               :else (throw (ex-info (str "Bad eoq-backoff-ms: " eoq-backoff-ms)
                              {:eoq-backoff-ms eoq-backoff-ms})))]
+
         (car/lua script
           {:qk-messages    (qkey qname :messages)
            :qk-locks       (qkey qname :locks)
@@ -167,7 +154,7 @@
            :qk-requeue     (qkey qname :requeue)
            :qk-eoq-backoff (qkey qname :eoq-backoff?)
            :qk-ndry-runs   (qkey qname :ndry-runs)}
-          {:now            (System/currentTimeMillis)
+          {:now            (enc/now-udt)
            :lock-ms        lock-ms
            :eoq-ms0        (nth eoq-backoff-ms-vec 0)
            :eoq-ms1        (nth eoq-backoff-ms-vec 1)
@@ -199,8 +186,7 @@
                                   :requeue status)]
                      (car/multi)
                      (when backoff-ms ; Retry or dedupe backoff, depending on type
-                       (car/hset (qk :backoffs) mid (+ (System/currentTimeMillis)
-                                                       backoff-ms)))
+                       (car/hset (qk :backoffs) mid (+ (enc/now-udt) backoff-ms)))
 
                      (car/hdel (qk :locks) mid)
                      (case status
@@ -230,26 +216,29 @@
 
 ;;;; Workers
 
-(defprotocol IWorker (start [this]) (stop [this]))
-(defrecord    Worker [conn-opts qname running? opts]
+(defprotocol IWorker
+  (start [this])
+  (stop  [this]))
+
+(defrecord Worker [conn-opts qname running?_ opts]
+
   java.io.Closeable (close [this] (stop this))
+
   IWorker
   (stop [_]
-    (let [stopped? @running?]
-      (reset! running? false)
-      (when stopped? (timbre/infof "Message queue worker stopped: %s" qname))
-      stopped?))
+    (when (compare-and-set! running?_ true false)
+      (timbre/infof "Message queue worker stopped: %s" qname)
+      true))
 
   (start [_]
-    (when-not @running?
+    (when (compare-and-set! running?_ false true)
       (timbre/infof "Message queue worker starting: %s" qname)
-      (reset! running? true)
       (let [{:keys [handler monitor nthreads throttle-ms]} opts
             qk (partial qkey qname)
             start-polling-loop!
             (fn []
               (loop [nerrors 0]
-                (when @running?
+                (when @running?_
                   (let [?error
                         (try
                           (let [[poll-reply ndruns mid-circle-size]
@@ -265,8 +254,8 @@
 
                             (if (= poll-reply "eoq-backoff")
                               (Thread/sleep
-                               (max (wcar conn-opts (car/pttl (qk :eoq-backoff?)))
-                                    10))
+                                (max (wcar conn-opts (car/pttl (qk :eoq-backoff?)))
+                                  10))
                               (handle1 conn-opts qname handler poll-reply))
 
                             (when (and throttle-ms (> throttle-ms 0))
@@ -274,13 +263,15 @@
                           nil ; Successful worker loop
                           (catch Throwable t t))]
 
-                    (if-not ?error (recur 0)
+                    (if-not ?error
+                      (recur 0)
                       (let [t ?error]
                         (timbre/errorf t "Worker error! Will backoff & retry.")
                         (Thread/sleep (exp-backoff (inc nerrors)))
                         (recur (inc nerrors))))))))]
 
         (dorun (repeatedly nthreads (fn [] (future (start-polling-loop!))))))
+
       true)))
 
 (defn monitor-fn
@@ -288,15 +279,15 @@
   the prescribed size. A backoff timeout can be provided to rate-limit this
   warning."
   [qname max-circle-size warn-backoff-ms]
-  (let [udt-last-warning_ (atom nil)]
+  (let [udt-last-warning_ (atom 0)]
     (fn [{:keys [mid-circle-size]}]
-      (let [instant (System/currentTimeMillis)]
-        (when (and (> mid-circle-size max-circle-size)
-                   (> (- instant (or @udt-last-warning_ 0))
-                      (or warn-backoff-ms 0)))
-          (reset! udt-last-warning_ instant)
-          (timbre/warnf "Message queue size warning: %s (mid-circle-size: %s)"
-                        qname max-circle-size))))))
+      (when (> mid-circle-size max-circle-size)
+        (let [instant (enc/now-udt)
+              udt-last-warning @udt-last-warning_]
+          (when (> (- instant udt-last-warning) (or warn-backoff-ms 0))
+            (when (compare-and-set! udt-last-warning_ udt-last-warning instant)
+              (timbre/warnf "Message queue size warning: %s (mid-circle-size: %s)"
+                qname max-circle-size))))))))
 
 (defn worker
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
@@ -316,31 +307,34 @@
                      Sleep synchronized for all queue workers.
    :nthreads       - Number of synchronized worker threads to use.
    :throttle-ms    - Thread sleep period between each poll."
+
   [conn-opts qname &
    [{:keys [handler monitor lock-ms eoq-backoff-ms nthreads
             throttle-ms auto-start] :as opts
      :or   {handler (fn [args] (timbre/infof "%s" args) {:status :success})
-            monitor (monitor-fn qname 1000 (* 1000 60 60 6))
+            monitor (monitor-fn qname 1000 (enc/ms :hours 6))
             lock-ms        (enc/ms :hours 1)
             nthreads       1
             throttle-ms    200
             eoq-backoff-ms exp-backoff
             auto-start     true}}]]
+
   (let [w (Worker. conn-opts qname (atom false)
             {:handler        handler
              :monitor        monitor
              :lock-ms        lock-ms
              :eoq-backoff-ms eoq-backoff-ms
              :nthreads       nthreads
-             :throttle-ms    throttle-ms})]
+             :throttle-ms    throttle-ms})
 
-    (let [;; For backwards-compatibility with old API:
-          auto-start (if-not (contains? opts :auto-start?) auto-start
-                       (:auto-start? opts))]
-      (when auto-start
-        (if (integer? auto-start)
-          (future (Thread/sleep auto-start) (start w))
-          (start w))))
+        ;; For backwards-compatibility with old API:
+        auto-start (if-let [e (find opts :auto-start?)] (val e) auto-start)]
+
+    (when auto-start
+      (if (integer? auto-start)
+        (future (Thread/sleep auto-start) (start w))
+        (start w)))
+
     w))
 
 ;;;; Renamed/deprecated

@@ -16,13 +16,9 @@
 (defn- after-run  {:expectations-options :after-run}  [] (clear-tq))
 
 (defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
-
 (defn- dequeue* [qname & [opts]]
   (let [r (mq/dequeue qname (merge {:eoq-backoff-ms 175} opts))]
     (Thread/sleep 205) r))
-
-;; (defmacro expect* [n e a]
-;;   `(expect e (do (println (str ~n ":" (tq-status))) ~a)))
 
 (expect (do (println (str "Running message queue tests")) true))
 
@@ -38,6 +34,8 @@
 (expect :locked          (wcar* (mq/message-status tq :mid1)))
 (expect "eoq-backoff"    (wcar* (dequeue* tq)))
 (expect nil              (wcar* (dequeue* tq))) ; Locked msg
+
+(expect (do (println "debug1")) true)
 
 ;;;; Handling: success
 (expect "mid1" (do (clear-tq) (wcar* (mq/enqueue tq :msg1 :mid1))))
