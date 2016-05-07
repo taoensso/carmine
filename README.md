@@ -4,7 +4,8 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.12.2"] ; Stable
+[com.taoensso/carmine "2.12.2"]     ; Stable
+[com.taoensso/carmine "2.13.0-RC1"] ; Dev, see CHANGELOG for details
 ```
 
 Want to help [support taoensso/open-source]?

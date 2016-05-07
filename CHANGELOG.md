@@ -1,5 +1,19 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.13.0-RC1 / 2016 May 7
+
+```clojure
+[com.taoensso/carmine "2.13.0-RC1"]
+```
+
+> This is a **non-breaking** performance and housekeeping release
+
+* **New**: updated Redis `commands.json` (bitops, etc.)
+* **New**: added `reduce-scan` util for use with `scan`, `zscan`, etc.
+* **Perf**: refactored some core protocol + connections stuff
+* **Fix**: `atomic*` was broken for non-const `max-cas-attempts` [#165 @MysteryMachine]
+
+
 ## v2.12.2 / 2016 Jan 14
 
 > This is a minor, non-breaking release
