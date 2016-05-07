@@ -53,6 +53,42 @@
     "since": "2.6.0",
     "group": "string"
   },
+  "BITFIELD": {
+    "summary": "Perform arbitrary bitfield integer operations on strings",
+    "complexity": "O(1) for each subcommand specified",
+    "arguments": [
+      {
+        "name": "key",
+        "type": "key"
+      },
+      {
+        "command": "GET",
+        "name": ["type", "offset"],
+        "type": ["type", "integer"],
+        "optional": true
+      },
+      {
+        "command": "SET",
+        "name": ["type", "offset", "value"],
+        "type": ["type", "integer", "integer"],
+        "optional": true
+      },
+      {
+        "command": "INCRBY",
+        "name": ["type", "offset", "increment"],
+        "type": ["type", "integer", "integer"],
+        "optional": true
+      },
+      {
+        "command": "OVERFLOW",
+        "type": "enum",
+        "enum": ["WRAP", "SAT", "FAIL"],
+        "optional": true
+      }
+    ],
+    "since": "3.2.0",
+    "group": "string"
+  },
   "BITOP": {
     "summary": "Perform bitwise operations between strings",
     "complexity": "O(N)",
@@ -172,7 +208,7 @@
       {
         "command": "TYPE",
         "type": "enum",
-        "enum": ["normal", "slave", "pubsub"],
+        "enum": ["normal", "master", "slave", "pubsub"],
         "optional": true
       },
       {
@@ -213,6 +249,19 @@
       }
     ],
     "since": "2.9.50",
+    "group": "server"
+  },
+  "CLIENT REPLY": {
+    "summary": "Instruct the server whether to reply to commands",
+    "complexity": "O(1)",
+    "arguments": [
+      {
+        "name": "reply-mode",
+        "type": "enum",
+        "enum": ["ON", "OFF", "SKIP"]
+      }
+    ],
+    "since": "3.2",
     "group": "server"
   },
   "CLIENT SETNAME": {
@@ -404,7 +453,7 @@
     "group": "cluster"
   },
   "CLUSTER SETSLOT": {
-    "summary": "Bind an hash slot to a specific node",
+    "summary": "Bind a hash slot to a specific node",
     "complexity": "O(1)",
     "arguments": [
       {
@@ -829,8 +878,15 @@
         "optional": true
       },
       {
+        "command": "COUNT",
         "name": "count",
         "type": "integer",
+        "optional": true
+      },
+      {
+        "name": "order",
+        "type": "enum",
+        "enum": ["ASC", "DESC"],
         "optional": true
       }
     ],
@@ -876,8 +932,15 @@
         "optional": true
       },
       {
+        "command": "COUNT",
         "name": "count",
         "type": "integer",
+        "optional": true
+      },
+      {
+        "name": "order",
+        "type": "enum",
+        "enum": ["ASC", "DESC"],
         "optional": true
       }
     ],
@@ -1452,7 +1515,8 @@
       },
       {
         "name": "key",
-        "type": "key"
+        "type": "enum",
+        "enum": ["key", "\"\""]
       },
       {
         "name": "destination-db",
@@ -1472,6 +1536,13 @@
         "name": "replace",
         "type": "enum",
         "enum": ["REPLACE"],
+        "optional": true
+      },
+      {
+        "name": "key",
+        "command": "KEYS",
+        "type": "key",
+        "variadic": true,
         "optional": true
       }
     ],
@@ -1641,6 +1712,13 @@
   },
   "PING": {
     "summary": "Ping the server",
+    "arguments": [
+      {
+        "name": "message",
+        "type": "string",
+        "optional": true
+      }
+    ],
     "since": "1.0.0",
     "group": "connection"
   },
@@ -1747,6 +1825,18 @@
     "complexity": "O(1)",
     "since": "1.0.0",
     "group": "generic"
+  },
+  "READONLY": {
+    "summary": "Enables read queries for a connection to a cluster slave node",
+    "complexity": "O(1)",
+    "since": "3.0.0",
+    "group": "cluster"
+  },
+  "READWRITE": {
+    "summary": "Disables read queries for a connection to a cluster slave node",
+    "complexity": "O(1)",
+    "since": "3.0.0",
+    "group": "cluster"
   },
   "RENAME": {
     "summary": "Rename a key",
@@ -1906,6 +1996,19 @@
     ],
     "since": "1.0.0",
     "group": "set"
+  },
+  "SCRIPT DEBUG": {
+    "summary": "Set the debug mode for executed scripts.",
+    "complexity": "O(1)",
+    "arguments": [
+      {
+        "name": "mode",
+        "type": "enum",
+        "enum": ["YES", "SYNC", "NO"]
+      }
+    ],
+    "since": "3.2.0",
+    "group": "scripting"
   },
   "SCRIPT EXISTS": {
     "summary": "Check existence of scripts in the script cache.",
@@ -2099,15 +2202,9 @@
     "summary": "Synchronously save the dataset to disk and then shut down the server",
     "arguments": [
       {
-        "name": "NOSAVE",
+        "name": "save-mode",
         "type": "enum",
-        "enum": ["NOSAVE"],
-        "optional": true
-      },
-      {
-        "name": "SAVE",
-        "type": "enum",
-        "enum": ["SAVE"],
+        "enum": ["NOSAVE", "SAVE"],
         "optional": true
       }
     ],
@@ -2934,7 +3031,7 @@
   },
   "SCAN": {
     "summary": "Incrementally iterate the keys space",
-    "complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection..",
+    "complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
     "arguments": [
       {
         "name": "cursor",
