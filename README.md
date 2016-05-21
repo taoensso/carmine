@@ -37,6 +37,7 @@ Want to help [support taoensso/open-source]?
 Link                     | Description
 ------------------------ | -----------------------------------------------------
 [@lantiga/redlock-clj]   | Distributed locks for uncoordinated Redis clusters
+[@danielsz/system]       | PubSub component for system
 Your link here?          | **PR's welcome!**
 
 ## Getting started
@@ -402,6 +403,7 @@ Copyright &copy; 2012-2016 [Peter Taoussanis].
 [up-to-date API]: https://github.com/ptaoussanis/carmine/blob/master/src/commands/commands.list
 [Nippy]: https://github.com/ptaoussanis/nippy
 [@lantiga/redlock-clj]: https://github.com/lantiga/redlock-clj
+[@danielsz/system]: https://github.com/danielsz/system
 [pipelining]: http://redis.io/topics/pipelining
 [byte string]: http://redis.io/topics/data-types
 [rich datatypes]: http://clojure.org/datatypes
