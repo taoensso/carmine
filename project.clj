@@ -12,8 +12,8 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.52.1"]
-   [com.taoensso/timbre              "4.3.1"]
+   [com.taoensso/encore              "2.53.1"]
+   [com.taoensso/timbre              "4.4.0"]
    [com.taoensso/nippy               "2.11.1"]
    [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.10"]
@@ -26,6 +26,7 @@
    :1.6  {:dependencies [[org.clojure/clojure     "1.6.0"]]}
    :1.7  {:dependencies [[org.clojure/clojure     "1.7.0"]]}
    :1.8  {:dependencies [[org.clojure/clojure     "1.8.0"]]}
+   :1.9  {:dependencies [[org.clojure/clojure "1.9.0-alpha5"]]}
    :test {:dependencies [;; 2.1.4 has breaking changes
                          ;; TODO Migrate expectations->clojure.test
                          [expectations            "2.1.3"]
@@ -36,9 +37,9 @@
           :plugins [[lein-expectations "0.0.8"]
                     [lein-autoexpect   "1.7.0"]]}
    :dev
-   [:1.7 :test
-    {:plugins [[lein-ancient "0.6.4"]
-               [lein-codox   "0.9.4"]]}]}
+   [:1.9 :test :server-jvm
+    {:plugins [[lein-ancient "0.6.10"]
+               [lein-codox   "0.9.5"]]}]}
 
   :test-paths ["test" "src"]
 
@@ -47,10 +48,10 @@
    :source-uri "https://github.com/ptaoussanis/carmine/blob/master/{filepath}#L{line}"}
 
   :aliases
-  {"test-all"   ["with-profile" "+1.5:+1.6:+1.7:+1.8" "expectations"]
+  {"test-all"   ["with-profile" "+1.9:+1.8:+1.7:+1.6:+1.5" "expectations"]
    "test-auto"  ["with-profile" "+test" "autoexpect"]
    "deploy-lib" ["do" "deploy" "clojars," "install"]
-   "start-dev"  ["with-profile" "+server-jvm" "repl" ":headless"]}
+   "start-dev"  ["with-profile" "+dev" "repl" ":headless"]}
 
   :repositories {"sonatype-oss-public"
                  "https://oss.sonatype.org/content/groups/public/"})
