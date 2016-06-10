@@ -776,6 +776,7 @@
         "multiple": true
       }
     ],
+    "since": "3.2.0",
     "group": "geo"
   },
   "GEOHASH": {
@@ -792,6 +793,7 @@
         "multiple": true
       }
     ],
+    "since": "3.2.0",
     "group": "geo"
   },
   "GEOPOS": {
@@ -808,6 +810,7 @@
         "multiple": true
       }
     ],
+    "since": "3.2.0",
     "group": "geo"
   },
   "GEODIST": {
@@ -832,6 +835,7 @@
         "optional": true
       }
     ],
+    "since": "3.2.0",
     "group": "geo"
   },
   "GEORADIUS": {
@@ -888,8 +892,21 @@
         "type": "enum",
         "enum": ["ASC", "DESC"],
         "optional": true
+      },
+      {
+        "command": "STORE",
+        "name": "key",
+        "type": "key",
+        "optional": true
+      },
+      {
+        "command": "STOREDIST",
+        "name": "key",
+        "type": "key",
+        "optional": true
       }
     ],
+    "since": "3.2.0",
     "group": "geo"
   },
   "GEORADIUSBYMEMBER": {
@@ -942,8 +959,21 @@
         "type": "enum",
         "enum": ["ASC", "DESC"],
         "optional": true
+      },
+      {
+        "command": "STORE",
+        "name": "key",
+        "type": "key",
+        "optional": true
+      },
+      {
+        "command": "STOREDIST",
+        "name": "key",
+        "type": "key",
+        "optional": true
       }
     ],
+    "since": "3.2.0",
     "group": "geo"
   },
   "GET": {
