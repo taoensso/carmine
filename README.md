@@ -4,8 +4,7 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.12.2"]     ; Stable
-[com.taoensso/carmine "2.13.0-RC1"] ; Dev, see CHANGELOG for details
+[com.taoensso/carmine "2.13.0"] ; Stable
 ```
 
 Want to help [support taoensso/open-source]?
@@ -45,7 +44,7 @@ Your link here?          | **PR's welcome!**
 Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "2.12.2"]
+[com.taoensso/carmine "2.13.0"]
 ```
 
 And setup your namespace imports:
@@ -414,7 +413,6 @@ Copyright &copy; 2012-2016 [Peter Taoussanis].
 [Publish/Subscribe]: http://redis.io/topics/pubsub
 [message queue server]: http://antirez.com/post/250
 [fast]: http://redis.io/topics/benchmarks
-[benchmarks-png]: https://github.com/ptaoussanis/carmine/raw/master/benchmarks.png
 [Detailed benchmark info]: https://docs.google.com/spreadsheet/ccc?key=0AuSXb68FH4uhdE5kTTlocGZKSXppWG9sRzA5Y2pMVkE
 [YourKit Java Profiler]: http://www.yourkit.com/java/profiler/index.jsp
 
