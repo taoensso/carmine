@@ -241,11 +241,14 @@
                 (when @running?_
                   (let [?error
                         (try
-                          (let [[poll-reply ndruns mid-circle-size]
+                          (let [[poll-reply ndruns mid-circle-size :as -resp]
                                 (wcar conn-opts
                                   (dequeue qname opts)
                                   (car/get  (qk :ndry-runs))
                                   (car/llen (qk :mid-circle)))]
+
+                            (when-let [t (some #(instance? Throwable %) -resp)]
+                              (throw t))
 
                             (when monitor
                               (monitor {:mid-circle-size mid-circle-size
