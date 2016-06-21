@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.13.0"
+(defproject com.taoensso/carmine "2.13.1"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
@@ -26,14 +26,14 @@
    :1.6  {:dependencies [[org.clojure/clojure "1.6.0"]]}
    :1.7  {:dependencies [[org.clojure/clojure "1.7.0"]]}
    :1.8  {:dependencies [[org.clojure/clojure "1.8.0"]]}
-   :1.9  {:dependencies [[org.clojure/clojure "1.9.0-alpha5"]]}
+   :1.9  {:dependencies [[org.clojure/clojure "1.9.0-alpha7"]]}
    :test {:dependencies [;; 2.1.4 has breaking changes
                          ;; TODO Migrate expectations->clojure.test
                          [expectations            "2.1.3"]
                          [org.clojure/test.check  "0.9.0"]
                          [com.taoensso/faraday    "1.8.0"]
                          [clj-aws-s3              "0.3.10"]
-                         [ring/ring-core          "1.4.0"]]
+                         [ring/ring-core          "1.5.0"]]
           :plugins [[lein-expectations "0.0.8"]
                     [lein-autoexpect   "1.7.0"]]}
    :dev

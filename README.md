@@ -4,7 +4,7 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.13.0"] ; Stable
+[com.taoensso/carmine "2.13.1"] ; Stable
 ```
 
 Want to help [support taoensso/open-source]?
@@ -44,7 +44,7 @@ Your link here?          | **PR's welcome!**
 Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "2.13.0"]
+[com.taoensso/carmine "2.13.1"]
 ```
 
 And setup your namespace imports:

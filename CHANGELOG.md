@@ -1,5 +1,15 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.13.1 / 2016 Jun 21
+
+```clojure
+[com.taoensso/carmine "2.13.1"]
+```
+
+> This is a hotfix release and **recommended upgrade** for all users of `v2.13.0`
+
+* **Fix**: Regression from v2.12.2 could cause DataInputStream errors in some cases [#173]
+
 ## v2.13.0 / 2016 Jun 10
 
 ```clojure
