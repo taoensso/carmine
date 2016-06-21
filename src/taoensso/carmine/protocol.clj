@@ -88,7 +88,7 @@
   (enc/run!*
     (fn [req-args]
       (when (pos? (count req-args)) ; [] req is dummy req for `return`
-        (let [bs-args (:bytestring-req (meta req-args))]
+        (let [bs-args (get (meta req-args) :bytestring-req)]
           (.write out bs-*)
           (.write out ^bytes (byte-int (count bs-args)))
           (.write out bs-crlf 0 2)
@@ -122,8 +122,8 @@
   [^DataInputStream in req-opts]
   (let [reply-type (int (.readByte in))]
     (enc/case-eval reply-type
-      (int \+)                  (.readLine in)
-      (int \:) (Long/parseLong  (.readLine in))
+      (int \+)                 (.readLine in)
+      (int \:) (Long/parseLong (.readLine in))
       (int \-)
       (let [err-str    (.readLine in)
             err-prefix (re-find #"^\S+" err-str) ; "ERR", "WRONGTYPE", etc.
@@ -141,19 +141,18 @@
       (let [data-size (Integer/parseInt (.readLine in))]
         (if (== data-size -1)
           nil
-          (let [data (byte-array data-size)
-                _
-                (do
+          (let [data
+                (let [data (byte-array data-size)]
                   (.readFully in data 0 data-size)
                   (.readFully in (byte-array 2) 0 2) ; Discard final crlf
                   ;; Avoid the temptation to use .skipBytes here,
                   ;; Ref. http://stackoverflow.com/a/51393/1982742
-                  )
+                  data)
 
                 data-type
                 (cond
-                  (:raw-bulk? req-opts) :raw
-                  (< data-size 2)       :str ; No space for marker
+                  (get req-opts :raw-bulk?) :raw
+                  (< data-size 3)           :str ; No space for marker
                   (zero?   (aget data 0)) ; Special b0 => marker
                   (let [b1 (aget data 1)]
                     (enc/cond!
