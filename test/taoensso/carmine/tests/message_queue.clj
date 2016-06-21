@@ -50,7 +50,7 @@
 
   ;; Handler will *not* run against eoq-backoff/nil reply:
   (is (= nil (mq/handle1 conn-opts tq nil (wcar* (dequeue* tq)))))
-  (is (= {:mid "mid1" :message :msg1, :attempt 1}
+  (is (= {:qname :carmine-test-queue :mid "mid1" :message :msg1, :attempt 1}
         (let [p (promise)]
           (mq/handle1 conn-opts tq #(do (deliver p %) {:status :success})
             (wcar* (dequeue* tq)))
@@ -76,7 +76,7 @@
 (deftest tests-4 ; Handling: retry with backoff
   (is (= "mid1"        (do (clear-tq) (wcar* (mq/enqueue tq :msg1 :mid1)))))
   (is (= "eoq-backoff" (wcar* (dequeue* tq))))
-  (is (= {:mid "mid1" :message :msg1, :attempt 1}
+  (is (= {:qname :carmine-test-queue :mid "mid1" :message :msg1, :attempt 1}
         (let [p (promise)]
           (mq/handle1 conn-opts tq
             #(do (deliver p %) {:status :retry :backoff-ms 3000})
@@ -92,7 +92,7 @@
 (deftest tests-5 ; Handling: success with backoff (dedupe)
   (is (= "mid1"        (do (clear-tq) (wcar* (mq/enqueue tq :msg1 :mid1)))))
   (is (= "eoq-backoff" (wcar* (dequeue* tq))))
-  (is (= {:mid "mid1" :message :msg1, :attempt 1}
+  (is (= {:qname :carmine-test-queue :mid "mid1" :message :msg1, :attempt 1}
         (let [p (promise)]
           (mq/handle1 conn-opts tq
             #(do (deliver p %) {:status :success :backoff-ms 3000})
