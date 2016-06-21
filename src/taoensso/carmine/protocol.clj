@@ -88,7 +88,8 @@
   (enc/run!*
     (fn [req-args]
       (when (pos? (count req-args)) ; [] req is dummy req for `return`
-        (let [bs-args (:bytestring-req (meta req-args))]
+        (let [;; TODO `meta` is unnecessarily slow here, refactor?:
+              bs-args (get (meta req-args) :bytestring-req)]
           (.write out bs-*)
           (.write out ^bytes (byte-int (count bs-args)))
           (.write out bs-crlf 0 2)
@@ -122,8 +123,8 @@
   [^DataInputStream in req-opts]
   (let [reply-type (int (.readByte in))]
     (enc/case-eval reply-type
-      (int \+)                  (.readLine in)
-      (int \:) (Long/parseLong  (.readLine in))
+      (int \+)                 (.readLine in)
+      (int \:) (Long/parseLong (.readLine in))
       (int \-)
       (let [err-str    (.readLine in)
             err-prefix (re-find #"^\S+" err-str) ; "ERR", "WRONGTYPE", etc.
@@ -138,53 +139,50 @@
             (fn [] (get-unparsed-reply in req-opts)))))
 
       (int \$) ; Bulk strings need checking for special in-data markers
-      (let [data-size (Integer/parseInt (.readLine in))]
-        (if (== data-size -1)
+      (let [ba-size (Integer/parseInt (.readLine in))]
+        (if (== ba-size -1)
           nil
-          (let [data (byte-array data-size)
-                _
-                (do
-                  (.readFully in data 0 data-size)
+          ;; Note that ba-size may be zero, e.g. (seq (byte-str ""))
+          (let [ba
+                (let [ba (byte-array ba-size)]
+                  (.readFully in ba 0 ba-size)
                   (.readFully in (byte-array 2) 0 2) ; Discard final crlf
-                  ;; Avoid the temptation to use .skipBytes here,
-                  ;; Ref. http://stackoverflow.com/a/51393/1982742
-                  )
-
-                data-type
-                (cond
-                  (:raw-bulk? req-opts) :raw
-                  (< data-size 2)       :str ; No space for marker
-                  (zero?   (aget data 0)) ; Special b0 => marker
-                  (let [b1 (aget data 1)]
-                    (enc/cond!
-                      (== b1 62 #_(aget bs-clj 1)) :clj
-                      (== b1 60 #_(aget bs-bin 1)) :bin))
-                  :else :str)
-
-                payload
-                (if (or (identical? data-type :clj)
-                        (identical? data-type :bin))
-                  (java.util.Arrays/copyOfRange data 2 data-size)
-                  data)]
+                  ba)]
 
             (try
-              (case data-type
-                :raw payload
-                :str (String. payload "UTF-8")
-                :clj (if-let [thaw-opts (:thaw-opts req-opts)]
-                       (nippy-tools/thaw payload thaw-opts)
-                       (nippy-tools/thaw payload))
-                :bin
-                ;; Workaround #81 (v2.6.0 may have written _serialized_ bins):
-                (if (and ; Nippy header
-                      (>= (alength payload) 3)
-                      (== (aget payload 0) 78)
-                      (== (aget payload 1) 80)
-                      (== (aget payload 2) 89))
-                  (try
-                    (nippy-tools/thaw payload)
-                    (catch Exception _ payload))
-                  payload))
+              (enc/cond!
+               (get req-opts :raw-bulk?) ba ; :raw
+
+               ;; Special data marker
+               (and (>= ba-size 2) ; May be = 2 with (byte-array 0)
+                    (zero? (aget ba 0)))
+               (let [b1    (aget ba 1)]
+                 (enc/cond!
+                  (== b1 62 #_(aget bs-clj 1)) ; :clj
+                  (nippy-tools/thaw
+                   (java.util.Arrays/copyOfRange ba 2 ba-size)
+                   (get :thaw-opts req-opts))
+
+                  (== b1 60 #_(aget bs-bin 1)) ; :bin
+                  (let [payload (java.util.Arrays/copyOfRange ba 2 ba-size)]
+                    ;; Workaround #81 (v2.6.0 may have written
+                    ;; *serialized* bins:
+                    (if (and
+                         (>= (alength payload) 5) ; 4 byte NPY_ header + data
+                         (== (aget payload 0) 78) ; N
+                         (== (aget payload 1) 80) ; P
+                         (== (aget payload 2) 89) ; Y
+                         )
+                      (try
+                        (nippy-tools/thaw payload (get :thaw-opts req-opts))
+                        (catch Exception _ payload))
+                      payload))
+
+                  ;; :else (String. ba 0 ba-size "UTF-8")
+                  ))
+
+               :else ; Common case
+               (String. ba 0 ba-size "UTF-8"))
 
               (catch Exception e
                 (let [message (.getMessage e)]
