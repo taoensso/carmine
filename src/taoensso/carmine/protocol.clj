@@ -142,11 +142,13 @@
         (if (== data-size -1)
           nil
           (let [data (byte-array data-size)
-                _    (do
-                       (.readFully in data 0 data-size)
-                       ;; (.readFully in (byte-array 2) 0 2)
-                       (.skipBytes in 2) ; Discard final crlf
-                       )
+                _
+                (do
+                  (.readFully in data 0 data-size)
+                  (.readFully in (byte-array 2) 0 2) ; Discard final crlf
+                  ;; Avoid the temptation to use .skipBytes here,
+                  ;; Ref. http://stackoverflow.com/a/51393/1982742
+                  )
 
                 data-type
                 (cond
