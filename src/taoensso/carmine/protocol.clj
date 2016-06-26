@@ -85,7 +85,7 @@
       <arg data>       crlf ...]"
   ;; {:pre [(vector? requests)]}
   [^BufferedOutputStream out requests]
-  (enc/run!*
+  (enc/run!
     (fn [req-args]
       (when (pos? (count req-args)) ; [] req is dummy req for `return`
         (let [;; TODO `meta` is unnecessarily slow here, refactor?:
@@ -93,7 +93,7 @@
           (.write out bs-*)
           (.write out ^bytes (byte-int (count bs-args)))
           (.write out bs-crlf 0 2)
-          (enc/run!*
+          (enc/run!
             (fn [^bytes bs-arg]
               (let [payload-size (alength bs-arg)]
                 (.write out bs-$)
@@ -254,7 +254,7 @@
     (fn
       ([value] (return1 (:req-queue *context*) value))
       ([value & more]
-       (enc/run!* (partial return1 (:req-queue *context*))
+       (enc/run! (partial return1 (:req-queue *context*))
          (cons value more))))))
 
 (def ^:const suppressed-reply-kw :carmine/suppressed-reply)
@@ -355,7 +355,7 @@
 
         ;; Restore any stashed replies to underlying stateful context:
         (parse nil ; We already parsed on stashing
-          (enc/run!* return stashed-replies))
+          (enc/run! return stashed-replies))
 
         (if ?throwable
           (throw ?throwable)

@@ -12,9 +12,9 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.53.1"]
-   [com.taoensso/timbre              "4.4.0"]
-   [com.taoensso/nippy               "2.11.1"]
+   [com.taoensso/encore              "2.58.0"]
+   [com.taoensso/timbre              "4.5.0"]
+   [com.taoensso/nippy               "2.11.1"] ; TODO 2.12.0
    [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.10"]
    [org.clojure/data.json            "0.2.6"]]
