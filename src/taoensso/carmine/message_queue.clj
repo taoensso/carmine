@@ -197,12 +197,17 @@
                   nil))))
 
           error
-          (fn [mid poll-reply & [throwable]]
+          (fn [mid poll-reply ?throwable]
             (done :error mid)
             (timbre/errorf
-             (if throwable throwable
-                 (ex-info ":error handler response" {}))
-             "Error handling %s queue message:\n%s" qname poll-reply))
+             (ex-info ":error handler response"
+               {:qname    qname
+                :mid      mid
+                :attempt  attempt
+                :mcontent mcontent}
+               ?throwable)
+             "Error handling %s queue message: %s"
+             qname mid))
 
           {:keys [status throwable backoff-ms]}
           (let [result
