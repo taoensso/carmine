@@ -174,38 +174,43 @@
 (defn handle1 "Implementation detail!"
   [conn-opts qname handler [mid mcontent attempt :as poll-reply]]
   (when (and poll-reply (not= poll-reply "eoq-backoff"))
-    (let [qk   (partial qkey qname)
-          done (fn [status mid & [backoff-ms]]
-                 ;; TODO Switch to Lua script
-                 (car/atomic conn-opts 100
-                   (car/watch (qk :requeue))
-                   (let [requeue?
-                         (car/with-replies (->> (car/sismember (qk :requeue) mid)
-                                                (car/parse-bool)))
-                         status (if (and (= status :success) requeue?)
-                                  :requeue status)]
-                     (car/multi)
-                     (when backoff-ms ; Retry or dedupe backoff, depending on type
-                       (car/hset (qk :backoffs) mid (+ (enc/now-udt) backoff-ms)))
+    (let [qk (partial qkey qname)
+          done
+          (fn [status mid & [backoff-ms]]
+            ;; TODO Switch to Lua script
+            (car/atomic conn-opts 100
+              (car/watch (qk :requeue))
+              (let [requeue?
+                    (car/with-replies (->> (car/sismember (qk :requeue) mid)
+                                           (car/parse-bool)))
+                    status (if (and (= status :success) requeue?)
+                             :requeue status)]
+                (car/multi)
+                (when backoff-ms ; Retry or dedupe backoff, depending on type
+                  (car/hset (qk :backoffs) mid (+ (enc/now-udt) backoff-ms)))
 
-                     (car/hdel (qk :locks) mid)
-                     (case status
-                       (:success :error) (car/sadd (qk :done) mid)
-                       :requeue          (do (car/srem (qk :requeue)   mid)
-                                             (car/hdel (qk :nattempts) mid))
-                       nil))))
+                (car/hdel (qk :locks) mid)
+                (case status
+                  (:success :error) (car/sadd (qk :done) mid)
+                  :requeue          (do (car/srem (qk :requeue)   mid)
+                                        (car/hdel (qk :nattempts) mid))
+                  nil))))
 
-          error (fn [mid poll-reply & [throwable]]
-                  (done :error mid)
-                  (timbre/errorf
-                    (if throwable throwable
-                      (ex-info ":error handler response" {}))
-                    "Error handling %s queue message:\n%s" qname poll-reply))
+          error
+          (fn [mid poll-reply & [throwable]]
+            (done :error mid)
+            (timbre/errorf
+             (if throwable throwable
+                 (ex-info ":error handler response" {}))
+             "Error handling %s queue message:\n%s" qname poll-reply))
 
           {:keys [status throwable backoff-ms]}
-          (let [result (try (handler {:qname   qname    :mid     mid
-                                      :message mcontent :attempt attempt})
-                            (catch Throwable t {:status :error :throwable t}))]
+          (let [result
+                (try (handler {:qname   qname    :mid     mid
+                               :message mcontent :attempt attempt})
+                     (catch Throwable t
+                       {:status :error :throwable t}))]
+
             (when (map? result) result))]
 
       (case status
