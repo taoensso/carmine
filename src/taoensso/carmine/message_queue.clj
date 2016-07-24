@@ -23,12 +23,8 @@
             [taoensso.timbre  :as timbre]
             [taoensso.carmine :as car :refer (wcar)]))
 
-;;;; Ideas to avoid polling
-;; 1. Lua brpoplpush - doesn't currently exist, unlikely to in future.
-;; 2. Redis 2.8+ Pub/Sub keyspace notifications? Maybe with reliable Pub/Sub?
-;; 3. Possible 2-circle (or alternative) designs?
-;; 4. Leave it as is since we'd want a polling worker anyway for gc, lock
-;;    checks, etc.
+;; TODO Consider adding a size-1 blocking list for await/notify style
+;; backoff? Would allow us to eliminate non-maintenance polling.
 
 ;;;; Utils
 
