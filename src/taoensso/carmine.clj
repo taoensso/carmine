@@ -11,8 +11,8 @@
              (commands    :as commands)]))
 
 (if (vector? taoensso.encore/encore-version)
-  (enc/assert-min-encore-version [2 58 0])
-  (enc/assert-min-encore-version  2.58))
+  (enc/assert-min-encore-version [2 67 2])
+  (enc/assert-min-encore-version  2.67))
 
 ;;;; Connections
 
@@ -65,7 +65,7 @@
        (finally
          (when ?stashed-replies#
            (parse nil ; Already parsed on stashing
-             (enc/backport-run! return ?stashed-replies#)))))))
+             (enc/run! return ?stashed-replies#)))))))
 
 (comment
   (wcar {} (ping) "not-a-Redis-command" (ping))
@@ -84,7 +84,6 @@
 (defn as-int   [x] (when x (enc/as-int   x)))
 (defn as-float [x] (when x (enc/as-float x)))
 (defn as-bool  [x] (when x (enc/as-bool  x)))
-(defn as-map   [x]         (enc/as-map   x))
 
 (enc/defalias parse       protocol/parse)
 (enc/defalias parser-comp protocol/parser-comp)
@@ -97,8 +96,6 @@
 (defmacro parse-keyword  [& body] `(parse keyword  ~@body))
 (defmacro parse-suppress [& body]
   `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
-
-(defmacro parse-map [form & [kf vf]] `(parse #(enc/as-map % ~kf ~vf) ~form))
 
 (comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
 
@@ -128,7 +125,9 @@
 
 ;;;; Standard commands
 
-(commands/defcommands) ; This kicks ass - big thanks to Andreas Bielk!
+;; This'll define an appropriate fn (with arglists + docstring) for each of
+;; Redis' 190+ commands as specified in the official `commands.json` file
+(commands/defcommands)
 
 (defn redis-call
   "Sends low-level requests to Redis. Useful for DSLs, certain kinds of command
@@ -137,7 +136,7 @@
 
   (redis-call [:set \"foo\" \"bar\"] [:get \"foo\"])"
   [& requests]
-  (enc/backport-run!
+  (enc/run!
     (fn [[cmd & args]]
       (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))
             request   (into (vec cmd-parts) args)]
@@ -520,7 +519,7 @@
       (parse-suppress (watch k))
       (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
             nx?          (= ex 0)
-            [new-val return-val] (enc/swapped* (f old-val nx?))
+            [new-val return-val] (enc/-vswapped (f old-val nx?))
             cas-success? (parse nil
                            (with-replies
                              (parse-suppress (multi) (set k new-val))
@@ -586,7 +585,7 @@
         (let [[old-val ex sha]     (parse nil (with-replies (cas-get k)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (enc/swapped* (f old-val nx?))
+              [new-val return-val] (enc/-vswapped (f old-val nx?))
               cas-success?         (= 1 (parse nil
                                           (with-replies
                                             (if nx?
@@ -607,7 +606,7 @@
         (let [[old-val ex sha]     (parse nil (with-replies (cas-hget k field)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (enc/swapped* (f old-val nx?))
+              [new-val return-val] (enc/-vswapped (f old-val nx?))
               cas-success?         (= 1 (parse nil
                                           (with-replies
                                             (if nx?
@@ -642,96 +641,105 @@
 
 ;;;; Deprecated
 
-(def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
-(def as-double "DEPRECATED: Use `as-float` instead." as-float)
-(defmacro parse-long "DEPRECATED: Use `parse-int` instead."
-  [& body] `(parse as-long   ~@body))
-(defmacro parse-double "DEPRECATED: Use `parse-float` instead."
-  [& body] `(parse as-double ~@body))
+(enc/deprecated
+  (def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
+  (def as-double "DEPRECATED: Use `as-float` instead." as-float)
+  (defmacro parse-long "DEPRECATED: Use `parse-int` instead."
+    [& body] `(parse as-long   ~@body))
+  (defmacro parse-double "DEPRECATED: Use `parse-float` instead."
+    [& body] `(parse as-double ~@body))
 
-(def hash-script "DEPRECATED: Use `script-hash` instead." script-hash)
+  (def hash-script "DEPRECATED: Use `script-hash` instead." script-hash)
 
-(defn kname "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
-  [& parts] (apply key (filter identity parts)))
+  (defn kname "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
+    [& parts] (apply key (filter identity parts)))
 
-(comment (kname :foo/bar :baz "qux" nil 10))
+  (comment (kname :foo/bar :baz "qux" nil 10))
 
-(def serialize "DEPRECATED: Use `freeze` instead." freeze)
-(def preserve  "DEPRECATED: Use `freeze` instead." freeze)
-(def remember  "DEPRECATED: Use `return` instead." return)
-(def ^:macro skip-replies "DEPRECATED: Use `with-replies` instead." #'with-replies)
-(def ^:macro with-reply   "DEPRECATED: Use `with-replies` instead." #'with-replies)
-(def ^:macro with-parser  "DEPRECATED: Use `parse` instead."        #'parse)
+  (def serialize "DEPRECATED: Use `freeze` instead." freeze)
+  (def preserve  "DEPRECATED: Use `freeze` instead." freeze)
+  (def remember  "DEPRECATED: Use `return` instead." return)
+  (def ^:macro skip-replies "DEPRECATED: Use `with-replies` instead." #'with-replies)
+  (def ^:macro with-reply   "DEPRECATED: Use `with-replies` instead." #'with-replies)
+  (def ^:macro with-parser  "DEPRECATED: Use `parse` instead."        #'parse)
 
-(defn lua-script "DEPRECATED: Use `lua` instead." [& args] (apply lua args))
+  (defn lua-script "DEPRECATED: Use `lua` instead." [& args] (apply lua args))
 
-(defn make-keyfn "DEPRECATED: Use `kname` instead."
-  [& prefix-parts]
-  (let [prefix (when (seq prefix-parts) (str (apply kname prefix-parts) ":"))]
-    (fn [& parts] (str prefix (apply kname parts)))))
+  (defn make-keyfn "DEPRECATED: Use `kname` instead."
+    [& prefix-parts]
+    (let [prefix (when (seq prefix-parts) (str (apply kname prefix-parts) ":"))]
+      (fn [& parts] (str prefix (apply kname parts)))))
 
-(defn make-conn-pool "DEPRECATED: Use `wcar` instead."
-  [& opts] (conns/conn-pool (apply hash-map opts)))
+  (defn make-conn-pool "DEPRECATED: Use `wcar` instead."
+    [& opts] (conns/conn-pool (apply hash-map opts)))
 
-(defn make-conn-spec "DEPRECATED: Use `wcar` instead."
-  [& opts] (conns/conn-spec (apply hash-map opts)))
+  (defn make-conn-spec "DEPRECATED: Use `wcar` instead."
+    [& opts] (conns/conn-spec (apply hash-map opts)))
 
-(defmacro with-conn "DEPRECATED: Use `wcar` instead."
-  [connection-pool connection-spec & body]
-  `(wcar {:pool ~connection-pool :spec ~connection-spec} ~@body))
+  (defmacro with-conn "DEPRECATED: Use `wcar` instead."
+    [connection-pool connection-spec & body]
+    `(wcar {:pool ~connection-pool :spec ~connection-spec} ~@body))
 
-(defmacro atomically "DEPRECATED: Use `atomic` instead."
-  [watch-keys & body]
-  `(do
-     (with-replies ; discard "OK" and "QUEUED" replies
-       (when-let [wk# (seq ~watch-keys)] (apply watch wk#))
-       (multi)
-       ~@body)
+  (defmacro atomically "DEPRECATED: Use `atomic` instead."
+    [watch-keys & body]
+    `(do
+       (with-replies ; discard "OK" and "QUEUED" replies
+         (when-let [wk# (seq ~watch-keys)] (apply watch wk#))
+         (multi)
+         ~@body)
 
-     ;; Body discards will result in an (exec) exception:
-     (parse (parser-comp protocol/*parser*
-                         (-> #(if (instance? Exception %) [] %)
-                             (with-meta {:parse-exceptions? true})))
-            (exec))))
+       ;; Body discards will result in an (exec) exception:
+       (parse (parser-comp protocol/*parser*
+                (-> #(if (instance? Exception %) [] %)
+                  (with-meta {:parse-exceptions? true})))
+         (exec))))
 
-(defmacro ensure-atomically "DEPRECATED: Use `atomic` instead."
-  [{:keys [max-tries] :or {max-tries 100}}
-   watch-keys & body]
-  `(let [watch-keys# ~watch-keys
-         max-idx#    ~max-tries]
-     (loop [idx# 0]
-       (let [result# (with-replies (atomically watch-keys# ~@body))]
-         (if-not (nil? result#) ; Was [] with < Carmine v3
-           (remember result#)
-           (if (= idx# max-idx#)
-             (throw
-               (ex-info (format "`ensure-atomically` failed after %s attempt(s)"
-                          idx#)
-                 {:nattempts idx#}))
-             (recur (inc idx#))))))))
+  (defmacro ensure-atomically "DEPRECATED: Use `atomic` instead."
+    [{:keys [max-tries] :or {max-tries 100}}
+     watch-keys & body]
+    `(let [watch-keys# ~watch-keys
+           max-idx#    ~max-tries]
+       (loop [idx# 0]
+         (let [result# (with-replies (atomically watch-keys# ~@body))]
+           (if-not (nil? result#) ; Was [] with < Carmine v3
+             (remember result#)
+             (if (= idx# max-idx#)
+               (throw
+                 (ex-info (format "`ensure-atomically` failed after %s attempt(s)"
+                            idx#)
+                   {:nattempts idx#}))
+               (recur (inc idx#))))))))
 
-(defn hmget* "DEPRECATED: Use `parse-map` instead."
-  [key field & more]
-  (let [fields (cons field more)
-        inner-parser (when-let [p protocol/*parser*] #(mapv p %))
-        outer-parser #(zipmap fields %)]
-    (->> (apply hmget key fields)
-         (parse (parser-comp outer-parser inner-parser)))))
+  (defn hmget* "DEPRECATED: Use `parse-map` instead."
+    [key field & more]
+    (let [fields (cons field more)
+          inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+          outer-parser #(zipmap fields %)]
+      (->> (apply hmget key fields)
+        (parse (parser-comp outer-parser inner-parser)))))
 
-(defn hgetall* "DEPRECATED: Use `parse-map` instead."
-  [key & [keywordize?]]
-  (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
-        outer-parser (if keywordize?
-                       #(enc/map-keys keyword (apply hash-map %))
-                       #(apply hash-map %))]
-    (->> (hgetall key)
-         (parse (parser-comp outer-parser inner-parser)))))
+  (defn hgetall* "DEPRECATED: Use `parse-map` instead."
+    [key & [keywordize?]]
+    (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+          outer-parser (if keywordize?
+                         #(enc/map-keys keyword (apply hash-map %))
+                         #(apply hash-map %))]
+      (->> (hgetall key)
+        (parse (parser-comp outer-parser inner-parser)))))
 
-(comment
-  (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
-  (wcar {} (hmset* "hkey" {})) ; ex
-  (wcar {} (hmget* "hkey" :a :b))
-  (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
-  (wcar {} (hmget* "hkey" "a" "b"))
-  (wcar {} (hgetall* "hkey"))
-  (wcar {} (parse str/upper-case (hgetall* "hkey"))))
+  (comment
+    (wcar {} (hgetall* "hkey"))
+    (wcar {} (parse (fn [kvs] (enc/reduce-kvs assoc {} kvs))
+               (hgetall "hkey")))
+
+    (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
+    (wcar {} (hmset* "hkey" {})) ; ex
+    (wcar {} (hmget* "hkey" :a :b))
+    (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
+    (wcar {} (hmget* "hkey" "a" "b"))
+    (wcar {} (hgetall* "hkey"))
+    (wcar {} (parse str/upper-case (hgetall* "hkey"))))
+
+  (defn as-map [x] (enc/as-map x))
+  (defmacro parse-map [form & [kf vf]]
+    `(parse #(enc/as-map % ~kf ~vf) ~form)))

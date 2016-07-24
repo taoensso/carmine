@@ -125,7 +125,7 @@
   keys, unnecessarily duplicating work."
   (enc/memoize* 5000 fetch-keys))
 
-(defn- prep-ks [ks] (vec (distinct (mapv enc/fq-name ks))))
+(defn- prep-ks [ks] (vec (distinct (mapv enc/as-qname ks))))
 (comment (prep-ks [nil]) ; Throws
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
@@ -209,7 +209,7 @@
                                    :ks-missing ks-missing
                                    :ks-not-missing ks-not-missing})
 
-      (enc/backport-run!
+      (enc/run!
         (fn [k]
           (->> (mq/enqueue tqname k k :allow-locked-dupe) ; key as msg & mid (deduped)
                (car/with-replies :as-pipeline) ; Don't pollute pipeline

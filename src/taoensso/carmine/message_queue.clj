@@ -41,7 +41,7 @@
 (defn clear-queues [conn-opts & qnames]
   (when (seq qnames)
     (wcar conn-opts
-      (enc/backport-run!
+      (enc/run!
         (fn [qname]
           (let [qk (partial qkey qname)]
             (car/del
@@ -56,6 +56,8 @@
               (qk :ndry-runs))))
         qnames))))
 
+(defn- kvs->map [kvs] (enc/reduce-kvs assoc {} kvs))
+
 (defn queue-status [conn-opts qname]
   (let [qk (partial qkey qname)]
     (zipmap [:last-mid :next-mid :messages :locks :backoffs :nattempts
@@ -63,10 +65,11 @@
      (wcar conn-opts
        (car/lindex        (qk :mid-circle)  0)
        (car/lindex        (qk :mid-circle) -1)
-       (car/hgetall*      (qk :messages))
-       (car/hgetall*      (qk :locks))
-       (car/hgetall*      (qk :backoffs))
-       (car/hgetall*      (qk :nattempts))
+       (car/parse kvs->map
+         (car/hgetall     (qk :messages))
+         (car/hgetall     (qk :locks))
+         (car/hgetall     (qk :backoffs))
+         (car/hgetall     (qk :nattempts)))
        (car/lrange        (qk :mid-circle) 0 -1)
        (->> (car/smembers (qk :done))         (car/parse set))
        (->> (car/smembers (qk :requeue))      (car/parse set))

@@ -1,7 +1,7 @@
 (ns taoensso.carmine.tests.main
   (:require [clojure.string :as str]
             [expectations     :as test :refer :all]
-            [taoensso.encore  :as encore]
+            [taoensso.encore  :as enc]
             [taoensso.carmine :as car  :refer (wcar)]
             [taoensso.carmine.commands   :as commands]
             [taoensso.carmine.protocol   :as protocol]
@@ -248,8 +248,8 @@
 
 (let [k  (tkey "binary-safety")
       ba (byte-array [(byte 3) (byte 1) (byte 4)])]
-  (expect #(encore/ba= ba %) (do (wcar* (car/set k ba))
-                                 (wcar* (car/get k)))))
+  (expect #(enc/ba= ba %) (do (wcar* (car/set k ba))
+                              (wcar* (car/get k)))))
 
 ;;; Nulls
 
@@ -280,7 +280,7 @@
 
 (let [k (tkey "script")
       script "return redis.call('set',KEYS[1],'script-value')"
-      script-hash (car/hash-script script)]
+      script-hash (car/script-hash script)]
   (expect "script-value" (do (wcar* (car/script-load script))
                              (wcar* (car/evalsha script-hash 1 k))
                              (wcar* (car/get k))))
@@ -295,38 +295,39 @@
     (do
       (wcar* (car/set k [:a :A :b :B :c :C :d :D]))
       (wcar* (car/ping)
-             (car/with-parser #(apply hash-map %) (car/get k))
-             (car/with-parser str/lower-case
+             (car/parse #(apply hash-map %) (car/get k))
+             (car/parse str/lower-case
                (car/ping)
                (car/ping))
              (car/ping)))))
 
 ;;; DEPRECATED `atomically` transactions
 
-(let [k      (tkey "atomic")
-      wk     (tkey "watch")
-      k-val  "initial-k-value"
-      wk-val "initial-wk-value"]
+(enc/deprecated
+  (let [k      (tkey "atomic")
+        wk     (tkey "watch")
+        k-val  "initial-k-value"
+        wk-val "initial-wk-value"]
 
   ;;; This transaction will succeed
-  (expect ["PONG" "OK"]
-    (do (wcar* (car/set k  k-val)
-               (car/set wk wk-val))
-        (wcar* (car/atomically []
-                 (let [wk-val (wcar* (car/get wk))]
-                   (car/ping)
-                   (car/set k wk-val))))))
+    (expect ["PONG" "OK"]
+      (do (wcar* (car/set k  k-val)
+            (car/set wk wk-val))
+          (wcar* (car/atomically []
+                   (let [wk-val (wcar* (car/get wk))]
+                     (car/ping)
+                     (car/set k wk-val))))))
 
-  (expect wk-val (wcar* (car/get k)))
+    (expect wk-val (wcar* (car/get k)))
 
   ;;; This transaction will fail
-  (expect nil ; []
-    (do (wcar* (car/set k  k-val)
-               (car/set wk wk-val))
-        (wcar* (car/atomically [wk]
-                 (wcar* (car/set wk "CHANGE!")) ; Will break watch
-                 (car/ping)))))
-  (expect k-val (wcar* (car/get k))))
+    (expect nil ; []
+      (do (wcar* (car/set k  k-val)
+            (car/set wk wk-val))
+          (wcar* (car/atomically [wk]
+                   (wcar* (car/set wk "CHANGE!")) ; Will break watch
+                   (car/ping)))))
+    (expect k-val (wcar* (car/get k)))))
 
 ;;;; with-replies
 
@@ -413,7 +414,7 @@
 
 ;; Lua (`with-replies`) errors bypass normal parsers
 (expect Exception (wcar {} (->> (car/lua "invalid" {:_ :_} {}) (car/parse keyword))))
-(expect encore/bytes-class ; But _do_ maintain raw parsing metadata:
+(expect enc/bytes-class ; But _do_ maintain raw parsing metadata:
   (do (wcar {} (car/set (tkey "binkey") (.getBytes "Foobar" "UTF-8")))
       (wcar {} (-> (car/lua "return redis.call('get', _:k)" {:k (tkey "binkey")} {})
                    (car/parse-raw)))))
@@ -565,9 +566,9 @@
       (car/swap tk (fn [?old nx?] (if nx? "_" "state2")))
       (car/swap tk (fn [?old _]   (if (= ?old "state2")  "state3" "_")))
       (car/parse str/upper-case
-        (car/swap tk (fn [?old _] (encore/swapped "state4" "return"))))
+        (car/swap tk (fn [?old _] (enc/swapped "state4" "return"))))
       (car/get  tk)
-      (car/swap tk (fn [?old _] (encore/swapped "state5" ?old)))
+      (car/swap tk (fn [?old _] (enc/swapped "state5" ?old)))
 
       (car/set  tk big-val)
       (car/swap tk (fn [?old nx?] (conj ?old :woo)))
