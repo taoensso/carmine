@@ -12,9 +12,9 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.58.0"]
-   [com.taoensso/timbre              "4.5.0"]
-   [com.taoensso/nippy               "2.11.1"] ; TODO 2.12.0
+   [com.taoensso/encore              "2.67.1"]
+   [com.taoensso/timbre              "4.7.2"]
+   [com.taoensso/nippy               "2.12.0"]
    [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.10"]
    [org.clojure/data.json            "0.2.6"]]
@@ -26,7 +26,7 @@
    :1.6  {:dependencies [[org.clojure/clojure "1.6.0"]]}
    :1.7  {:dependencies [[org.clojure/clojure "1.7.0"]]}
    :1.8  {:dependencies [[org.clojure/clojure "1.8.0"]]}
-   :1.9  {:dependencies [[org.clojure/clojure "1.9.0-alpha7"]]}
+   :1.9  {:dependencies [[org.clojure/clojure "1.9.0-alpha10"]]}
    :test {:dependencies [;; 2.1.4 has breaking changes
                          ;; TODO Migrate expectations->clojure.test
                          [expectations            "2.1.3"]
@@ -35,7 +35,7 @@
                          [clj-aws-s3              "0.3.10"]
                          [ring/ring-core          "1.5.0"]]
           :plugins [[lein-expectations "0.0.8"]
-                    [lein-autoexpect   "1.7.0"]]}
+                    [lein-autoexpect   "1.9.0"]]}
    :dev
    [:1.9 :test :server-jvm
     {:plugins [[lein-ancient "0.6.10"]
