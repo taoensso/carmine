@@ -1,5 +1,17 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.14.0 / 2016 Jul 24
+
+```clojure
+[com.taoensso/carmine "2.14.0"]
+```
+
+> This is a non-breaking release that upgrades Carmine's Nippy dependency
+
+* **Impl**: Switch to Nippy v2.12.0 for serialization performance improvements
+* [#174] **New**: Message queue: add `qname` to arg map passed to queue handler (@dparis)
+* [#175] **New**: Improve error message for mq handler errors
+
 ## v2.13.1 / 2016 Jun 21
 
 ```clojure
