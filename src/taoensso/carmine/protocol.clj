@@ -375,9 +375,9 @@
   replies internally), you probably want `(parse nil (with-replies ...))` to
   keep external parsers from leaking into your internal logic."
   {:arglists '([:as-pipeline & body] [& body])}
-  [& [s1 & sn :as sigs]]
-  (let [as-pipeline? (identical? s1 :as-pipeline)
-        body         (if as-pipeline? sn sigs)]
+  [& [a1 & an :as args]]
+  (let [as-pipeline? (identical? a1 :as-pipeline)
+        body         (if as-pipeline? an args)]
     `(-with-replies (fn [] ~@body) ~as-pipeline?)))
 
 (defmacro with-context "Implementation detail"

@@ -350,17 +350,18 @@
 
     w))
 
-;;;; Renamed/deprecated
+;;;; Deprecated
 
-(defn make-dequeue-worker "DEPRECATED: Use `worker` instead."
-  [pool spec & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
-                       auto-start?]}]
-  (worker {:pool pool :spec spec}
-    (merge (when-let [ms handler-ttl-msecs] {:lock-ms        ms})
-           (when-let [ms backoff-msecs]     {:eoq-backoff-ms ms})
-           (when-let [ms throttle-msecs]    {:throttle-ms    ms})
-           (when-let [hf handler-fn]
-             {:handler (fn [{:keys [message]}]
-                         {:status (or (#{:success :error :retry} (hf message))
-                                      :success)})})
-           {:auto-start? auto-start?})))
+(enc/deprecated
+  (defn make-dequeue-worker "DEPRECATED: Use `worker` instead."
+    [pool spec & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
+                         auto-start?]}]
+    (worker {:pool pool :spec spec}
+      (merge (when-let [ms handler-ttl-msecs] {:lock-ms        ms})
+        (when-let [ms backoff-msecs]          {:eoq-backoff-ms ms})
+        (when-let [ms throttle-msecs]         {:throttle-ms    ms})
+        (when-let [hf handler-fn]
+          {:handler (fn [{:keys [message]}]
+                      {:status (or (#{:success :error :retry} (hf message))
+                                 :success)})})
+        {:auto-start? auto-start?}))))

@@ -43,7 +43,7 @@
 
   See also `with-replies`."
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
-  [conn-opts & sigs] ; [conn-opts & [s1 & sn :as sigs]]
+  [conn-opts & args] ; [conn-opts & [a1 & an :as args]]
   `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
 
          ;; To support `wcar` nesting with req planning, we mimic
@@ -54,7 +54,7 @@
 
      (try
        (let [response# (protocol/with-context conn#
-                         (protocol/with-replies ~@sigs))]
+                         (protocol/with-replies ~@args))]
          (conns/release-conn pool# conn#)
          response#)
 

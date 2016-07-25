@@ -26,9 +26,10 @@
                         expiration-secs (enc/secs :days 30)}}]]
   (CarmineSessionStore. conn-opts key-prefix expiration-secs))
 
-(defn make-carmine-store ; 1.x backwards compatiblity
+(enc/deprecated
+  (defn make-carmine-store ; 1.x backwards compatiblity
   "DEPRECATED. Use `carmine-store` instead."
-  [& [s1 s2 & sn :as sigs]]
-  (if (instance? taoensso.carmine.connections.ConnectionPool s1)
-    (carmine-store {:pool s1 :spec s2} (apply hash-map sn))
-    (apply carmine-store sigs)))
+    [& [s1 s2 & sn :as args]]
+    (if (instance? taoensso.carmine.connections.ConnectionPool s1)
+      (carmine-store {:pool s1 :spec s2} (apply hash-map sn))
+      (apply carmine-store args))))
