@@ -16,8 +16,7 @@
    [com.taoensso/timbre              "4.7.3"]
    [com.taoensso/nippy               "2.12.1"]
    [org.apache.commons/commons-pool2 "2.4.2"]
-   [commons-codec/commons-codec      "1.10"]
-   [org.clojure/data.json            "0.2.6"]]
+   [commons-codec/commons-codec      "1.10"]]
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
@@ -38,8 +37,10 @@
                     [lein-autoexpect   "1.9.0"]]}
    :dev
    [:1.9 :test :server-jvm
-    {:plugins [[lein-ancient "0.6.10"]
-               [lein-codox   "0.9.5"]]}]}
+    {:dependencies [[org.clojure/data.json "0.2.6"]]
+     :plugins
+     [[lein-ancient "0.6.10"]
+      [lein-codox   "0.9.5"]]}]}
 
   :test-paths ["test" "src"]
 

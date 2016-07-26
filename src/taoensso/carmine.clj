@@ -125,9 +125,7 @@
 
 ;;;; Standard commands
 
-;; This'll define an appropriate fn (with arglists + docstring) for each of
-;; Redis' 190+ commands as specified in the official `commands.json` file
-(commands/defcommands)
+(commands/defcommands) ; Defines 190+ Redis command fns as per official spec
 
 (defn redis-call
   "Sends low-level requests to Redis. Useful for DSLs, certain kinds of command
