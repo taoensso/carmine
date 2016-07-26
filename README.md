@@ -21,7 +21,7 @@
 
 ## Features
  * Small, simple **all-Clojure** library
- * **Fully documented**, [up-to-date API] with full support for the latest Redis versions
+ * **Fully documented**, API with full support for the latest Redis versions
  * **Great performance**
  * Industrial strength **connection pooling**
  * Composable, **first-class command functions**
@@ -403,7 +403,6 @@ Copyright &copy; 2012-2016 [Peter Taoussanis].
 
 <!--- Unique links -->
 [Redis]: http://www.redis.io/
-[up-to-date API]: https://github.com/ptaoussanis/carmine/blob/master/src/commands/commands.list
 [Nippy]: https://github.com/ptaoussanis/nippy
 [@lantiga/redlock-clj]: https://github.com/lantiga/redlock-clj
 [@danielsz/system]: https://github.com/danielsz/system

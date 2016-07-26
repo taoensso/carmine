@@ -1,7 +1,6 @@
 (ns taoensso.carmine.protocol
   "Core facilities for communicating with Redis servers using the Redis
-  request/response protocol, Ref. http://redis.io/topics/protocol"
-  {:author "Peter Taoussanis"}
+  request/response protocol, Ref. http://redis.io/topics/protocol."
   (:require [clojure.string       :as str]
             [taoensso.encore      :as enc]
             [taoensso.nippy.tools :as nippy-tools])
@@ -20,6 +19,8 @@
 ;;   received, parsed, + returned.
 
 ;;;; Dynamic context
+;; TODO Could do with a design refactor
+;; (deftype Context [conn req-queue parser]) ; TODO, use .-fields
 
 (defrecord Context [conn req-queue])
 (def ^:dynamic *context* "Current dynamic Context"         nil)
