@@ -12,9 +12,9 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.67.2"]
+   [com.taoensso/encore              "2.86.1"]
    [com.taoensso/timbre              "4.7.3"]
-   [com.taoensso/nippy               "2.12.0"]
+   [com.taoensso/nippy               "2.12.2"]
    [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.10"]]
 
@@ -30,7 +30,7 @@
                          ;; TODO Migrate expectations->clojure.test
                          [expectations            "2.1.3"]
                          [org.clojure/test.check  "0.9.0"]
-                         [com.taoensso/faraday    "1.8.0"]
+                         [com.taoensso/faraday    "1.9.0"]
                          [clj-aws-s3              "0.3.10"]
                          [ring/ring-core          "1.5.0"]]
           :plugins [[lein-expectations "0.0.8"]
@@ -40,7 +40,7 @@
     {:dependencies [[org.clojure/data.json "0.2.6"]]
      :plugins
      [[lein-ancient "0.6.10"]
-      [lein-codox   "0.9.5"]]}]}
+      [lein-codox   "0.10.1"]]}]}
 
   :test-paths ["test" "src"]
 
