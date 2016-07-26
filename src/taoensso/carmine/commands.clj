@@ -4,7 +4,7 @@
   (:require [clojure.string  :as str]
             [taoensso.encore :as enc]
             [taoensso.carmine.protocol :as protocol])
-  (:import  [taoensso.carmine.protocol Context]))
+  (:import  [taoensso.carmine.protocol EnqueuedRequest Context]))
 
 ;;;; Cluster keyslots
 
@@ -191,8 +191,6 @@
       #"}, " "}\n"))))
 
 ;;;;
-;; TODO Requests could do with a design refactor
-;; (deftype EnqueuedRequest [parser cluster-keyslot request-bs]) ; TODO
 
 (defn enqueue-request
   "Implementation detail.
@@ -206,11 +204,11 @@
   ([cluster-key-idx request]
    ;; (enc/have? vector? request)
    (let [context protocol/*context*
-         parser  protocol/*parser*
          _ (when (nil? context) (throw protocol/no-context-ex))
+         parser  protocol/*parser*
          ^Context context context
-         conn      (.-conn      context)
-         req-queue (.-req-queue context)
+         conn       (.-conn       context)
+         req-queue_ (.-req-queue_ context)
          ;; cluster-mode? (.-cluster-mode? context)
          cluster-mode? false #_(get-in conn [:spec :cluster])
 
@@ -223,21 +221,9 @@
                (keyslot (nth request-bs cluster-key-idx))))
            0)
 
-         request ; User-readable request, handy for debugging
-         (with-meta ; TODO Refactor
-           request
-           {:parser           parser
-            :expected-keyslot cluster-keyslot
-            :bytestring-req   request-bs})]
+         ereq (EnqueuedRequest. cluster-keyslot parser request request-bs)]
 
-     ;; Could also choose to throw for non-Cluster commands in Cluster mode?
-     ;; Choosing for now to let Redis server reply with the relevant error
-     ;; since there's no command spec info on which commands do/don't support
-     ;; cluster.
-
-     ;; (println "Enqueue request: " request#)
-     (swap! req-queue (fn [[_ q]] [nil (conj q request)])) ; TODO Optimize
-     )))
+     (swap! req-queue_ conj ereq))))
 
 ;;;;
 
