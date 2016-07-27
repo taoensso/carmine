@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "2.14.0"
+(defproject com.taoensso/carmine "2.15.0-SNAPSHOT"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
