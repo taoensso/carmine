@@ -64,16 +64,15 @@
         read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
 
         socket-address (InetSocketAddress. ^String host ^Integer port)
-        socket (enc/doto-cond [expr (Socket.)]
-                 :always         (.setTcpNoDelay   true)
-                 :always         (.setKeepAlive    true)
-                 :always         (.setReuseAddress true)
-                 ;; :always      (.setSoLinger     true 0)
-                 read-timeout-ms (.setSoTimeout ^Integer expr))
-        _ (if conn-timeout-ms
-            (.connect socket socket-address conn-timeout-ms)
-            (.connect socket socket-address))
-
+        socket (let [s (if read-timeout-ms
+                         (doto (new Socket)
+                           (.setSoTimeout ^Integer read-timeout-ms))
+                         (new Socket))]
+                 (doto s
+                   (.setTcpNoDelay   true)
+                   (.setKeepAlive    true)
+                   (.setReuseAddress true)
+                   (.connect socket-address conn-timeout-ms)))
         buff-size 16384 ; Err on the large size since we're pooling
         conn (Connection. socket spec
                (-> (.getInputStream socket)
@@ -137,6 +136,19 @@
     (throw (ex-info (str "Unknown pool option: " k) {:option k})))
   pool)
 
+(def ^{:private true
+       :doc "Ref. http://goo.gl/y1mDbE"}
+  jedis-defaults
+  {:test-while-idle?              true  ; from false
+   :num-tests-per-eviction-run    -1    ; from 3
+   :min-evictable-idle-time-ms    60000 ; from 1800000
+   :time-between-eviction-runs-ms 30000 ; from -1
+   })
+(def ^:private
+  carmine-defaults
+  {:max-total-per-key 16 ; from 8
+   })
+
 (def conn-pool
   (enc/memoize_
     (fn [pool-opts]
@@ -145,19 +157,10 @@
         ;; Pass through pre-made pools (note that test reflects):
         (satisfies? IConnectionPool pool-opts) pool-opts
         :else
-        (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
-              {:test-while-idle?              true  ; from false
-               :num-tests-per-eviction-run    -1    ; from 3
-               :min-evictable-idle-time-ms    60000 ; from 1800000
-               :time-between-eviction-runs-ms 30000 ; from -1
-               }
-              carmine-defaults
-              {:max-total-per-key 16 ; from 8
-               }]
-          (ConnectionPool.
-            (reduce-kv set-pool-option
-              (GenericKeyedObjectPool. (make-connection-factory))
-              (merge jedis-defaults carmine-defaults pool-opts))))))))
+        (ConnectionPool.
+         (reduce-kv set-pool-option
+                    (GenericKeyedObjectPool. (make-connection-factory))
+                    (merge jedis-defaults carmine-defaults pool-opts)))))))
 
 ;; (defn uncached-conn-pool [pool-opts] (conn-pool :mem/fresh pool-opts))
 (comment (conn-pool :none) (conn-pool {}))
