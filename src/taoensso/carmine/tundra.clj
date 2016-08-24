@@ -16,6 +16,7 @@
   (:import  [java.net URLDecoder URLEncoder]))
 
 ;;;; TODO v2/refactor
+;; - Why is evictable set key not configurable?
 ;; - General refactor (reduce-based flow, refactor stores, etc.)
 ;; - Drop mq for a simpler zset {<k> <udt-last-dirty>} based model:
 ;;   atomic-pull ks on verified write when udt unchanged against write val
