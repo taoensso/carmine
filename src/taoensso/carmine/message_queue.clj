@@ -257,7 +257,8 @@
                                   (car/get  (qk :ndry-runs))
                                   (car/llen (qk :mid-circle)))]
 
-                            (when-let [t (some #(instance? Throwable %) -resp)]
+                            (when-let [t (some #(when (instance? Throwable %) %)
+                                           -resp)]
                               (throw t))
 
                             (when monitor
