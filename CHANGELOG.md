@@ -1,5 +1,17 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.15.0 / 2016 Oct 20
+
+```clojure
+[com.taoensso/carmine "2.15.0"]
+```
+
+> This is a non-breaking maintenance release
+
+* **Fix**: message-queue errors not being correctly identified.
+* **Impl**: refactor automatic command definitions.
+* **Impl**: refactor some low-level protocol code.
+
 ## v2.14.0 / 2016 Jul 24
 
 ```clojure
