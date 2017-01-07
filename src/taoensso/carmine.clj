@@ -138,7 +138,7 @@
     (fn [[cmd & args]]
       (let [cmd-parts (-> cmd name str/upper-case (str/split #"-"))
             request   (into (vec cmd-parts) args)]
-        (commands/enqueue-request request (count cmd-parts))))
+        (commands/enqueue-request (count cmd-parts) request)))
     requests))
 
 (comment (wcar {} (redis-call [:set "foo" "bar"] [:get "foo"]
