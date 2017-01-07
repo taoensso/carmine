@@ -1,5 +1,15 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.15.1 / 2017 Jan 7
+
+```clojure
+[com.taoensso/carmine "2.15.1"]
+```
+
+> This is a non-breaking hotfix release
+
+* [#189] **Hotfix**: broken `redis-call`
+
 ## v2.15.0 / 2016 Oct 20
 
 ```clojure
