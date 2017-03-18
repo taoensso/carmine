@@ -213,7 +213,7 @@
               ;; Nb :parse-exceptions? is rare & not normally used by lib
               ;; consumers. Such parsers need to be written to _not_
               ;; interfere with our ability to interpret Cluster error msgs.
-              (not (get :parse-exceptions? req-opts)))
+              (not (get req-opts :parse-exceptions?)))
 
           unparsed-reply ; Return unparsed
           (try
