@@ -1,58 +1,85 @@
 (ns taoensso.carmine.tests.locks
-  (:require [expectations     :as test :refer :all]
+  (:require [clojure.test :refer :all]
             [taoensso.carmine :as car  :refer (wcar)]
             [taoensso.carmine.locks
              :refer (acquire-lock release-lock with-lock)]))
 
-(comment (test/run-tests '[taoensso.carmine.tests.locks]))
-(defn- before-run {:expectations-options :before-run} [])
-(defn- after-run  {:expectations-options :after-run}  [])
+(def conn-opts {})
+(def timeout-ms 2000)
 
-;;; Basic locking
 
-(expect (acquire-lock {} :2 2000 2000)) ; For 2 secs
-(expect (not (acquire-lock {} :2 2000 200))) ; Too early
-(expect (do (Thread/sleep 1000)
-            (acquire-lock {} :2 2000 2000)))
+(deftest basic-locking-tests
+  (let [lock-name :2
+        act-op1 (acquire-lock {} lock-name timeout-ms 2000)
+        act-op2 (acquire-lock {} lock-name timeout-ms 200)
+        act-op3 (do
+                  (Thread/sleep 1000)
+                  (acquire-lock {} lock-name timeout-ms 2000))]
+    (is (string? act-op1)
+        "Should acquire lock and return UUID owner string")
+    (is (nil? act-op2)
+        "Should not acquire lock and return nil")
+    (is (string? act-op3)
+        "Should acquire lock and return new UUID owner string")
+    (is (not= act-op1 act-op3)
+        "It should return new owner UUID")))
 
-;;; Releasing
 
-(expect-let
-  [uuid (acquire-lock {} :3 2000 2000)]
-  (fn [[x y z]] (and (nil? x) y z))
-  [(acquire-lock {} :3 2000 200) ; Too early
-   (release-lock {} :3 uuid)
-   (acquire-lock {} :3 2000 10)])
+(deftest releasing-lock-tests
+  (let [lock-name :3
+        uuid (acquire-lock conn-opts lock-name timeout-ms 2000)
+        act-op1 (acquire-lock conn-opts lock-name timeout-ms 200) ;; Too early
+        act-op2 (release-lock conn-opts lock-name uuid)
+        act-op3 (acquire-lock conn-opts lock-name timeout-ms 10)]
+    (is (nil? act-op1)
+        "Can't get lock as its too early")
+    (is (true? act-op2)
+        "Releasing lock should be successful")
+    (is (string? act-op3)
+        "Now that its released, we should be able to acquire a lock")))
 
-;;; Already released
 
-(expect-let
-  [uuid (acquire-lock {} :4 2000 2000)
-   f1   (future (release-lock {} :4 uuid))]
-  false
-  (do (Thread/sleep 200) ; Let future run
-      (release-lock {} :4 uuid)))
+(deftest already-released-tests
+  (let [lock-name :4
+        uuid (acquire-lock conn-opts lock-name timeout-ms 2000)]
+    (future (release-lock conn-opts lock-name uuid))
+    (is (false? (do (Thread/sleep 200) ;; wait for future to run
+                    (release-lock conn-opts lock-name uuid)))
+        "Sine we already released the lock we can't release it again")))
 
-;;; Locking scope
 
-(expect #(not (nil? %))
-  (do (try (with-lock {} :5 2000 2000 (throw (Exception.)))
-           (catch Exception e nil))
-      (acquire-lock {} :5 2000 2000)))
+(deftest locking-scope-tests
+  (let [lock-name :5]
+    (try (with-lock {} conn-opts lock-name timeout-ms (throw (Exception.)))
+         (catch Exception e nil))
+    (is (string? (acquire-lock conn-opts lock-name timeout-ms 2000))
+        "Since with-lock threw an exception it came outside the scope and hence we can acquire a lock again.")))
 
-;;; Locking failure
 
-(expect nil (do (acquire-lock {} :6 3000 2000)
-                (with-lock {} :6 2000 10)))
+(deftest locking-failure-tests
+  (let [lock-name :6]
+    (acquire-lock conn-opts lock-name 3000 2000)
+    (is (nil? (with-lock conn-opts lock-name 2000 10))
+        "There is already a lock, hence with-lock failed.")))
 
-;;; `with-lock` expiry
 
-(expect Exception (with-lock {} 9 500 2000 (Thread/sleep 1000)))
-(expect nil
-  (do (future (with-lock {} :10 500 2000 (Thread/sleep 1000)))
-      (Thread/sleep 100) ; Give future time to acquire lock
-      (with-lock {} :10 3000 10 :foo)))
-(expect {:result :foo}
-  (do (future (with-lock {} :11 500 2000 (Thread/sleep 1000)))
-      (Thread/sleep 600) ; Give future time to acquire + lose lock
-      (with-lock {} :11 3000 10 :foo)))
+(deftest with-lock-expiry-tests
+  (testing "Case 1"
+    (is (thrown? clojure.lang.ExceptionInfo
+                 (with-lock {} :9 500 2000 (Thread/sleep 1000)))
+        "Since lock expired before being released, it should throw an exception."))
+
+  (testing "Case 2"
+    (let [lock-name :10]
+      (future (with-lock conn-opts lock-name 500 2000 (Thread/sleep 1000)))
+      (Thread/sleep 100) ;; Give future time to acquire lock
+      (is (nil? (with-lock conn-opts lock-name 3000 10 :foo))
+          "Since Lock was already acquired we should get nil back")))
+
+  (testing "Case 3"
+    (let [lock-name :11]
+      (future (with-lock conn-opts lock-name 500 2000 (Thread/sleep 1000)))
+      (Thread/sleep 600) ;; Give future time to acquire + lose lock
+      (is (= {:result :foo}
+             (with-lock conn-opts lock-name 3000 10 :foo))
+          "Since Lock was expired and then we tried to acquire it, we should get a lock"))))

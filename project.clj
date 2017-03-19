@@ -27,14 +27,10 @@
    :1.8  {:dependencies [[org.clojure/clojure "1.8.0"]]}
    :1.9  {:dependencies [[org.clojure/clojure "1.9.0-alpha10"]]}
    :test {:dependencies [;; 2.1.4 has breaking changes
-                         ;; TODO Migrate expectations->clojure.test
-                         [expectations            "2.1.3"]
                          [org.clojure/test.check  "0.9.0"]
                          [com.taoensso/faraday    "1.9.0"]
                          [clj-aws-s3              "0.3.10"]
-                         [ring/ring-core          "1.5.0"]]
-          :plugins [[lein-expectations "0.0.8"]
-                    [lein-autoexpect   "1.9.0"]]}
+                         [ring/ring-core          "1.5.0"]]}
    :dev
    [:1.9 :test :server-jvm
     {:dependencies [[org.clojure/data.json "0.2.6"]]
@@ -49,8 +45,7 @@
    :source-uri "https://github.com/ptaoussanis/carmine/blob/master/{filepath}#L{line}"}
 
   :aliases
-  {"test-all"   ["with-profile" "+1.9:+1.8:+1.7:+1.6:+1.5" "expectations"]
-   "test-auto"  ["with-profile" "+test" "autoexpect"]
+  {"test-all"   ["with-profile" "+1.9:+1.8:+1.7:+1.6:+1.5" "test"]
    "deploy-lib" ["do" "deploy" "clojars," "install"]
    "start-dev"  ["with-profile" "+dev" "repl" ":headless"]}
 
