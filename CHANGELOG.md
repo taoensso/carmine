@@ -1,5 +1,18 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.16.0 / 2017 Mar 24
+
+```clojure
+[com.taoensso/carmine "2.16.0"]
+```
+
+> This is a non-breaking maintenance release
+
+* **New**: Update Nippy to [v2.13.0](https://github.com/ptaoussanis/nippy/releases/tag/v2.13.0)
+* **New**: Update to latest Redis commands spec
+* [#192] **Fix**: `protocol/get-parsed-reply` fn (@firesofmay)
+* [#193] **Impl**: Migrate unit tests from Expectations to clojure.test (@firesofmay)
+
 ## v2.15.1 / 2017 Jan 7
 
 ```clojure
