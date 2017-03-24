@@ -1,33 +1,28 @@
 (ns taoensso.carmine.tests.main
-  (:require [clojure.string :as str]
-            [clojure.test :refer :all]
-            [taoensso.encore  :as enc]
-            [taoensso.carmine :as car  :refer (wcar)]
-            [taoensso.carmine.commands   :as commands]
-            [taoensso.carmine.protocol   :as protocol]
-            [taoensso.carmine.benchmarks :as benchmarks]))
+  (:require
+   [clojure.string   :as str]
+   [clojure.test     :as test :refer [is deftest]]
+   [taoensso.encore  :as enc]
+   [taoensso.carmine :as car  :refer [wcar]]
+   [taoensso.carmine.commands   :as commands]
+   [taoensso.carmine.protocol   :as protocol]
+   [taoensso.carmine.benchmarks :as benchmarks]))
 
-;; (remove-ns 'taoensso.carmine.tests.main)
-(comment (run-tests '[taoensso.carmine.tests.main]))
+(comment
+  (remove-ns      'taoensso.carmine.tests.main)
+  (test/run-tests 'taoensso.carmine.tests.main))
 
 (defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
 (def tkey (partial car/key :carmine :temp :test))
 (defn clean-up-tkeys! [] (when-let [ks (seq (wcar* (car/keys (tkey :*))))]
                            (wcar* (apply car/del ks))))
 
-(defn cleanup-fixture
-  [f]
-  (clean-up-tkeys!)
-  (f)
-  (clean-up-tkeys!))
-
-(use-fixtures :once cleanup-fixture)
-
+(defn cleanup-fixture [f] (clean-up-tkeys!) (f) (clean-up-tkeys!))
+(test/use-fixtures :once cleanup-fixture)
 
 (deftest basic-tests
   (is (= "Message" (wcar* (car/echo "Message"))))
   (is (= "PONG" (wcar* (car/ping)))))
-
 
 (deftest key-exists-test
   (let [k (tkey "exists")]
@@ -39,7 +34,6 @@
     (is (= 1 (wcar* (car/exists k)))
         "Now that key is set, it should exists!")))
 
-
 (deftest getset-test
   (let [k (tkey "server:name")]
     (is (= "OK"              (wcar* (car/set k "fido"))))
@@ -48,20 +42,16 @@
     (is (= "fido [shutdown]" (wcar* (car/getset k "fido [running]"))))
     (is (= "running"         (wcar* (car/getrange k 6 12))))))
 
-
-
 (deftest setbit-test
   (let [k (tkey "mykey")]
     (wcar* (car/setbit k 7 1))
     (is (= 1 (wcar* (car/getbit k 7)))
         "7th bit of the key was set to 1")))
 
-
 (deftest multiline-test
   (let [k (tkey "multiline")]
     (is (= "OK" (wcar* (car/set k "Redis\r\nDemo"))))
     (is (= "Redis\r\nDemo" (wcar* (car/get k))))))
-
 
 (deftest inc-dec-tests
   (let [k (tkey "connections")]
@@ -71,12 +61,10 @@
     (is (= 19 (wcar* (car/decr k))))
     (is (= 10 (wcar* (car/decrby k 9))))))
 
-
 (deftest delete-key-test
   (let [k (tkey "something")]
     (wcar* (car/set k "foo"))
     (is (= 1 (wcar* (car/del k))))))
-
 
 (deftest expiry-tests
   (let [k (tkey "resource:lock")]
@@ -85,33 +73,30 @@
     (is (= 1  (wcar* (car/expire k 120))))
     (is (pos? (wcar* (car/ttl k))))))
 
-
 (deftest array-cmds-tests
   (let [k (tkey "friends")]
-    (testing "Push command"
+    (test/testing "Push command"
       (wcar* (car/rpush k "Tom"))
       (wcar* (car/rpush k "Bob"))
       (wcar* (car/lpush k "Sam"))
       (is (= ["Sam" "Tom" "Bob"]
              (wcar* (car/lrange k 0 -1)))))
 
-    (testing "lrange command"
+    (test/testing "lrange command"
       (is (= ["Sam" "Tom"]       (wcar* (car/lrange k 0 1))))
       (is (= ["Sam" "Tom" "Bob"] (wcar* (car/lrange k 0 2)))))
 
-    (testing "len and pop commands"
+    (test/testing "len and pop commands"
       (is (= 3       (wcar* (car/llen k))))
       (is (= "Sam"   (wcar* (car/lpop k))))
       (is (= "Bob"   (wcar* (car/rpop k))))
       (is (= 1       (wcar* (car/llen k))))
       (is (= ["Tom"] (wcar* (car/lrange k 0 -1)))))))
 
-
 (deftest get-set-spanish-test
   (let [k (tkey "spanish")]
     (is (= ["OK" "year->año"]
            (wcar* (car/set k "year->año") (car/get k))))))
-
 
 (deftest exception-test
   (let [k (tkey "str-field")]
@@ -128,21 +113,17 @@
       (is (instance? clojure.lang.ExceptionInfo r2))
       (is (= "PONG" r3)))))
 
-
 (deftest malformed-tests
   (is (= nil (wcar* "This is a malformed request")))
   (is (= "PONG" (wcar* (car/ping) "This is a malformed request"))))
-
 
 (deftest pong-test
   (is (= ["PONG" "PONG" "PONG"]
          (wcar* (doall (repeatedly 3 car/ping))))))
 
-
 (deftest echo-test
   (is (= ["A" "B" "C"]
          (wcar* (doall (map car/echo ["A" "B" "C"]))))))
-
 
 (deftest key-inside-key-test
   (let [out-k (tkey "outside-key")
@@ -153,7 +134,6 @@
            (wcar* (car/get (last (wcar* (car/ping)
                                         (car/get out-k))))))
         "Should get the inner value")))
-
 
 (deftest parallel-incr-test
   (let [k (tkey "parallel-key")]
@@ -191,22 +171,21 @@
     (wcar* (car/hdel k "field1"))
     (is (= 0 (wcar* (car/hexists k "field1"))))))
 
-
 (deftest set-tests
   (let [k1 (tkey "superpowers")
         k2 (tkey "birdpowers")]
 
-    (testing "Member in set case"
+    (test/testing "Member in set case"
       (wcar* (car/sadd k1 "flight"))
       (wcar* (car/sadd k1 "x-ray vision"))
       (wcar* (car/sadd k1 "reflexes"))
       (wcar* (car/srem k1 "reflexes"))
       (is 1 (= (wcar* (car/sismember k1 "flight")))))
 
-    (testing "Member NOT in set case"
+    (test/testing "Member NOT in set case"
       (is (= 0 (wcar* (car/sismember k1 "reflexes")))))
 
-    (testing "Set union case"
+    (test/testing "Set union case"
       (wcar* (car/sadd k2 "pecking"))
       (wcar* (car/sadd k2 "flight"))
       (is (= (set ["flight" "pecking" "x-ray vision"])
@@ -218,7 +197,7 @@
         k1-U-k2 (tkey "hackersnslackers")
         k1-I-k2 (tkey "hackerslackers")]
 
-    (testing "Sorted Set case 1"
+    (test/testing "Sorted Set case 1"
       (wcar* (car/zadd k1 "1940" "Alan Kay")
              (car/zadd k1 "1953" "Richard Stallman")
              (car/zadd k1 "1965" "Yukihiro Matsumoto")
@@ -238,11 +217,11 @@
       (is (= ["Alan Kay" "Richard Stallman" "Yukihiro Matsumoto"]
              (wcar* (car/zrange k1 2 4)))))
 
-    (testing "Sorted Set Union Case"
+    (test/testing "Sorted Set Union Case"
       (is (= ["Claude Shannon" "Alan Kay" "Richard Stallman" "Ferris Beuler"]
              (wcar* (car/zrange k1-U-k2 2 5)))))
 
-    (testing "Sorted Set Intersect Case"
+    (test/testing "Sorted Set Intersect Case"
       (is (= ["Emmanuel Goldstein" "Dade Murphy"]
              (wcar* (car/zrange k1-I-k2 0 1)))))))
 
@@ -250,7 +229,7 @@
   (let [k1 (tkey "children")
         k2 (tkey "favorite:child")]
 
-    (testing "Case 1"
+    (test/testing "Case 1"
       (wcar* (car/rpush k1 "A")
              (car/rpush k1 "B")
              (car/rpush k1 "C")
@@ -258,7 +237,7 @@
       (is (= ["B" "B"] (wcar* (car/get k2)
                               (car/get k2)))))
 
-    (testing "Case 2"
+    (test/testing "Case 2"
       (is (= ["B" ["A" "B" "C"] "B"]
              (wcar* (car/get k2)
                     (car/lrange k1 0 3)
@@ -334,13 +313,11 @@
             ["pmessage"    "ps-*"   "ps-baz" "five"]]
            @received))))
 
-
 (deftest bin-safety-test
   (let [k  (tkey "binary-safety")
         ba (byte-array [(byte 3) (byte 1) (byte 4)])]
     (wcar* (car/set k ba))
     (is (enc/ba= ba (wcar* (car/get k))))))
-
 
 (deftest null-tests
   (let [k (tkey "nulls")]
@@ -359,7 +336,6 @@
     (is (thrown? clojure.lang.ExceptionInfo
                  (wcar* (car/set k "\u0000Foobar"))))))
 
-
 (deftest big-response-test
   (let [k (tkey "big-list")
         n 250000]
@@ -367,22 +343,20 @@
     (is (= (repeat n "value")
            (wcar* (car/lrange k 0 -1))))))
 
-
 (deftest lua-test
   (let [k (tkey "script")
         script "return redis.call('set',KEYS[1],'script-value')"
         script-hash (car/script-hash script)]
 
-    (testing "Case 1"
+    (test/testing "Case 1"
       (wcar* (car/script-load script))
       (wcar* (car/evalsha script-hash 1 k))
       (is (= "script-value" (wcar* (car/get k)))))
 
-    (testing "Case 2"
+    (test/testing "Case 2"
       (is (= ["key1" "key2" "arg1" "arg2"]
              (wcar* (car/eval "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}"
                               2 "key1" "key2" "arg1" "arg2")))))))
-
 
 (deftest reply-parsing-test
   (let [k (tkey "reply-parsing")]
@@ -395,7 +369,6 @@
                              (car/ping))
                   (car/ping))))))
 
-
 (deftest deprecated-atomically-transactions-tests
   (enc/deprecated
    (let [k      (tkey "atomic")
@@ -403,7 +376,7 @@
          k-val  "initial-k-value"
          wk-val "initial-wk-value"]
 
-     (testing "This transaction will succeed"
+     (test/testing "This transaction will succeed"
        (wcar* (car/set k  k-val)
               (car/set wk wk-val))
        (is (= ["PONG" "OK"]
@@ -414,7 +387,7 @@
 
        (is (= wk-val (wcar* (car/get k)))))
 
-     (testing "This transaction will fail"
+     (test/testing "This transaction will fail"
        (wcar* (car/set k  k-val)
               (car/set wk wk-val)))
      (is (= nil
@@ -424,9 +397,8 @@
                                    (car/ping)))))
      (is (= k-val (wcar* (car/get k)))))))
 
-
 (deftest with-replies-tests
-  (testing "Basic Case"
+  (test/testing "Basic Case"
     (is (= ["1" "2" ["3" "4"] "5"]
            (wcar {}
                  (car/echo 1)
@@ -434,7 +406,7 @@
                  (car/return (car/with-replies (car/echo 3) (car/echo 4)))
                  (car/echo 5)))))
 
-  (testing "Nested 'with-replies' case"
+  (test/testing "Nested 'with-replies' case"
     (is (= ["1" "2" ["3" "4" ["5" "6"]] "7"]
            (wcar {}
                  (car/echo 1)
@@ -443,7 +415,7 @@
                                (car/return (car/with-replies (car/echo 5) (car/echo 6)))))
                  (car/echo 7)))))
 
-  (testing "'with-replies' vs parsers case"
+  (test/testing "'with-replies' vs parsers case"
     (is (= ["A" "b" ["c" "D"] ["E" "F"] "g"]
            (wcar {}
                  (car/parse str/upper-case (car/echo :a))
@@ -454,7 +426,7 @@
                              (car/with-replies (car/echo :e) (car/echo :f))))
                  (car/echo :g)))))
 
-  (testing "Nested 'with-replies' vs parsers case"
+  (test/testing "Nested 'with-replies' vs parsers case"
     (is (= ["a" "b" ["c" "d" ["e" "f"]] "g"]
            (wcar {}
                  (car/echo :a)
@@ -471,52 +443,52 @@
 ;; Like middleware, comp order can get confusing
 
 (deftest parsers-tests
-  (testing "Basic parsing"
+  (test/testing "Basic parsing"
     (is (= ["PONG" "pong" "pong" "PONG"]
            (wcar {} (car/ping) (car/parse str/lower-case
                                           (car/ping)
                                           (car/ping))
                  (car/ping)))))
 
-  (testing "Cancel parsing"
+  (test/testing "Cancel parsing"
     (is (= "YoLo" (wcar {} (->> (car/echo "YoLo")
                                 (car/parse nil)
                                 (car/parse str/upper-case))))))
 
-  (testing "No auto-composition: last-applied (inner) parser wins"
+  (test/testing "No auto-composition: last-applied (inner) parser wins"
     (is (= "yolo" (wcar {} (->> (car/echo "YoLo")
                                 (car/parse str/lower-case)
                                 (car/parse str/upper-case))))))
 
-  (testing "Dynamic composition: prefer inner"
+  (test/testing "Dynamic composition: prefer inner"
     (is (= "yolo" (wcar {} (->> (car/echo "YoLo")
                                 (car/parse (car/parser-comp str/lower-case
                                                             protocol/*parser*))
                                 (car/parse str/upper-case))))))
 
-  (testing "Dynamic composition: prefer outer"
+  (test/testing "Dynamic composition: prefer outer"
     (is (= "YOLO" (wcar {} (->> (car/echo "YoLo")
                                 (car/parse (car/parser-comp protocol/*parser*
                                                             str/lower-case))
                                 (car/parse str/upper-case))))))
 
-  (testing "Dynamic composition with metadata ('return' uses metadata and auto-composes)"
+  (test/testing "Dynamic composition with metadata ('return' uses metadata and auto-composes)"
     (is (= "yolo" (wcar {} (->> (car/return "YoLo")
                                 (car/parse str/lower-case ))))))
 
-  (testing "Exceptions pass through by default"
+  (test/testing "Exceptions pass through by default"
     (is (thrown? Exception (wcar {} (->> (car/return (Exception. "boo")) (car/parse keyword)))))
     (is (vector? (wcar {} (->> (do (car/return (Exception. "boo"))
                                    (car/return (Exception. "boo")))
                                (car/parse keyword))))))
 
-  (testing "Parsers can elect to handle exceptions, even over 'return'"
+  (test/testing "Parsers can elect to handle exceptions, even over 'return'"
     (is (= "Oh noes!" (wcar {} (->> (car/return (Exception. "boo"))
                                     (car/parse
                                      (-> #(if (instance? Exception %) "Oh noes!" %)
                                          (with-meta {:parse-exceptions? true}))))))))
 
-  (testing "Lua ('with-replies') errors bypass normal parsers"
+  (test/testing "Lua ('with-replies') errors bypass normal parsers"
     (is (thrown? Exception (wcar {} (->> (car/lua "invalid" {:_ :_} {})
                                          (car/parse keyword)))))
     (is (instance? enc/bytes-class ;; But _do_ maintain raw parsing metadata:
@@ -526,14 +498,13 @@
                                              {:k (tkey "binkey")} {})
                                     (car/parse-raw)))))))
 
-  (testing "Parsing passes 'with-replies' barrier"
+  (test/testing "Parsing passes 'with-replies' barrier"
     (is (= [["ONE" "three"] "two"]
            (let [p (promise)]
              [(wcar {} (car/echo "ONE") (car/parse str/lower-case
                                                    (deliver p (car/with-replies (car/echo "TWO")))
                                                    (car/echo "THREE")))
               @p])))))
-
 
 ;;;; Request queues (experimental, for Carmine v3)
 ;; Pre v3, Redis command fns used to immediately trigger writes to their
@@ -556,7 +527,7 @@
 
 
 (deftest atomic-tests
-  (testing "Bad cases"
+  (test/testing "Bad cases"
     (is (thrown? Exception (car/atomic {} 1))
         "should throw exception because multi command is missing")
 
@@ -567,14 +538,14 @@
     (is (thrown? Exception (car/atomic {} 1 (car/multi) (car/discard)))
         "Like missing multi case"))
 
-  (testing "Basic tests"
+  (test/testing "Basic tests"
     (is (= [["OK" "QUEUED"] "PONG"] (car/atomic {} 1 (car/multi) (car/ping))))
     (is (= [["OK" "QUEUED" "QUEUED"] ["PONG" "PONG"]]
            (car/atomic {} 1 (car/multi) (car/ping) (car/ping))))
     (is (= [["echo" "OK" "QUEUED"] "PONG"]
            (car/atomic {} 1 (car/return "echo") (car/multi) (car/ping)))))
 
-  (testing "Exception case"
+  (test/testing "Exception case"
     (is (thrown? ArithmeticException ;; Nb be specific here to distinguish from other exs!
                  (car/atomic {} 1
                              (car/multi)
@@ -587,7 +558,7 @@
                                        (car/redis-call [:invalid]) ; Server-side error, before exec
                                        (car/ping)))))
 
-  (testing "Multi Ping case"
+  (test/testing "Multi Ping case"
     (is (= "PONG" (-> (car/atomic {} 1 (car/multi) (car/multi) (car/ping))
                       second))
         "Ignores extra multi [error] while queuing:")
@@ -625,7 +596,6 @@
   (is (thrown? ArithmeticException ;; Correct (unmasked) error
                (car/atomic {} 1 (/ 1 0)))))
 
-
 (deftest cluster-key-hashing-tests
   (is (= [12182 5061 4813] [(commands/keyslot "foo")
                             (commands/keyslot "bar")
@@ -653,7 +623,6 @@
             (commands/keyslot "FOO"))
       "Hashing is case sensitive"))
 
-
 (deftest hashing-arbitrary-bin-keys-tests
   (is (= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
          (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))))
@@ -661,13 +630,11 @@
   (is (not= (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 20)]))
             (commands/keyslot (byte-array [(byte 3) (byte 100) (byte 21)])))))
 
-
 (deftest bin-args-tests
   (wcar {} (car/set (tkey "bin-arg")
                     (.getBytes "Foobar" "UTF-8")))
   (is (= (seq (.getBytes "Foobar" "UTF-8"))
          (seq (wcar {} (car/get (tkey "bin-arg")))))))
-
 
 (deftest cas-tests
   (is (= ["OK" 1 0 1 1 "final-val"]
@@ -734,7 +701,6 @@
 
            (car/hset  tk "field4" "val4")
            (car/hvals tk))))))
-
 
 (deftest benchmarks-tests
   (is (true? (benchmarks/bench {}))))

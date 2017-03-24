@@ -1,7 +1,7 @@
 (ns taoensso.carmine.tests.message-queue
   (:require
-   [clojure.test     :as test :refer (is are deftest run-tests)]
-   [taoensso.carmine :as car  :refer (wcar)]
+   [clojure.test     :as test :refer [is deftest]]
+   [taoensso.carmine :as car  :refer [wcar]]
    [taoensso.carmine.message-queue :as mq]))
 
 (comment
