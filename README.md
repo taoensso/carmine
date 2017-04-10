@@ -364,7 +364,13 @@ See the relevant [API] docs for details.
 
 Redis is probably most famous for being [fast]. Carmine hold up its end and usu. performs w/in ~10% of the official C `redis-benchmark` utility despite offering features like command composition, reply parsing, etc.
 
-##### YourKit
+## Thanks to Navicat
+
+![Navicat-logo](https://github.com/ptaoussanis/carmine/blob/master/navicat-logo.png)
+
+Carmine's SQL-interop features (forthcoming) were developed with the help of [Navicat], kindly sponsored by PremiumSoft CyberTech Ltd.
+
+## Thanks to YourKit
 
 Carmine was developed with the help of the [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp). YourKit, LLC kindly supports open source projects by offering an open source license.
 
@@ -421,3 +427,4 @@ Copyright &copy; 2012-2016 [Peter Taoussanis].
 
 [ClojureWerkz-logo]: https://raw.github.com/clojurewerkz/clojurewerkz.org/master/assets/images/logos/clojurewerkz_long_h_50.png
 [ClojureWerkz]: http://clojurewerkz.org/
+[Navicat]: http://www.navicat.com/
