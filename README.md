@@ -67,6 +67,12 @@ You'll usually want to define a single connection pool, and one connection spec 
 (defmacro wcar* [& body] `(car/wcar server1-conn ~@body))
 ```
 
+A simple example spec with no pool and one server using redistogo.com would be:
+
+```clojure
+(def server1-conn {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}})
+```
+
 ### Basic commands
 
 Executing commands is easy:
