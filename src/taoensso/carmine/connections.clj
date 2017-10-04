@@ -140,24 +140,25 @@
 (def conn-pool
   (enc/memoize_
     (fn [pool-opts]
-      (cond
-        (identical? pool-opts :none) (->NonPooledConnectionPool)
-        ;; Pass through pre-made pools (note that test reflects):
-        (satisfies? IConnectionPool pool-opts) pool-opts
-        :else
-        (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
-              {:test-while-idle?              true  ; from false
-               :num-tests-per-eviction-run    -1    ; from 3
-               :min-evictable-idle-time-ms    60000 ; from 1800000
-               :time-between-eviction-runs-ms 30000 ; from -1
-               }
-              carmine-defaults
-              {:max-total-per-key 16 ; from 8
-               }]
-          (ConnectionPool.
-            (reduce-kv set-pool-option
-              (GenericKeyedObjectPool. (make-connection-factory))
-              (merge jedis-defaults carmine-defaults pool-opts))))))))
+      (let [pool-opts (dissoc pool-opts :identifier)] 
+        (cond
+          (identical? pool-opts :none) (->NonPooledConnectionPool)
+          ;; Pass through pre-made pools (note that test reflects):
+          (satisfies? IConnectionPool pool-opts) pool-opts
+          :else
+          (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
+                {:test-while-idle?              true  ; from false
+                 :num-tests-per-eviction-run    -1    ; from 3
+                 :min-evictable-idle-time-ms    60000 ; from 1800000
+                 :time-between-eviction-runs-ms 30000 ; from -1
+                 }
+                carmine-defaults
+                {:max-total-per-key 16 ; from 8
+                 }]
+            (ConnectionPool.
+              (reduce-kv set-pool-option
+                (GenericKeyedObjectPool. (make-connection-factory))
+                (merge jedis-defaults carmine-defaults pool-opts)))))))))
 
 ;; (defn uncached-conn-pool [pool-opts] (conn-pool :mem/fresh pool-opts))
 (comment (conn-pool :none) (conn-pool {}))
