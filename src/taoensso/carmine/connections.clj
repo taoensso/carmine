@@ -4,10 +4,11 @@
   {:author "Peter Taoussanis"}
   (:require [taoensso.encore           :as enc]
             [taoensso.carmine.protocol :as protocol])
-  (:import  [java.net InetSocketAddress Socket URI]
-            [java.io BufferedInputStream DataInputStream BufferedOutputStream]
-            [org.apache.commons.pool2 KeyedPooledObjectFactory]
-            [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
+  (:import [java.net InetSocketAddress Socket URI]
+           [java.io BufferedInputStream DataInputStream BufferedOutputStream]
+           [org.apache.commons.pool2 KeyedPooledObjectFactory]
+           [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]
+           (javax.net.ssl SSLSocketFactory)))
 
 (enc/declare-remote
   taoensso.carmine/ping
@@ -54,8 +55,8 @@
 ;;;
 
 (defn make-new-connection
-  [{:keys [host port password db conn-setup-fn
-           conn-timeout-ms read-timeout-ms timeout-ms] :as spec}]
+  [{:keys [^String host ^Integer port ^String password db conn-setup-fn
+           conn-timeout-ms read-timeout-ms timeout-ms ssl] :as spec}]
   (let [;; :timeout-ms controls both :conn-timeout-ms and :read-timeout-ms
         ;; unless those are specified individually
         ;; :or   {conn-timeout-ms (or timeout-ms 4000)
@@ -63,8 +64,8 @@
         conn-timeout-ms (get spec :conn-timeout-ms (or timeout-ms 4000))
         read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
 
-        socket-address (InetSocketAddress. ^String host ^Integer port)
-        socket (enc/doto-cond [expr (Socket.)]
+        socket-address (InetSocketAddress. host port)
+        ^Socket socket (enc/doto-cond [expr (Socket.)]
                  :always         (.setTcpNoDelay   true)
                  :always         (.setKeepAlive    true)
                  :always         (.setReuseAddress true)
@@ -73,7 +74,10 @@
         _ (if conn-timeout-ms
             (.connect socket socket-address conn-timeout-ms)
             (.connect socket socket-address))
-
+        ^SSLSocketFactory ssf (SSLSocketFactory/getDefault)
+        socket (if ssl
+                 (.createSocket ssf socket host port true)
+                 socket)
         buff-size 16384 ; Err on the large size since we're pooling
         conn (Connection. socket spec
                (-> (.getInputStream socket)
