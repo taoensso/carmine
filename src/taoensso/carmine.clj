@@ -23,18 +23,25 @@
   Redis server. Sends Redis commands to server as pipeline and returns the
   server's response. Releases connection back to pool when done.
 
-  `conn-opts` arg is a map with connection pool and spec options:
+  `conn-opts` arg is a map with connection pool and spec options, e.g.:
     {:pool {} :spec {:host \"127.0.0.1\" :port 6379}} ; Default
     {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}}
     {:pool {} :spec {:host \"127.0.0.1\" :port 6379
+                     :ssl-fn :default
                      :password \"secret\"
                      :timeout-ms 6000
                      :db 3}}
 
-  A `nil` or `{}` `conn-opts` will use defaults. A `:none` pool can be used
-  to skip connection pooling (not recommended).
-  For other pool options, Ref. http://goo.gl/e1p1h3,
-                               http://goo.gl/Sz4uN1 (defaults).
+  - `conn-opts` ; `nil` or `{}` value => use defaults.
+  - `pool`      ; `nil` or `{}` value => use defaults.
+                ; `:none` will skip connection pooling (not recommended).
+                ; For other pool options, Ref.
+                ;    http://goo.gl/e1p1h3,
+                ;    http://goo.gl/Sz4uN1 (defaults).
+
+  Optional `ssl-fn` conn opt takes and returns a `java.net.Socket`:
+    (fn [{:keys [^Socket socket host port]}]) -> ^Socket
+    `:default` => use `taoensso.carmine.connections/default-ssl-fn`.
 
   Note that because of thread-binding, you'll probably want to avoid lazy Redis
   command calls in `wcar`'s body unless you know what you're doing. Compare:

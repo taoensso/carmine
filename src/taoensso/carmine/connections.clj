@@ -7,8 +7,7 @@
   (:import [java.net InetSocketAddress Socket URI]
            [java.io BufferedInputStream DataInputStream BufferedOutputStream]
            [org.apache.commons.pool2 KeyedPooledObjectFactory]
-           [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]
-           (javax.net.ssl SSLSocketFactory)))
+           [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
 
 (enc/declare-remote
   taoensso.carmine/ping
@@ -54,11 +53,17 @@
 
 ;;;
 
-(def ssl-socket-factory (memoize #(SSLSocketFactory/getDefault)))
+(let [factory_ (delay (javax.net.ssl.SSLSocketFactory/getDefault))]
+  (defn default-ssl-fn
+    "Takes an unencrypted underlying java.net.Socket and returns an
+    encrypted java.net.Socket using the environment's default SSLSocketFactory."
+    [{:keys [socket host port]}]
+    (.createSocket ^javax.net.ssl.SSLSocketFactory (force factory_)
+      ^Socket socket ^String host ^Integer port true)))
 
 (defn make-new-connection
-  [{:keys [^String host ^Integer port ^String password db conn-setup-fn
-           conn-timeout-ms read-timeout-ms timeout-ms ssl] :as spec}]
+  [{:keys [host port password db conn-setup-fn
+           conn-timeout-ms read-timeout-ms timeout-ms ssl-fn] :as spec}]
   (let [;; :timeout-ms controls both :conn-timeout-ms and :read-timeout-ms
         ;; unless those are specified individually
         ;; :or   {conn-timeout-ms (or timeout-ms 4000)
@@ -66,19 +71,25 @@
         conn-timeout-ms (get spec :conn-timeout-ms (or timeout-ms 4000))
         read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
 
-        socket-address (InetSocketAddress. host port)
-        ^Socket socket (enc/doto-cond [expr (Socket.)]
-                 :always         (.setTcpNoDelay   true)
-                 :always         (.setKeepAlive    true)
-                 :always         (.setReuseAddress true)
-                 ;; :always      (.setSoLinger     true 0)
-                 read-timeout-ms (.setSoTimeout ^Integer expr))
+        socket-address (InetSocketAddress. ^String host ^Integer port)
+        ^Socket socket
+        (enc/doto-cond [expr (Socket.)]
+          :always         (.setTcpNoDelay   true)
+          :always         (.setKeepAlive    true)
+          :always         (.setReuseAddress true)
+          ;; :always      (.setSoLinger     true 0)
+          read-timeout-ms (.setSoTimeout ^Integer expr))
+
         _ (if conn-timeout-ms
             (.connect socket socket-address conn-timeout-ms)
             (.connect socket socket-address))
-        socket (if ssl
-                 (.createSocket (ssl-socket-factory) socket host port true)
-                 socket)
+
+        ^Socket socket
+        (if ssl-fn
+          (let [f (if (identical? ssl-fn :default) default-ssl-fn ssl-fn)]
+            (f {:socket socket :host host :port port}))
+          socket)
+
         buff-size 16384 ; Err on the large size since we're pooling
         conn (Connection. socket spec
                (-> (.getInputStream socket)
