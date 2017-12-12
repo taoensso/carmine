@@ -54,6 +54,11 @@
 
 ;;;
 
+(let [factory-atom (atom nil)]
+  (defn- ^SSLSocketFactory ssl-socket-factory []
+    (compare-and-set! factory-atom nil (SSLSocketFactory/getDefault))
+    @factory-atom))
+
 (defn make-new-connection
   [{:keys [^String host ^Integer port ^String password db conn-setup-fn
            conn-timeout-ms read-timeout-ms timeout-ms ssl] :as spec}]
@@ -74,9 +79,8 @@
         _ (if conn-timeout-ms
             (.connect socket socket-address conn-timeout-ms)
             (.connect socket socket-address))
-        ^SSLSocketFactory ssf (SSLSocketFactory/getDefault)
         socket (if ssl
-                 (.createSocket ssf socket host port true)
+                 (.createSocket (ssl-socket-factory) socket host port true)
                  socket)
         buff-size 16384 ; Err on the large size since we're pooling
         conn (Connection. socket spec
