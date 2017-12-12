@@ -67,18 +67,21 @@
         read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
 
         socket-address (InetSocketAddress. host port)
-        ^Socket socket (enc/doto-cond [expr (Socket.)]
+        ^Socket underlying-socket (enc/doto-cond [expr (Socket.)]
                  :always         (.setTcpNoDelay   true)
                  :always         (.setKeepAlive    true)
                  :always         (.setReuseAddress true)
                  ;; :always      (.setSoLinger     true 0)
                  read-timeout-ms (.setSoTimeout ^Integer expr))
+
         _ (if conn-timeout-ms
-            (.connect socket socket-address conn-timeout-ms)
-            (.connect socket socket-address))
+            (.connect underlying-socket socket-address conn-timeout-ms)
+            (.connect underlying-socket socket-address))
+
         socket (if ssl
-                 (.createSocket (ssl-socket-factory) socket host port true)
-                 socket)
+                 (.createSocket (ssl-socket-factory) underlying-socket host port true)
+                 underlying-socket)
+
         buff-size 16384 ; Err on the large size since we're pooling
         conn (Connection. socket spec
                (-> (.getInputStream socket)
