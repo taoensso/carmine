@@ -54,10 +54,7 @@
 
 ;;;
 
-(let [factory-atom (atom nil)]
-  (defn- ^SSLSocketFactory ssl-socket-factory []
-    (compare-and-set! factory-atom nil (SSLSocketFactory/getDefault))
-    @factory-atom))
+(def ssl-socket-factory (memoize #(SSLSocketFactory/getDefault)))
 
 (defn make-new-connection
   [{:keys [^String host ^Integer port ^String password db conn-setup-fn
