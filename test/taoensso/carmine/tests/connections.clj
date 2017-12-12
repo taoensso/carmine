@@ -8,5 +8,4 @@
     (is (= (#'conn/ssl-socket-factory) (#'conn/ssl-socket-factory))
         "returns the same instance every time")
     (is (instance? SSLSocketFactory (#'conn/ssl-socket-factory))
-        "is instance of type SSLSocketFactory"))
-  )
+        "is instance of type SSLSocketFactory")))
