@@ -73,6 +73,14 @@ A simple example spec with no pool and one server using redistogo.com would be:
 (def server1-conn {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}})
 ```
 
+#### Secure connections via SSL
+
+To connect to redis via SSL you can pass a `:ssl` flag like so:
+
+```clojure
+(def secure-conn {:pool {} :spec {:host "redis.in.your.cloud.com" :port 443 :ssl true :password "secret"}}
+```
+
 ### Basic commands
 
 Executing commands is easy:
