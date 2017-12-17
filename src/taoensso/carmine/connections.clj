@@ -145,7 +145,8 @@
         ;; Pass through pre-made pools (note that test reflects):
         (satisfies? IConnectionPool pool-opts) pool-opts
         :else
-        (let [jedis-defaults ; Ref. http://goo.gl/y1mDbE
+        (let [pool-opts (dissoc pool-opts :id) ; Support >1 pool with same opts
+              jedis-defaults ; Ref. http://goo.gl/y1mDbE
               {:test-while-idle?              true  ; from false
                :num-tests-per-eviction-run    -1    ; from 3
                :min-evictable-idle-time-ms    60000 ; from 1800000
