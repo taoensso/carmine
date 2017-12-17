@@ -1,5 +1,17 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.17.0 / 2017 Dec 17
+
+```clojure
+[com.taoensso/carmine "2.17.0"]
+```
+
+> This is a non-breaking maintenance + minor feature release
+
+* [#203] **New**: Add SSL option for connection spec (@hackbert)
+* [#200] **New**: Allow >1 connection pool with same opts (@ibrahimalbarghouthi)
+* **Impl**: Bump deps
+
 ## v2.16.0 / 2017 Mar 24
 
 ```clojure
