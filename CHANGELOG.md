@@ -204,7 +204,7 @@
  * **POSSIBLY BREAKING**: Upgraded to apache-commons-pool v2, bumped default max active conns (8->16). If you're using custom connection pool options, please confirm that none of your options have been removed in v2 (an exception will be thrown for invalid options).
  * **CHANGE**: New lock-free connection pool cache (improved performance under contention).
  * **CHANGE**: All `Exception`s are now `ExceptionInfo`s.
- * **CHANGE**: `wcar, `atomic*`, `atomic` now catch `Throwable`s rather than `Exception`s (assertions in particular).
+ * **CHANGE**: `wcar`, `atomic*`, `atomic` now catch `Throwable`s rather than `Exception`s (assertions in particular).
  * **NEW**: New commands! (Updated official commands.json spec).
  * **NEW**: Added `atomic*` (alpha) low-level transactions util (#93).
 
