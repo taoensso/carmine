@@ -58,7 +58,7 @@
     "Takes an unencrypted underlying java.net.Socket and returns an
     encrypted java.net.Socket using the environment's default SSLSocketFactory."
     [{:keys [socket host port]}]
-    (.createSocket ^javax.net.ssl.SSLSocketFactory (force factory_)
+    (.createSocket ^javax.net.ssl.SSLSocketFactory @factory_
       ^Socket socket ^String host ^Integer port true)))
 
 (defn make-new-connection

@@ -26,29 +26,24 @@
   `conn-opts` arg is a map with connection pool and spec options, e.g.:
     {:pool {} :spec {:host \"127.0.0.1\" :port 6379}} ; Default
     {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}}
-    {:pool {} :spec {:host \"127.0.0.1\" :port 6379
-                     :ssl-fn :default
+    {:pool {} :spec {:host \"127.0.0.1\"
+                     :port 6379
+                     :ssl-fn :default ; [1]
                      :password \"secret\"
                      :timeout-ms 6000
                      :db 3}}
-
-  - `conn-opts` ; `nil` or `{}` value => use defaults.
-  - `pool`      ; `nil` or `{}` value => use defaults.
-                ; `:none` will skip connection pooling (not recommended).
-                ; For other pool options, Ref.
-                ;    http://goo.gl/e1p1h3,
-                ;    http://goo.gl/Sz4uN1 (defaults).
-
-  Optional `ssl-fn` conn opt takes and returns a `java.net.Socket`:
-    (fn [{:keys [^Socket socket host port]}]) -> ^Socket
-    `:default` => use `taoensso.carmine.connections/default-ssl-fn`.
 
   Note that because of thread-binding, you'll probably want to avoid lazy Redis
   command calls in `wcar`'s body unless you know what you're doing. Compare:
   `(wcar {} (for   [k [:k1 :k2]] (car/set k :val))` ; Lazy, NO commands run
   `(wcar {} (doseq [k [:k1 :k2]] (car/set k :val))` ; Not lazy, commands run
 
-  See also `with-replies`."
+  See also `with-replies`.
+
+  [1] Optional `ssl-fn` conn opt takes and returns a `java.net.Socket`:
+    (fn [{:keys [^Socket socket host port]}]) -> ^Socket
+    `:default` => use `taoensso.carmine.connections/default-ssl-fn`."
+
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   [conn-opts & args] ; [conn-opts & [a1 & an :as args]]
   `(let [[pool# conn#] (conns/pooled-conn ~conn-opts)
