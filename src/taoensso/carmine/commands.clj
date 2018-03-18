@@ -118,9 +118,15 @@
                      (let [args arguments
                            num-non-optional (count (take-while #(not (:optional %)) args))
                            num-non-multiple (count (take-while #(not (:multiple %)) args))
-                           num-fixed        (min num-non-optional (inc num-non-multiple))
-                           fixed            (->> args (take num-fixed)
-                                                (map :name) flatten (map symbol) vec)
+
+                           num-fixed
+                           (case cmd-name
+                             ("EVAL" "EVALSHA") 2 ; Patch ~faulty spec, Ref. #204
+                             (min num-non-optional (inc num-non-multiple)))
+
+                           fixed (->> args (take num-fixed)
+                                   (map :name) flatten (map symbol) vec)
+
                            more? (seq (filter #(or (:optional %) (:multiple %)) args))]
                        [fixed more?])
 
