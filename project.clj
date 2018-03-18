@@ -12,10 +12,10 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.93.0"]
+   [com.taoensso/encore              "2.94.0"]
    [com.taoensso/timbre              "4.10.0"]
-   [com.taoensso/nippy               "2.13.0"]
-   [org.apache.commons/commons-pool2 "2.4.3"]
+   [com.taoensso/nippy               "2.14.0"]
+   [org.apache.commons/commons-pool2 "2.5.0"]
    [commons-codec/commons-codec      "1.11"]]
 
   :profiles
