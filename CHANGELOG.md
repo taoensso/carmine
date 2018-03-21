@@ -1,5 +1,18 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.18.0 / 2018 Mar 21
+
+```clojure
+[com.taoensso/carmine "2.18.0"]
+```
+
+> This is a non-breaking maintenance release
+
+* **New**: Updated commands.json (adds initial `MEMORY` commands)
+* **Fix**: [#205] Resolve issue with compiles hanging
+* **Impl**: Bump dependencies
+* **Impl**: [#204] Allow `EVAL`, `EVALSHA` to take 0 keys
+
 ## v2.17.0 / 2017 Dec 17
 
 ```clojure

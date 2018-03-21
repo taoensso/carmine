@@ -4,7 +4,7 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.17.0"] ; See CHANGELOG for details
+[com.taoensso/carmine "2.18.0"] ; See CHANGELOG for details
 ```
 
 > Please consider helping to [support my continued open-source Clojure/Script work]? 
@@ -48,7 +48,7 @@ Your link here?          | **PR's welcome!**
 Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "2.17.0"]
+[com.taoensso/carmine "2.18.0"]
 ```
 
 And setup your namespace imports:
