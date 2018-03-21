@@ -24,7 +24,8 @@
   server's response. Releases connection back to pool when done.
 
   `conn-opts` arg is a map with connection pool and spec options, e.g.:
-    {:pool {} :spec {:host \"127.0.0.1\" :port 6379}} ; Default
+    {:pool {}    :spec {:host \"127.0.0.1\" :port 6379}} ; Default
+    {:pool :none :spec {:host \"127.0.0.1\" :port 6379}} ; No pool
     {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}}
     {:pool {} :spec {:host \"127.0.0.1\"
                      :port 6379
