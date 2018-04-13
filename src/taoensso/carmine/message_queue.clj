@@ -301,7 +301,7 @@
           (when (> (- instant udt-last-warning) (or warn-backoff-ms 0))
             (when (compare-and-set! udt-last-warning_ udt-last-warning instant)
               (timbre/warnf "Message queue size warning: %s (mid-circle-size: %s)"
-                qname max-circle-size))))))))
+                qname mid-circle-size))))))))
 
 (defn worker
   "Returns a threaded worker to poll for and handle messages `enqueue`'d to
