@@ -1,5 +1,15 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.18.1 / 2018 Apr 15
+
+```clojure
+[com.taoensso/carmine "2.18.1"]
+```
+
+> This is a non-breaking hotfix release
+
+* [#206] **Fix**: [Message queue] monitor-fn: log mid-circle-size as intented (@nberger)
+
 ## v2.18.0 / 2018 Mar 21
 
 ```clojure
