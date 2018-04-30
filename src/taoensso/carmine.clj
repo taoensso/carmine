@@ -355,17 +355,28 @@
   [conn-spec handler initial-state & body]
   `(let [handler-atom# (atom ~handler)
          state-atom#   (atom ~initial-state)
-         {:as conn# in# :in} (conns/make-new-connection
+         {:as conn# in# :in ping-ms# :ping-ms} (conns/make-new-connection
                               (assoc (conns/conn-spec ~conn-spec)
                                      :listener? true))
          future# (future-call ; Thread to long-poll for messages
                   (bound-fn []
-                    (while true ; Closes when conn closes
-                      (let [reply# (protocol/get-unparsed-reply in# {})]
-                        (try
-                          (@handler-atom# reply# @state-atom#)
-                          (catch Throwable t#
-                            (timbre/error t# "Listener handler exception")))))))]
+                    (try
+                      (while true ; Closes when conn closes
+                        (let [fkeepalive# (future-call
+                                            (bound-fn []
+                                              (Thread/sleep (or ping-ms# 30000))
+                                              ;; TODO add to Connection protocol as (defn keep-alive [])
+                                              (protocol/with-context conn#
+                                                (protocol/execute-requests (not :get-replies) (taoensso.carmine/ping)))))
+                              reply# (protocol/get-unparsed-reply in# {})]
+                          (future-cancel fkeepalive#)
+                          (try
+                            (@handler-atom# reply# @state-atom#)
+                            (catch Throwable t#
+                              (timbre/error t# "Listener handler exception")))))
+                        (catch Throwable conn-t#
+                          (@handler-atom# ["carmine:error" "carmine:listener:fail" conn-t#] @state-atom#)
+                          (throw conn-t#)))))]
 
      (protocol/with-context conn# ~@body
        (protocol/execute-requests (not :get-replies) nil))
