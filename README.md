@@ -7,8 +7,8 @@
 [com.taoensso/carmine "2.18.1"] ; See CHANGELOG for details
 ```
 
-> Please consider helping to [support my continued open-source Clojure/Script work]? 
-> 
+> Please consider helping to [support my continued open-source Clojure/Script work]?
+>
 > Even small contributions can add up + make a big difference to help sustain my time writing, maintaining, and supporting Carmine and other Clojure/Script libraries. **Thank you!**
 >
 > \- Peter Taoussanis
@@ -67,10 +67,16 @@ You'll usually want to define a single connection pool, and one connection spec 
 (defmacro wcar* [& body] `(car/wcar server1-conn ~@body))
 ```
 
-A simple example spec with no pool and one server using redistogo.com would be:
+A simple example spec with a pool and one server using redistogo.com would be:
 
 ```clojure
 (def server1-conn {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}})
+```
+
+A simple example spec with no pool and one server using redistogo.com would be:
+
+```clojure
+(def server1-conn {:pool :none :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}})
 ```
 
 ### Basic commands
@@ -394,7 +400,7 @@ Otherwise, you can reach me at [Taoensso.com]. Happy hacking!
 
 ## License
 
-Distributed under the [EPL v1.0] \(same as Clojure).  
+Distributed under the [EPL v1.0] \(same as Clojure).
 Copyright &copy; 2012-2016 [Peter Taoussanis].
 
 <!--- Standard links -->
