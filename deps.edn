@@ -1,0 +1,7 @@
+{:deps
+ {org.clojure/clojure #:mvn{:version "1.5.1"},
+  com.taoensso/encore #:mvn{:version "2.94.0"},
+  com.taoensso/timbre #:mvn{:version "4.10.0"},
+  com.taoensso/nippy #:mvn{:version "2.14.0"},
+  org.apache.commons/commons-pool2 #:mvn{:version "2.4.2"},
+  commons-codec/commons-codec #:mvn{:version "1.11"}}}
