@@ -12,10 +12,10 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.94.0"]
+   [com.taoensso/encore              "2.99.0"]
    [com.taoensso/timbre              "4.10.0"]
    [com.taoensso/nippy               "2.14.0"]
-   [org.apache.commons/commons-pool2 "2.4.2"]
+   [org.apache.commons/commons-pool2 "2.6.0"]
    [commons-codec/commons-codec      "1.11"]]
 
   :profiles
@@ -30,13 +30,13 @@
                          [org.clojure/test.check  "0.9.0"]
                          [com.taoensso/faraday    "1.9.0"]
                          [clj-aws-s3              "0.3.10"]
-                         [ring/ring-core          "1.6.3"]]}
+                         [ring/ring-core          "1.7.0"]]}
    :dev
    [:1.9 :test :server-jvm
     {:dependencies [[org.clojure/data.json "0.2.6"]]
      :plugins
      [[lein-ancient "0.6.15"]
-      [lein-codox   "0.10.3"]]}]}
+      [lein-codox   "0.10.4"]]}]}
 
   :test-paths ["test" "src"]
 
