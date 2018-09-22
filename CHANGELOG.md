@@ -1,5 +1,16 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.19.0 / 2018 Sep 22
+
+```clojure
+[com.taoensso/carmine "2.19.0"]
+```
+
+> This is a non-breaking maintenance release
+
+* [#208 #210] **New**: Update commands.edn to add new Redis 5.0+ stream commands (@bobby)
+* **Impl**: Bump dependencies, incl. `commons.pool`
+
 ## v2.18.1 / 2018 Apr 15
 
 ```clojure
