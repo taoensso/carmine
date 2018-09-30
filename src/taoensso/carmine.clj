@@ -154,25 +154,31 @@
 
 (def script-hash (memoize (fn [script] (sha1-str script))))
 
-(defn evalsha* "Like `evalsha` but automatically computes SHA1 hash for script."
-  [script numkeys & args] (apply evalsha (script-hash script) numkeys args))
+(defn- -evalsha* [script numkeys args]
+  (redis-call (into [:evalsha (script-hash script) numkeys] args)))
 
-(defn eval*
-  "Optimistically tries to send `evalsha` command for given script. In the event
-  of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
-  reply. Redis Cluster note: keys need to all be on same shard."
-  [script numkeys & args]
+(defn evalsha* "Like `evalsha` but automatically computes SHA1 hash for script."
+  [script numkeys & args] (-evalsha* script numkeys args))
+
+(defn- -eval* [script numkeys args]
   (let [parser ; Respect :raw-bulk, otherwise ignore parser:
         (if-not (:raw-bulk? (meta protocol/*parser*))
           nil ; As `parse-raw`:
           (with-meta identity {:raw-bulk? true}))
         [r & _] ; & _ for :as-pipeline
         (parse parser (with-replies :as-pipeline
-                        (apply evalsha* script numkeys args)))]
+                        (-evalsha* script numkeys args)))]
+
     (if (= (:prefix (ex-data r)) :noscript)
       ;;; Now apply context's parser:
-      (apply eval script numkeys args)
+      (redis-call (into [:eval script numkeys] args))
       (return r))))
+
+(defn eval*
+  "Optimistically tries to send `evalsha` command for given script. In the event
+  of a \"NOSCRIPT\" reply, reattempts with `eval`. Returns the final command's
+  reply. Redis Cluster note: keys need to all be on same shard."
+  [script numkeys & args] (-eval* script numkeys args))
 
 (comment
   (wcar {} (redis-call ["eval" "return 10;" 0]))
