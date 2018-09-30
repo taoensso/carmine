@@ -635,6 +635,17 @@
 
 ;;;;
 
+(def hmsetnx "Experimental."
+  (let [script (enc/slurp-resource "lua/hmsetnx.lua")]
+    (fn [key field value & more]
+      (-eval* script 1 (into [key field value] more)))))
+
+(comment
+  (wcar {} (hgetall "foo"))
+  (wcar {} (hmsetnx "foo" "f1" "v1" "f2" "v2")))
+
+;;;;
+
 (defn reduce-scan
   "For use with `scan`, `zscan`, etc. Takes:
     - (fn rf      [acc scan-result]) -> next accumulator
