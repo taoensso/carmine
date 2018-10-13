@@ -12,11 +12,11 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.99.0"]
+   [com.taoensso/encore              "2.111.0"]
    [com.taoensso/timbre              "4.10.0"]
    [com.taoensso/nippy               "2.14.0"]
-   [org.apache.commons/commons-pool2 "2.4.2"]
-   [commons-codec/commons-codec      "1.11"]]
+   [org.apache.commons/commons-pool2 "2.4.2"] ; Nb bug in newer versions, see #213
+   [commons-codec/commons-codec      "1.12"]]
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
@@ -26,17 +26,18 @@
    :1.7  {:dependencies [[org.clojure/clojure "1.7.0"]]}
    :1.8  {:dependencies [[org.clojure/clojure "1.8.0"]]}
    :1.9  {:dependencies [[org.clojure/clojure "1.9.0"]]}
+   :1.10 {:dependencies [[org.clojure/clojure "1.10.0"]]}
    :test {:dependencies [;; 2.1.4 has breaking changes
                          [org.clojure/test.check  "0.9.0"]
                          [com.taoensso/faraday    "1.9.0"]
                          [clj-aws-s3              "0.3.10"]
-                         [ring/ring-core          "1.7.0"]]}
+                         [ring/ring-core          "1.7.1"]]}
    :dev
-   [:1.9 :test :server-jvm
+   [:1.10 :test :server-jvm
     {:dependencies [[org.clojure/data.json "0.2.6"]]
      :plugins
      [[lein-ancient "0.6.15"]
-      [lein-codox   "0.10.4"]]}]}
+      [lein-codox   "0.10.6"]]}]}
 
   :test-paths ["test" "src"]
 
@@ -45,7 +46,7 @@
    :source-uri "https://github.com/ptaoussanis/carmine/blob/master/{filepath}#L{line}"}
 
   :aliases
-  {"test-all"   ["with-profile" "+1.9:+1.8:+1.7:+1.6:+1.5" "test"]
+  {"test-all"   ["with-profile" "+1.10:+1.9:+1.8:+1.7:+1.6:+1.5" "test"]
    "deploy-lib" ["do" "deploy" "clojars," "install"]
    "start-dev"  ["with-profile" "+dev" "repl" ":headless"]}
 
