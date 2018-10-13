@@ -532,10 +532,14 @@
       (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
             nx?          (= ex 0)
             [new-val return-val] (enc/-vswapped (f old-val nx?))
-            cas-success? (parse nil
-                           (with-replies
-                             (parse-suppress (multi) (set k new-val))
-                             (exec)))]
+            cas-success?
+            (if (= new-val :swap/abort)
+              true
+              (parse nil
+                (with-replies
+                  (parse-suppress (multi) (set k new-val))
+                  (exec))))]
+
         (if cas-success?
           (return return-val)
           (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
@@ -598,12 +602,16 @@
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
               [new-val return-val] (enc/-vswapped (f old-val nx?))
-              cas-success?         (= 1 (parse nil
-                                          (with-replies
-                                            (if nx?
-                                              (setnx k new-val)
-                                              (compare-and-set k old-val
-                                                ?sha new-val)))))]
+              cas-success?
+              (if (= new-val :swap/abort)
+                true
+                (= 1 (parse nil
+                       (with-replies
+                         (if nx?
+                           (setnx k new-val)
+                           (compare-and-set k old-val
+                             ?sha new-val))))))]
+
           (if cas-success?
             (return return-val)
             (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
@@ -619,12 +627,16 @@
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
               [new-val return-val] (enc/-vswapped (f old-val nx?))
-              cas-success?         (= 1 (parse nil
-                                          (with-replies
-                                            (if nx?
-                                              (hsetnx k field new-val)
-                                              (compare-and-hset k field old-val
-                                                ?sha new-val)))))]
+              cas-success?
+              (if (= new-val :swap/abort)
+                true
+                (= 1 (parse nil
+                       (with-replies
+                         (if nx?
+                           (hsetnx k field new-val)
+                           (compare-and-hset k field old-val
+                             ?sha new-val))))))]
+
           (if cas-success?
             (return return-val)
             (if (or (nil? nmax-attempts) (< idx (long nmax-attempts)))
