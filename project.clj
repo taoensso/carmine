@@ -15,7 +15,7 @@
    [com.taoensso/encore              "2.99.0"]
    [com.taoensso/timbre              "4.10.0"]
    [com.taoensso/nippy               "2.14.0"]
-   [org.apache.commons/commons-pool2 "2.6.0"]
+   [org.apache.commons/commons-pool2 "2.4.2"]
    [commons-codec/commons-codec      "1.11"]]
 
   :profiles
