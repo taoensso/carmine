@@ -1,5 +1,15 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.19.1 / 2018 Oct 14
+
+```clojure
+[com.taoensso/carmine "2.19.1"]
+```
+
+> This is a hotfix release
+
+* [#213] Hotfix: revert commons-pool dep update (2.6.0 -> 2.4.2)
+
 ## v2.19.0 / 2018 Sep 22
 
 ```clojure
