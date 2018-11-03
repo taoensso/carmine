@@ -533,8 +533,9 @@
             nx?          (= ex 0)
             [new-val return-val] (enc/-vswapped (f old-val nx?))
             cas-success?
-            (if (= new-val :swap/abort)
-              true
+            (case new-val
+              :swap/abort  (do (unwatch)         true)
+              :swap/delete (do (unwatch) (del k) true)
               (parse nil
                 (with-replies
                   (parse-suppress (multi) (set k new-val))
@@ -557,32 +558,34 @@
 
 (comment (enc/qb 1000 (prep-cas-old-val "hello there")))
 
-(def compare-and-set "Experimental."
-  (let [script (enc/slurp-resource "lua/cas-set.lua")]
-    (fn self
-      ([k old-val ?sha new-val]
+(let [script (enc/slurp-resource "lua/cas-set.lua")]
+  (defn compare-and-set "Experimental."
+    ([k old-val new-val]
+     (let [[?sha raw-bs] (prep-cas-old-val old-val)]
+       (compare-and-set k raw-bs ?sha new-val)))
+
+    ([k old-val ?sha new-val]
+     (let [delete? (= new-val :cas/delete)]
        (lua script {:k k}
          {:old-?sha (or ?sha "")
           :old-?val (if ?sha "" old-val)
-          :new-val  new-val}))
+          :delete   (if delete? 1 0)
+          :new-val  (if delete? "" new-val)})))))
 
-      ([k old-val new-val]
-       (let [[?sha raw-bs] (prep-cas-old-val old-val)]
-         (self k raw-bs ?sha new-val))))))
+(let [script (enc/slurp-resource "lua/cas-hset.lua")]
+  (defn compare-and-hset "Experimental."
+    ([k field old-val new-val]
+     (let [[?sha raw-bs] (prep-cas-old-val old-val)]
+       (compare-and-hset k field raw-bs ?sha new-val)))
 
-(def compare-and-hset "Experimental."
-  (let [script (enc/slurp-resource "lua/cas-hset.lua")]
-    (fn self
-      ([k field old-val ?sha new-val]
+    ([k field old-val ?sha new-val]
+     (let [delete? (= new-val :cas/delete)]
        (lua script {:k k}
          {:field    field
           :old-?sha (or ?sha "")
           :old-?val (if ?sha "" old-val)
-          :new-val  new-val}))
-
-      ([k field old-val new-val]
-       (let [[?sha raw-bs] (prep-cas-old-val old-val)]
-         (self k field raw-bs ?sha new-val))))))
+          :delete   (if delete? 1 0)
+          :new-val  (if delete? "" new-val)})))))
 
 (comment
   (wcar {} (del "cas-k") (set "cas-k" 0) (compare-and-set "cas-k" 0 1))
@@ -603,14 +606,22 @@
               ?sha                 (when-not (= sha "") sha)
               [new-val return-val] (enc/-vswapped (f old-val nx?))
               cas-success?
-              (if (= new-val :swap/abort)
-                true
-                (= 1 (parse nil
-                       (with-replies
-                         (if nx?
-                           (setnx k new-val)
-                           (compare-and-set k old-val
-                             ?sha new-val))))))]
+              (case new-val
+                :swap/abort true
+                :swap/delete
+                (if nx?
+                  true
+                  (= 1
+                    (parse nil
+                      (with-replies
+                        (compare-and-set k old-val ?sha :cas/delete)))))
+
+                (= 1
+                  (parse nil
+                    (with-replies
+                      (if nx?
+                        (setnx k new-val)
+                        (compare-and-set k old-val ?sha new-val))))))]
 
           (if cas-success?
             (return return-val)
@@ -628,14 +639,22 @@
               ?sha                 (when-not (= sha "") sha)
               [new-val return-val] (enc/-vswapped (f old-val nx?))
               cas-success?
-              (if (= new-val :swap/abort)
-                true
-                (= 1 (parse nil
-                       (with-replies
-                         (if nx?
-                           (hsetnx k field new-val)
-                           (compare-and-hset k field old-val
-                             ?sha new-val))))))]
+              (case new-val
+                :swap/abort true
+                :swap/delete
+                (if nx?
+                  true
+                  (= 1
+                    (parse nil
+                      (with-replies
+                        (compare-and-hset k field old-val ?sha :cas/delete)))))
+
+                (= 1
+                  (parse nil
+                    (with-replies
+                      (if nx?
+                        (hsetnx k field new-val)
+                        (compare-and-hset k field old-val ?sha new-val))))))]
 
           (if cas-success?
             (return return-val)
@@ -643,7 +662,10 @@
               (recur (inc idx))
               (return abort-val))))))))
 
-(comment (enc/qb 100 (wcar {} (swap "swap-k" (fn [?old _] ?old)))))
+(comment
+  (enc/qb 100 (wcar {} (swap "swap-k" (fn [?old _] ?old))))
+  (wcar {} (get  "swap-k"))
+  (wcar {} (swap "swap-k" (fn [?old _] :swap/delete))))
 
 ;;;;
 
