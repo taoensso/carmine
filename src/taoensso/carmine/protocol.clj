@@ -30,7 +30,8 @@
   (def  ^:private ^:const bs-$ (int (first (-byte-str "$"))))
   (def  ^:private bs-crlf                             (-byte-str "\r\n"))
   (def  ^:private bs-bin "Carmine binary data marker" (-byte-str "\u0000<"))
-  (def  ^:private bs-clj "Carmine Nippy  data marker" (-byte-str "\u0000>")))
+  (def  ^:private bs-clj "Carmine Nippy  data marker" (-byte-str "\u0000>"))
+  (def  ^:private bs-nil "Carmine nil    data marker" (-byte-str "\u0000_")))
 
 (def ^:private byte-int "Cache common counts, etc."
   (let [cached (enc/memoize_ (fn [n] (-byte-str (Long/toString n))))]
@@ -70,7 +71,8 @@
   Double     (byte-str [x] (-byte-str (Double/toString x)))
   Float      (byte-str [x] (-byte-str  (Float/toString x)))
   WrappedRaw (byte-str [x] (.-ba x))
-  nil        (byte-str [x] (enc/ba-concat bs-clj (nippy-tools/freeze x)))
+  ;; nil     (byte-str [x] (enc/ba-concat bs-clj (nippy-tools/freeze x)))
+  nil        (byte-str [x]                bs-nil)
   Object     (byte-str [x] (enc/ba-concat bs-clj (nippy-tools/freeze x))))
 
 (extend-type (Class/forName "[B")
@@ -156,6 +158,7 @@
                     (zero? (aget ba 0)))
                (let [b1    (aget ba 1)]
                  (enc/cond!
+                  (== b1 95 #_(aget bs-nil 1)) nil
                   (== b1 62 #_(aget bs-clj 1)) ; :clj
                   (nippy-tools/thaw
                    (java.util.Arrays/copyOfRange ba 2 ba-size)
