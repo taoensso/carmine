@@ -81,6 +81,13 @@
   (def setupf (fn [_] (println "boo")))
   (wcar {:spec {:conn-setup-fn setupf}}))
 
+(comment
+  (wcar {}
+    (set "temp_foo" nil)
+    (get "temp_foo"))
+
+  (seq (wcar {} (parse-raw (get "temp_foo")))))
+
 ;;;; Misc core
 
 ;;; Mostly deprecated; prefer using encore stuff directly
