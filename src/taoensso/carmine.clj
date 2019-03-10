@@ -688,7 +688,7 @@
 ;;;;
 
 (defn reduce-scan
-  "For use with `scan`, `zscan`, etc. Takes:
+  "For use with `scan`, `hscan`, `zscan`, etc. Takes:
     - (fn rf      [acc scan-result]) -> next accumulator
     - (fn scan-fn [cursor]) -> next scan result"
   ([rf          scan-fn] (reduce-scan rf nil scan-fn))
@@ -697,7 +697,10 @@
      (let [[next-cursor in] (scan-fn cursor)]
        (if (= next-cursor "0")
          (rf acc in)
-         (recur next-cursor (rf acc in)))))))
+         (let [result (rf acc in)]
+           (if (reduced? result)
+             @result
+             (recur next-cursor result))))))))
 
 (comment
   (reduce-scan (fn rf [acc in] (into acc in))
