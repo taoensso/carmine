@@ -383,7 +383,7 @@
                                                               (taoensso.carmine/ping)))]
                                               (when (not= "pong" type#)
                                                 (throw (IllegalStateException.
-                                                         "Connection in Listener is broken"))))))]
+                                                         "Connection in listener is broken"))))))]
                         (try
                           (@handler-atom# reply# @state-atom#)
                           (catch Throwable t#
