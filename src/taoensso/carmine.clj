@@ -375,13 +375,15 @@
          future# (future-call ; Thread to long-poll for messages
                   (bound-fn []
                     (while true ; Closes when conn closes
-                      (when-let [reply# (try (protocol/get-unparsed-reply in# {})
-                                             (catch SocketTimeoutException _#
-                                               (let [[type#] (protocol/with-context conn#
-                                                               (protocol/with-replies
-                                                                 (taoensso.carmine/ping)))]
-                                                 (when (not= "pong" type#)
-                                                   (throw (IllegalStateException. "Connection in Listener is broken"))))))]
+                      (when-let [reply# (try
+                                          (protocol/get-unparsed-reply in# {})
+                                          (catch SocketTimeoutException _#
+                                            (let [[type#] (protocol/with-context conn#
+                                                            (protocol/with-replies
+                                                              (taoensso.carmine/ping)))]
+                                              (when (not= "pong" type#)
+                                                (throw (IllegalStateException.
+                                                         "Connection in Listener is broken"))))))]
                         (try
                           (@handler-atom# reply# @state-atom#)
                           (catch Throwable t#
