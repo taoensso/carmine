@@ -1,14 +1,16 @@
-(ns taoensso.carmine "Clojure Redis client & message queue."
+(ns taoensso.carmine
+  "Clojure Redis client & message queue."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:refer-clojure :exclude [time get set key keys type sync sort eval])
-  (:require [clojure.string       :as str]
-            [taoensso.encore      :as enc]
-            [taoensso.timbre      :as timbre]
+  (:require [clojure.string :as str]
+            [taoensso.encore :as enc]
+            [taoensso.timbre :as timbre]
             [taoensso.nippy.tools :as nippy-tools]
             [taoensso.carmine
-             (protocol    :as protocol)
+             (protocol :as protocol)
              (connections :as conns)
-             (commands    :as commands)]))
+             (commands :as commands)])
+  (:import (java.net SocketTimeoutException)))
 
 (if (vector? taoensso.encore/encore-version)
   (enc/assert-min-encore-version [2 67 2])
@@ -369,16 +371,22 @@
   `(let [handler-atom# (atom ~handler)
          state-atom#   (atom ~initial-state)
          {:as conn# in# :in} (conns/make-new-connection
-                              (assoc (conns/conn-spec ~conn-spec)
-                                     :listener? true))
+                               (assoc (conns/conn-spec ~conn-spec)
+                                 :listener? true :read-timeout-ms 4000))
          future# (future-call ; Thread to long-poll for messages
-                  (bound-fn []
-                    (while true ; Closes when conn closes
-                      (let [reply# (protocol/get-unparsed-reply in# {})]
-                        (try
-                          (@handler-atom# reply# @state-atom#)
-                          (catch Throwable t#
-                            (timbre/error t# "Listener handler exception")))))))]
+                   (bound-fn []
+                     (while true ; Closes when conn closes
+                       (when-let [reply# (try (protocol/get-unparsed-reply in# {})
+                                              (catch SocketTimeoutException _#
+                                                (let [[type#] (protocol/with-context conn#
+                                                                (protocol/with-replies
+                                                                  (taoensso.carmine/ping)))]
+                                                  (when (not= "pong" type#)
+                                                    (throw (IllegalStateException. "Connection in Listener is broken"))))))]
+                         (try
+                           (@handler-atom# reply# @state-atom#)
+                           (catch Throwable t#
+                             (timbre/error t# "Listener handler exception")))))))]
 
      (protocol/with-context conn# ~@body
        (protocol/execute-requests (not :get-replies) nil))
