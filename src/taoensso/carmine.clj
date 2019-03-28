@@ -369,9 +369,13 @@
   [conn-spec handler initial-state & body]
   `(let [handler-atom# (atom ~handler)
          state-atom#   (atom ~initial-state)
+         read-timeout-ms# (or (:read-timeout-ms ~conn-spec)
+                              (:timeout-ms ~conn-spec)
+                              4000)
          {:as conn# in# :in} (conns/make-new-connection
                               (assoc (conns/conn-spec ~conn-spec)
-                                     :listener? true :read-timeout-ms 4000))
+                                     :listener? true
+                                     :read-timeout-ms read-timeout-ms#))
          future# (future-call ; Thread to long-poll for messages
                   (bound-fn []
                     (while true ; Closes when conn closes
