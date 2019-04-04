@@ -230,13 +230,15 @@
   (start [this])
   (stop  [this]))
 
-(defrecord Worker [conn-opts qname running?_ opts]
+(defrecord Worker [conn-opts qname running?_ opts thread-futures]
 
   java.io.Closeable (close [this] (stop this))
 
   IWorker
   (stop [_]
     (when (compare-and-set! running?_ true false)
+      (timbre/infof "Initiating shutdown of queue worker: %s" qname)
+      (run! deref @thread-futures)
       (timbre/infof "Message queue worker stopped: %s" qname)
       true))
 
@@ -284,7 +286,8 @@
                         (Thread/sleep (exp-backoff (inc nerrors)))
                         (recur (inc nerrors))))))))]
 
-        (dorun (repeatedly nthreads (fn [] (future (start-polling-loop!))))))
+        (reset! thread-futures
+                (vec (repeatedly nthreads (fn [] (future (start-polling-loop!)))))))
 
       true)))
 
@@ -333,7 +336,7 @@
             eoq-backoff-ms exp-backoff
             auto-start     true}}]]
 
-  (let [w (Worker. conn-opts qname (atom false)
+  (let [w (Worker. conn-opts qname (atom false) (atom [])
             {:handler        handler
              :monitor        monitor
              :lock-ms        lock-ms
