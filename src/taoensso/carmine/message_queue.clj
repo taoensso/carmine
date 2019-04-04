@@ -230,7 +230,7 @@
   (start [this])
   (stop  [this]))
 
-(defrecord Worker [conn-opts qname running?_ opts thread-futures]
+(defrecord Worker [conn-opts qname running?_ thread-futures opts]
 
   java.io.Closeable (close [this] (stop this))
 
@@ -287,7 +287,7 @@
                         (recur (inc nerrors))))))))]
 
         (reset! thread-futures
-                (vec (repeatedly nthreads (fn [] (future (start-polling-loop!)))))))
+                (doall (repeatedly nthreads (fn [] (future (start-polling-loop!)))))))
 
       true)))
 
