@@ -62,7 +62,7 @@
 [com.taoensso/carmine "2.16.0"]
 ```
 
-> This is a non-breaking maintenance release
+> This is a maintenance release that should generally be non-breaking, but please note a [potential serialization-compatibility issue](https://github.com/ptaoussanis/carmine/issues/216) if you upgrade in a mixed-version environment. 
 
 * **New**: Update Nippy to [v2.13.0](https://github.com/ptaoussanis/nippy/releases/tag/v2.13.0)
 * **New**: Update to latest Redis commands spec
