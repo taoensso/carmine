@@ -706,6 +706,41 @@
   (reduce-scan (fn rf [acc in] (into acc in))
     [] (fn scan-fn [cursor] (wcar {} (scan cursor)))))
 
+(defn reduce-hscan
+  "Experimental. Like `reduce-scan` but:
+    - `rf` is (fn [acc k v]), as in `reduce-kv`.
+    - `rf` will never be called with the same key twice
+      (i.e. automatically de-duplicates elements)."
+  ([rf          scan-fn] (reduce-hscan rf nil scan-fn))
+  ([rf acc-init scan-fn]
+   (let [keys-seen_ (enc/-vol! (transient #{}))]
+
+     (reduce-scan
+       (fn wrapped-rf [acc kvs]
+         (enc/reduce-kvs
+           (fn [acc k v]
+             (if (contains? @keys-seen_ k)
+               acc
+               (do
+                 (enc/-vol-swap! keys-seen_ conj! k)
+                 (enc/convey-reduced (rf acc k v)))))
+           acc
+           kvs))
+
+       acc-init scan-fn))))
+
+(comment
+  (wcar {} (del "test:foo"))
+  (wcar {} (doseq [i (range 1e4)] (hset "test:foo" (str "k" i) (str "v" i))))
+  (count
+    (reduce-hscan
+      (fn rf [acc k v]
+        (if #_true false
+          (reduced (assoc acc k v))
+          (do      (assoc acc k v))))
+      {}
+      (fn [cursor] (wcar {} (hscan "test:foo" cursor))))))
+
 ;;;; Deprecated
 
 (enc/deprecated
