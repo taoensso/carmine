@@ -105,6 +105,8 @@
     ereqs)
   (.flush out))
 
+(def issue-81-workaround? true) ; Subject to `alter-var-root`
+
 (defn get-unparsed-reply
   "Implementation detail.
   BLOCKS to receive a single reply from Redis server and returns the result as
@@ -168,7 +170,7 @@
                   (let [payload (java.util.Arrays/copyOfRange ba 2 ba-size)]
                     ;; Workaround #81 (v2.6.0 may have written
                     ;; *serialized* bins:
-                    (if (and
+                    (if (and issue-81-workaround?
                          (>= (alength payload) 5) ; 4 byte NPY_ header + data
                          (== (aget payload 0) 78) ; N
                          (== (aget payload 1) 80) ; P
