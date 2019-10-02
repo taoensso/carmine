@@ -170,6 +170,7 @@
                }
               carmine-defaults
               {:max-total-per-key 16 ; from 8
+               :max-idle-per-key 16 ; needs to be the same value as above to avoid early connection closing
                }]
           (ConnectionPool.
             (reduce-kv set-pool-option
