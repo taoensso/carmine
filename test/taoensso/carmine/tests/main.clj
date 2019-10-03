@@ -12,7 +12,32 @@
   (remove-ns      'taoensso.carmine.tests.main)
   (test/run-tests 'taoensso.carmine.tests.main))
 
-(defmacro wcar* [& body] `(car/wcar {:pool {} :spec {}} ~@body))
+(defn conn-setup [_]
+  (car/client-setname "the-name"))
+
+(defn conn-error [{spec :spec ex :ex}]
+  (let [tags {:redis-host (:host spec)
+              :redis-port (:port spec)
+              :redis-db (:db spec)}]))
+
+(defn conn-close [{spec :spec}]
+  (let [tags {:redis-host (:host spec)
+              :redis-port (:port spec)
+              :redis-db (:db spec)}]))
+
+(defn conn-open [{spec :spec}]
+  (let [tags {:redis-host (:host spec)
+              :redis-port (:port spec)
+              :redis-db (:db spec)}]))
+
+(defn pool-create [{pool :pool}])
+
+(defmacro wcar* [& body] `(car/wcar {:pool {:pool-create-fn pool-create}
+                                     :spec {:conn-setup-fn conn-setup
+                                            :conn-error-fn conn-error
+                                            :conn-close-fn conn-close
+                                            :conn-open-fn conn-open}} ~@body))
+
 (def tkey (partial car/key :carmine :temp :test))
 (defn clean-up-tkeys! [] (when-let [ks (seq (wcar* (car/keys (tkey :*))))]
                            (wcar* (apply car/del ks))))

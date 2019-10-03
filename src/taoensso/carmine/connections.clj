@@ -36,8 +36,13 @@
           (protocol/with-context this
             (protocol/with-replies
               (taoensso.carmine/ping)))
-          (catch Exception _)))))
-  (close-conn [_] (.close socket)))
+          (catch Exception ex
+             (if-let [conn-error-fn (:conn-error-fn spec)]
+               (conn-error-fn {:spec spec :ex ex})))))))
+  (close-conn [_]
+    (if-let [conn-close-fn (:conn-close-fn spec)]
+      (conn-close-fn {:spec spec}))
+    (.close socket)))
 
 (defprotocol IConnectionPool
   (get-conn     [this spec])
@@ -100,6 +105,9 @@
 
         db (when (and db (not (zero? db))) db)]
 
+    (if-let [conn-open-fn (:conn-open-fn spec)]
+      (conn-open-fn {:spec spec}))
+
     (when (or password db conn-setup-fn)
       (protocol/with-context conn
         (protocol/with-replies ; Discard replies
@@ -150,12 +158,16 @@
     :test-while-idle? (.setTestWhileIdle pool v) ; false
     :time-between-eviction-runs-ms (.setTimeBetweenEvictionRunsMillis pool v) ; -1
 
+    :pool-create-fn ()
+
     (throw (ex-info (str "Unknown pool option: " k) {:option k})))
   pool)
 
 (def conn-pool
   (enc/memoize_
     (fn [pool-opts]
+      (if-let [pool-create-fn (:pool-create-fn pool-opts)]
+        (pool-create-fn {:pool pool-opts}))
       (cond
         (identical? pool-opts :none) (->NonPooledConnectionPool)
         ;; Pass through pre-made pools (note that test reflects):
