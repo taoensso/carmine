@@ -1,5 +1,31 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.20.0-beta1 / 2019 Oct 18
+
+```clojure
+[com.taoensso/carmine "2.20.0-beta1"]
+```
+
+> This is a significant maintenance + feature release. Should be non-breaking, but please test.
+
+* **New**: update to latest Redis commands spec
+* **New**: `reduce-scan`: support `reduced`
+
+* [#230] **Fix**: Mod default pool opts: avoid premature closing of connections (@pete-woods)
+* [#221] **Fix**: [Message queue] Block to wait for futures on worker stop (@isaacseymour)
+* [#227] **Fix**: Move `commands.edn`, `lua/` into namespaced dir to avoid possible namespace clashes (@SevereOverfl0w)
+
+* **Impl**: Protocol: Add minimal (2-byte) `nil` placeholder bytestring (micro-optimisation)
+* **Impl**: Avoid `apply` on lua calls (micro-optimisation)
+
+* [#231] **New**: Experimental: Add conns instrumentation fn callbacks (@pete-woods)
+* **New**: Experimental: Add `reduce-hscan` util
+* **New**: Experimental: Add `:swap/delete` support to swap utils
+* **New**: Experimental: Add `:swap/abort` support to swap utils
+* **New**: Experimental: Add new `hmsetnx` lua command
+* **New**: Experimental: Make issue-81-workround optional
+
+
 ## v2.19.1 / 2018 Oct 14
 
 ```clojure
