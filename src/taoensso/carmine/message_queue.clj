@@ -87,7 +87,7 @@
     :done-awaiting-gc     - Finished handling, awaiting GC.
     :done-with-backoff    - Finished handling, awaiting dedupe timeout.
   nil                   - Already GC'd or invalid message id."
-  (let [script (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua")]
+  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))]
     (fn [qname mid]
       (car/parse-keyword
         (car/lua script
@@ -108,7 +108,7 @@
     * allow-requeue?     - When true, allow buffered escrow-requeue for a
                            message in the :locked or :done-with-backoff state."
   ;; TODO Option to enqueue something with an init backoff?
-  (let [script (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua")]
+  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))]
     (fn [qname message & [unique-message-id allow-requeue?]]
       (car/parse
         #(if (vector? %) (get % 0) {:carmine.mq/error (keyword %)})
@@ -131,7 +131,7 @@
     nil             - If msg GC'd, locked, or set to backoff.
     \"eoq-backoff\" - If circle uninitialized or end-of-circle marker reached.
     [<mid> <mcontent> <attempt>] - If message should be (re)handled now."
-  (let [script (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua")]
+  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua"))]
     (fn [qname & [{:keys [lock-ms eoq-backoff-ms]
                    :or   {lock-ms (enc/ms :mins 60) eoq-backoff-ms exp-backoff}}]]
       (let [;; Precomp 5 backoffs so that `dequeue` can init the backoff

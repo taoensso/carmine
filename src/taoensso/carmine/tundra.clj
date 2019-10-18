@@ -86,7 +86,7 @@
 (def ^:private extend-exists
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
-  (let [script (enc/slurp-resource "taoensso/carmine/lua/tundra/extend-exists.lua")]
+  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/tundra/extend-exists.lua"))]
     (fn [ttl-ms keys] (car/lua script keys [(or ttl-ms 0)]))))
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))

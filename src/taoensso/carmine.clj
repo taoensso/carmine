@@ -565,7 +565,7 @@
 
 (comment (enc/qb 1000 (prep-cas-old-val "hello there")))
 
-(let [script (enc/slurp-resource "lua/cas-set.lua")]
+(let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-set.lua"))]
   (defn compare-and-set "Experimental."
     ([k old-val new-val]
      (let [[?sha raw-bs] (prep-cas-old-val old-val)]
@@ -579,7 +579,7 @@
           :delete   (if delete? 1 0)
           :new-val  (if delete? "" new-val)})))))
 
-(let [script (enc/slurp-resource "lua/cas-hset.lua")]
+(let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-hset.lua"))]
   (defn compare-and-hset "Experimental."
     ([k field old-val new-val]
      (let [[?sha raw-bs] (prep-cas-old-val old-val)]
@@ -604,8 +604,10 @@
   (wcar {} (hget "cas-k" "field")))
 
 (def swap "Experimental."
-  (let [cas-get (let [script (enc/slurp-resource "lua/cas-get.lua")]
-                  (fn [k] (lua script {:k k} {})))]
+  (let [cas-get
+        (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-get.lua"))]
+          (fn [k] (lua script {:k k} {})))]
+
     (fn [k f & [nmax-attempts abort-val]]
       (loop [idx 1]
         (let [[old-val ex sha]     (parse nil (with-replies (cas-get k)))
@@ -637,8 +639,10 @@
               (return abort-val))))))))
 
 (def hswap "Experimental."
-  (let [cas-hget (let [script (enc/slurp-resource "lua/cas-hget.lua")]
-                   (fn [k field] (lua script {:k k} {:field field})))]
+  (let [cas-hget
+        (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-hget.lua"))]
+          (fn [k field] (lua script {:k k} {:field field})))]
+
     (fn [k field f & [nmax-attempts abort-val]]
       (loop [idx 1]
         (let [[old-val ex sha]     (parse nil (with-replies (cas-hget k field)))
@@ -677,7 +681,7 @@
 ;;;;
 
 (def hmsetnx "Experimental."
-  (let [script (enc/slurp-resource "lua/hmsetnx.lua")]
+  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/hmsetnx.lua"))]
     (fn [key field value & more]
       (-eval* script 1 (into [key field value] more)))))
 
