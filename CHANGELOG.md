@@ -1,9 +1,9 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
-## v2.20.0-beta1 / 2019 Oct 18
+## v2.20.0-beta2 / 2019 Oct 18
 
 ```clojure
-[com.taoensso/carmine "2.20.0-beta1"]
+[com.taoensso/carmine "2.20.0-beta2"]
 ```
 
 > This is a significant maintenance + feature release. Should be non-breaking, but please test.

@@ -5,7 +5,7 @@
 
 ```clojure
 [com.taoensso/carmine "2.19.1"]       ; Stable
-[com.taoensso/carmine "2.20.0-beta1"] ; See CHANGELOG for details
+[com.taoensso/carmine "2.20.0-beta2"] ; See CHANGELOG for details
 ```
 
 > Please consider helping to [support my continued open-source Clojure/Script work]? 
