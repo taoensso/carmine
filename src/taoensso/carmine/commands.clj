@@ -265,7 +265,7 @@
         :cluster-key-idx 1})))
 
 (defonce ^:private command-spec
-  (if-let [edn (enc/slurp-resource "commands.edn")]
+  (if-let [edn (enc/slurp-resource "taoensso/carmine/commands.edn")]
     (try
       (enc/read-edn edn)
       (catch Exception e
