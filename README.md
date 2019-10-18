@@ -70,7 +70,7 @@ You'll usually want to define a single connection pool, and one connection spec 
 A simple example spec with default pool and one server using redistogo.com would be:
 
 ```clojure
-(def server1-conn {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}})
+(def server1-conn {:pool {} :spec {:uri "redis://redistogo:pass@panga.redistogo.com:9475/"}})
 ```
 
 ### Basic commands
