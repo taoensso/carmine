@@ -320,8 +320,9 @@ See the relevant [API] docs for details.
 ```clojure
 (:require [taoensso.carmine.locks :as locks]) ; Add to `ns` macro
 
-(locks/with-lock "my-lock"
+(locks/with-lock
   {:pool {<opts>} :spec {<opts>}} ; Connection details
+  "my-lock" ; Lock name/identifier
   1000 ; Time to hold lock
   500  ; Time to wait (block) for lock acquisition
   (println "This was printed under lock!"))
