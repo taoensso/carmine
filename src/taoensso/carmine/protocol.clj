@@ -105,7 +105,16 @@
     ereqs)
   (.flush out))
 
-(def issue-81-workaround? true) ; Subject to `alter-var-root`
+(defn possible-nippy-bytes? [x]
+  (and
+    (enc/bytes?         x)
+    (>= (alength ^bytes x)    5) ; 4 byte NPY_ header + data
+    (== (aget    ^bytes x 0) 78) ; N
+    (== (aget    ^bytes x 1) 80) ; P
+    (== (aget    ^bytes x 2) 89) ; Y
+    ))
+
+(enc/declare-remote taoensso.carmine/issue-83-workaround?)
 
 (defn get-unparsed-reply
   "Implementation detail.
@@ -168,14 +177,9 @@
 
                   (== b1 60 #_(aget bs-bin 1)) ; :bin
                   (let [payload (java.util.Arrays/copyOfRange ba 2 ba-size)]
-                    ;; Workaround #81 (v2.6.0 may have written
-                    ;; *serialized* bins:
-                    (if (and issue-81-workaround?
-                         (>= (alength payload) 5) ; 4 byte NPY_ header + data
-                         (== (aget payload 0) 78) ; N
-                         (== (aget payload 1) 80) ; P
-                         (== (aget payload 2) 89) ; Y
-                         )
+                    (if (and
+                          taoensso.carmine/issue-83-workaround?
+                          (possible-nippy-bytes? payload))
                       (try
                         (nippy-tools/thaw payload (get :thaw-opts req-opts))
                         (catch Exception _ payload))

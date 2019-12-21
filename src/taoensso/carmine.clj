@@ -4,6 +4,7 @@
   (:require [clojure.string       :as str]
             [taoensso.encore      :as enc]
             [taoensso.timbre      :as timbre]
+            [taoensso.nippy       :as nippy]
             [taoensso.nippy.tools :as nippy-tools]
             [taoensso.carmine
              (protocol    :as protocol)
@@ -128,6 +129,61 @@
 (enc/defalias freeze         nippy-tools/wrap-for-freezing
   "Forces argument of any type (incl. keywords, simple numbers, and binary types)
   to be subject to automatic de/serialization with Nippy.")
+
+;;;; Issue #83
+
+(def issue-83-workaround?
+  "Workaround for Carmine issue #83.
+
+  Correct/intended behaviour:
+    - Byte arrays written with Carmine are read back as byte arrays.
+
+  Break introduced in v2.6.0 (April 1st 2014), issue #83:
+    - Byte arrays written with Carmine are accidentally serialized
+      with Nippy, and read back as serialized byte arrays.
+
+  Workaround introduced in v2.6.1 (May 1st 2014), issue #83:
+    - To help folks who had written binary data under v2.6.0,
+      Carmine started trying to auto-deserialize byte arrays that
+      start with the standard 4-byte Nippy header byte sequence.
+
+      Benefits:
+        b1. Folks affected by the earlier breakage can now read back
+            their byte arrays as expected.
+
+      Costs:
+        c1. A very minor performance hit when reading binary values
+            (because of check for a possible Nippy header).
+
+        c2. May encourage possible dependence on the workaround if
+            folks start pre-serializing Nippy data sent to Carmine,
+            expecting it to be auto-thawed on read.
+
+  c2 in particular means that it will probably never be safe to
+  disable this workaround by default.
+
+  However folks starting with Carmine after v2.6.1 and who have
+  never pre-serialized Nippy data written with Carmine may prefer
+  to disable the workaround (use `alter-var-root`).
+
+  If you're not sure what this is or if it's safe to change, you
+  should probably leave it at the default setting. Or Ref.
+  https://github.com/ptaoussanis/carmine/issues/83 for more details."
+  true)
+
+(defn thaw-if-possible-nippy-bytes
+  "If given agrgument is a byte-array starting with apparent NPY header,
+  calls `nippy/thaw` against argument, otherwise passes it through.
+
+  This util can be useful if you're manually disabling
+  `issue-83-workaround` but still have some cases where you're possibly
+  trying to read data affected by that issue.
+
+  NB does not trap thaw exceptions.
+  See `issue-83-workaround` for more info."
+
+  ([x     ] (thaw-if-possible-nippy-bytes x nil))
+  ([x opts] (if (protocol/possible-nippy-bytes? x) (nippy/thaw x opts) x)))
 
 (enc/defalias return protocol/return)
 (comment (wcar {} (return :foo) (ping) (return :bar))
