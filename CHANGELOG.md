@@ -1,5 +1,16 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.20.0-RC1 / 2019 Dec 21
+
+```clojure
+[com.taoensso/carmine "2.20.0-RC1"]
+```
+
+> As v2.20.0-beta2, with:
+
+* [#83] **New**: Document workaround, make overrideable, add support util
+
+
 ## v2.20.0-beta2 / 2019 Oct 18
 
 ```clojure
