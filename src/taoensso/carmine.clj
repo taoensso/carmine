@@ -434,7 +434,8 @@
                         (try
                           (@handler-atom# reply# @state-atom#)
                           (catch Throwable t#
-                            (timbre/error t# "Listener handler exception")))))))]
+                            (timbre/error t# "Listener handler exception")
+                            (timbre/error (ex-message t#))))))))]
 
      (protocol/with-context conn# ~@body
        (protocol/execute-requests (not :get-replies) nil))
