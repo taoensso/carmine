@@ -12,7 +12,7 @@
 
   :dependencies
   [[org.clojure/clojure              "1.5.1"]
-   [com.taoensso/encore              "2.116.0"]
+   [com.taoensso/encore              "2.117.0"]
    [com.taoensso/timbre              "4.10.0"]
    [com.taoensso/nippy               "2.14.0"]
    [org.apache.commons/commons-pool2 "2.4.2"] ; Nb bug in newer versions, see #213
@@ -31,10 +31,10 @@
                          [org.clojure/test.check  "0.10.0"]
                          [com.taoensso/faraday    "1.9.0"]
                          [clj-aws-s3              "0.3.10"]
-                         [ring/ring-core          "1.7.1"]]}
+                         [ring/ring-core          "1.8.0"]]}
    :dev
    [:1.10 :test :server-jvm
-    {:dependencies [[org.clojure/data.json "0.2.6"]]
+    {:dependencies [[org.clojure/data.json "0.2.7"]]
      :plugins
      [[lein-ancient "0.6.15"]
       [lein-codox   "0.10.7"]]}]}
