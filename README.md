@@ -38,6 +38,7 @@ Link                     | Description
 ------------------------ | -----------------------------------------------------
 [@lantiga/redlock-clj]   | Distributed locks for uncoordinated Redis clusters
 [@danielsz/system]       | PubSub component for system
+[@oliyh/carmine-streams] | Higher order stream functionality including consumers and message rebalancing
 Your link here?          | **PR's welcome!**
 
 ## Getting started
@@ -415,6 +416,7 @@ Copyright &copy; 2012-2020 [Peter Taoussanis].
 [Nippy]: https://github.com/ptaoussanis/nippy
 [@lantiga/redlock-clj]: https://github.com/lantiga/redlock-clj
 [@danielsz/system]: https://github.com/danielsz/system
+[@oliyh/carmine-streams]: https://github.com/oliyh/carmine-streams
 [pipelining]: http://redis.io/topics/pipelining
 [byte string]: http://redis.io/topics/data-types
 [rich datatypes]: http://clojure.org/datatypes
