@@ -174,22 +174,13 @@
     - Call `(alter-var-root #'taoensso.carmine/issue-83-workaround? (fn [_] false))`,
     - or set one of the following to \"false\" or \"FALSE\":
       - `taoensso.carmine.issue-83-workaround` JVM property
-      - `TAOENSSO_CARMINE_ISSUE-83-WORKAROUND` env var
+      - `TAOENSSO_CARMINE_ISSUE_83_WORKAROUND` env var
 
   Ref. https://github.com/ptaoussanis/carmine/issues/83 for more info."
 
-  (if-let [sv (enc/get-sys-val
-                "taoensso.carmine.issue-83-workaround"
-                "TAOENSSO_CARMINE_ISSUE-83-WORKAROUND")]
-
-    (case sv
-      ("true"  "TRUE")  true
-      ("false" "FALSE") false
-      (throw
-        (ex-info "Unexpected `issue-83-workaround?` value"
-          {:value sv})))
-
-    true))
+  (enc/get-sys-bool true
+    "taoensso.carmine.issue-83-workaround"
+    "TAOENSSO_CARMINE_ISSUE_83_WORKAROUND"))
 
 (defn thaw-if-possible-nippy-bytes
   "If given agrgument is a byte-array starting with apparent NPY header,
