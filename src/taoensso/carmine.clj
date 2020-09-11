@@ -12,8 +12,8 @@
              (commands    :as commands)]))
 
 (if (vector? taoensso.encore/encore-version)
-  (enc/assert-min-encore-version [2 111 0])
-  (enc/assert-min-encore-version  2.111))
+  (enc/assert-min-encore-version [2 127 0])
+  (enc/assert-min-encore-version  2.127))
 
 ;;;; Connections
 
@@ -164,12 +164,32 @@
 
   However folks starting with Carmine after v2.6.1 and who have
   never pre-serialized Nippy data written with Carmine may prefer
-  to disable the workaround (use `alter-var-root`).
+  to disable the workaround.
 
   If you're not sure what this is or if it's safe to change, you
-  should probably leave it at the default setting. Or Ref.
-  https://github.com/ptaoussanis/carmine/issues/83 for more details."
-  true)
+  should probably leave it at the default (true) value.
+
+  To change the default (true) value:
+
+    - Call `(alter-var-root #'taoensso.carmine/issue-83-workaround? (fn [_] false))`,
+    - or set one of the following to \"false\" or \"FALSE\":
+      - `taoensso.carmine.issue-83-workaround` JVM property
+      - `TAOENSSO_CARMINE_ISSUE-83-WORKAROUND` env var
+
+  Ref. https://github.com/ptaoussanis/carmine/issues/83 for more info."
+
+  (if-let [sv (enc/get-sys-val
+                "taoensso.carmine.issue-83-workaround"
+                "TAOENSSO_CARMINE_ISSUE-83-WORKAROUND")]
+
+    (case sv
+      ("true"  "TRUE")  true
+      ("false" "FALSE") false
+      (throw
+        (ex-info "Unexpected `issue-83-workaround?` value"
+          {:value sv})))
+
+    true))
 
 (defn thaw-if-possible-nippy-bytes
   "If given agrgument is a byte-array starting with apparent NPY header,
