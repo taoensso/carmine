@@ -11,11 +11,11 @@
                 *assert* true}
 
   :dependencies
-  [[com.taoensso/encore              "2.127.0"]
+  [[com.taoensso/encore              "3.1.0"]
    [com.taoensso/timbre              "4.10.0"]
    [com.taoensso/nippy               "2.14.0"]
-   [org.apache.commons/commons-pool2 "2.4.2"] ; Nb bug in newer versions, see #213
-   [commons-codec/commons-codec      "1.13"]]
+   [org.apache.commons/commons-pool2 "2.8.1"]
+   [commons-codec/commons-codec      "1.15"]]
 
   :plugins
   [[lein-pprint  "1.3.2"]
@@ -32,15 +32,15 @@
    :1.8      {:dependencies [[org.clojure/clojure    "1.8.0"]]}
    :1.9      {:dependencies [[org.clojure/clojure    "1.9.0"]]}
    :1.10     {:dependencies [[org.clojure/clojure    "1.10.1"]]}
-   :test     {:dependencies [[org.clojure/test.check "0.10.0"]]}
+   :test     {:dependencies [[org.clojure/test.check "1.1.0"]]}
    :depr     {:jvm-opts ["-Dtaoensso.elide-deprecated=true"]}
    :dev
    [:1.10 :test :server-jvm :depr
     {:dependencies
-     [[org.clojure/data.json "0.2.7"]
+     [[org.clojure/data.json "1.0.0"]
       [com.taoensso/faraday  "1.9.0"]
       [clj-aws-s3            "0.3.10"]
-      [ring/ring-core        "1.8.0"]]}]}
+      [ring/ring-core        "1.8.1"]]}]}
 
   :test-paths ["test" "src"]
 
