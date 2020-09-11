@@ -13,7 +13,7 @@
   :dependencies
   [[com.taoensso/encore              "3.1.0"]
    [com.taoensso/timbre              "4.10.0"]
-   [com.taoensso/nippy               "2.14.0"]
+   [com.taoensso/nippy               "3.0.0-RC1"]
    [org.apache.commons/commons-pool2 "2.8.1"]
    [commons-codec/commons-codec      "1.15"]]
 
