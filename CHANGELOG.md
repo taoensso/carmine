@@ -1,5 +1,26 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.21.0-RC1 / 2020 Sep 11
+
+```clojure
+[com.taoensso/carmine "2.21.0-RC1"]
+```
+
+> This is a maintenance + security release. It may be **BREAKING**.  
+> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+
+#### Changes since `v2.20.0`
+
+  - **[BREAKING]** Bumped minimum Clojure version from `v1.5` to `v1.7`.
+  - **[BREAKING]** Bump Nippy to `v3`, see Nippy `CVE-2020-24164` [issue #130](https://github.com/ptaoussanis/nippy/issues/130) for details, incl. **upgrade instructions**. This will affect you iff you use Carmine's automatic de/serialization feature.
+
+#### New since `v2.20.0`
+
+  - Update to [latest Redis commands spec](https://github.com/redis/redis-doc/blob/25555fe05a571454fa0f11dca28cb5796e04112f/commands.json).
+
+#### Fixes since `v2.20.0`
+
+
 ## v2.20.0 / 2020 Sep 11
 
 ```clojure

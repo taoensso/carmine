@@ -4,7 +4,8 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.20.0"] ; See CHANGELOG for details
+[com.taoensso/carmine "2.21.0-RC1"] ; BREAKING, see CHANGELOG for details
+[com.taoensso/carmine "2.20.0"]     ; Stable
 ```
 
 > See [here](https://taoensso.com/clojure/backers) if you're interested in helping support my open-source work, thanks! - Peter Taoussanis
