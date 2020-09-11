@@ -11,7 +11,7 @@
                 *assert* true}
 
   :dependencies
-  [[com.taoensso/encore              "2.117.0"]
+  [[com.taoensso/encore              "2.127.0"]
    [com.taoensso/timbre              "4.10.0"]
    [com.taoensso/nippy               "2.14.0"]
    [org.apache.commons/commons-pool2 "2.4.2"] ; Nb bug in newer versions, see #213
