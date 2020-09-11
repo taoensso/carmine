@@ -1,5 +1,16 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v2.20.0 / 2020 Sep 11
+
+```clojure
+[com.taoensso/carmine "2.20.0"]
+```
+
+Same as `v2.20.0-RC1`.
+
+> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+
+
 ## v2.20.0-RC1 / 2019 Dec 21
 
 ```clojure

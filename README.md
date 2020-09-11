@@ -4,8 +4,7 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.19.1"]     ; Stable
-[com.taoensso/carmine "2.20.0-RC1"] ; See CHANGELOG for details
+[com.taoensso/carmine "2.20.0"] ; See CHANGELOG for details
 ```
 
 > See [here](https://taoensso.com/clojure/backers) if you're interested in helping support my open-source work, thanks! - Peter Taoussanis
@@ -46,7 +45,7 @@ Your link here?          | **PR's welcome!**
 Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "2.19.1"]
+[com.taoensso/carmine "2.20.0"]
 ```
 
 And setup your namespace imports:
