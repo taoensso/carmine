@@ -25,16 +25,17 @@
   :profiles
   {;; :default [:base :system :user :provided :dev]
    :server-jvm {:jvm-opts ^:replace ["-server"]}
-   :provided {:dependencies [[org.clojure/clojure "1.5.1"]]}
-   :1.5      {:dependencies [[org.clojure/clojure "1.5.1"]]}
-   :1.6      {:dependencies [[org.clojure/clojure "1.6.0"]]}
-   :1.7      {:dependencies [[org.clojure/clojure "1.7.0"]]}
-   :1.8      {:dependencies [[org.clojure/clojure "1.8.0"]]}
-   :1.9      {:dependencies [[org.clojure/clojure "1.9.0"]]}
-   :1.10     {:dependencies [[org.clojure/clojure "1.10.1"]]}
+   :provided {:dependencies [[org.clojure/clojure    "1.5.1"]]}
+   :1.5      {:dependencies [[org.clojure/clojure    "1.5.1"]]}
+   :1.6      {:dependencies [[org.clojure/clojure    "1.6.0"]]}
+   :1.7      {:dependencies [[org.clojure/clojure    "1.7.0"]]}
+   :1.8      {:dependencies [[org.clojure/clojure    "1.8.0"]]}
+   :1.9      {:dependencies [[org.clojure/clojure    "1.9.0"]]}
+   :1.10     {:dependencies [[org.clojure/clojure    "1.10.1"]]}
    :test     {:dependencies [[org.clojure/test.check "0.10.0"]]}
+   :depr     {:jvm-opts ["-Dtaoensso.elide-deprecated=true"]}
    :dev
-   [:1.10 :test :server-jvm
+   [:1.10 :test :server-jvm :depr
     {:dependencies
      [[org.clojure/data.json "0.2.7"]
       [com.taoensso/faraday  "1.9.0"]
@@ -44,9 +45,9 @@
   :test-paths ["test" "src"]
 
   :aliases
-  {"test-all"   ["with-profile" "+1.10:+1.9:+1.8:+1.7:+1.6:+1.5" "test"]
+  {"start-dev"  ["with-profile" "+dev" "repl" ":headless"]
    "deploy-lib" ["do" "deploy" "clojars," "install"]
-   "start-dev"  ["with-profile" "+dev" "repl" ":headless"]}
+   "test-all"   ["with-profile" "+1.10:+1.9:+1.8:+1.7:+1.6:+1.5" "test"]}
 
   :repositories
   {"sonatype-oss-public"
