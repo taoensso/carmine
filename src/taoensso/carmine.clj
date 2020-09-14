@@ -605,7 +605,7 @@
       (parse-suppress (watch k))
       (let [[old-val ex] (parse nil (with-replies (get k) (exists k)))
             nx?          (= ex 0)
-            [new-val return-val] (enc/-vswapped (f old-val nx?))
+            [new-val return-val] (enc/swapped-vec (f old-val nx?))
             cas-success?
             (case new-val
               :swap/abort  (do (unwatch)         true)
@@ -680,7 +680,7 @@
         (let [[old-val ex sha]     (parse nil (with-replies (cas-get k)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (enc/-vswapped (f old-val nx?))
+              [new-val return-val] (enc/swapped-vec (f old-val nx?))
               cas-success?
               (case new-val
                 :swap/abort true
@@ -715,7 +715,7 @@
         (let [[old-val ex sha]     (parse nil (with-replies (cas-hget k field)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (enc/-vswapped (f old-val nx?))
+              [new-val return-val] (enc/swapped-vec (f old-val nx?))
               cas-success?
               (case new-val
                 :swap/abort true
@@ -784,7 +784,7 @@
       (i.e. automatically de-duplicates elements)."
   ([rf          scan-fn] (reduce-hscan rf nil scan-fn))
   ([rf acc-init scan-fn]
-   (let [keys-seen_ (enc/-vol! (transient #{}))]
+   (let [keys-seen_ (volatile! (transient #{}))]
 
      (reduce-scan
        (fn wrapped-rf [acc kvs]
@@ -793,7 +793,7 @@
              (if (contains? @keys-seen_ k)
                acc
                (do
-                 (enc/-vol-swap! keys-seen_ conj! k)
+                 (vswap! keys-seen_ conj! k)
                  (enc/convey-reduced (rf acc k v)))))
            acc
            kvs))
