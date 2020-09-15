@@ -65,7 +65,7 @@
        (catch Throwable t# ; nb Throwable to catch assertions, etc.
          (conns/release-conn pool# conn# t#) (throw t#))
 
-       ;; Restore any stashed replies to preexisting context:
+       ;; Restore any stashed replies to pre-existing context:
        (finally
          (when ?stashed-replies#
            (parse nil ; Already parsed on stashing
@@ -408,6 +408,9 @@
 ;; To facilitate the unusual requirements we define a Listener to be a
 ;; combination of persistent, NON-pooled connection and threaded message
 ;; handler.
+;;
+;; Current API is a bit sketchy; would do differently today. Though not bad
+;; enough to be worth breaking now. Might address in a future version of Carmine.
 
 (declare close-listener)
 
@@ -415,12 +418,39 @@
   java.io.Closeable
   (close [this] (close-listener this)))
 
+(defn -with-new-listener
+  "Implementation detail. Returns new Listener."
+  [{:keys [conn-spec init-state handler-fn body-fn]}]
+  (let [state_      (atom init-state)
+        handler-fn_ (atom handler-fn)
+
+        {:keys [in] :as conn}
+        (conns/make-new-connection
+          (assoc (conns/conn-spec conn-spec)
+            :listener? true))
+
+        f
+        (future-call ; Thread to long-poll for messages
+          (bound-fn []
+            (while true ; Closes when conn closes
+              (let [reply (protocol/get-unparsed-reply in {})]
+                (try
+                  (@handler-fn_ reply @state_)
+                  (catch Throwable t
+                    (timbre/error  t
+                      "Listener handler exception")))))))]
+
+    (protocol/with-context conn (body-fn)
+       (protocol/execute-requests (not :get-replies) nil))
+
+    (Listener. conn handler-fn_ state_ f)))
+
 (defmacro with-new-listener
   "Creates a persistent[1] connection to Redis server and a thread to listen for
   server messages on that connection.
 
-  Incoming messages will be dispatched (along with current listener state) to
-  (fn handler [reply state-atom]).
+  Incoming messages will be dispatched (with current listener state) to
+  (fn handler [msg state]).
 
   Evaluates body within the context of the connection and returns a
   general-purpose Listener containing:
@@ -433,26 +463,14 @@
 
   [1] You probably do *NOT* want a :timeout for your `conn-spec` here."
   [conn-spec handler initial-state & body]
-  `(let [handler-atom# (atom ~handler)
-         state-atom#   (atom ~initial-state)
-         {:as conn# in# :in} (conns/make-new-connection
-                              (assoc (conns/conn-spec ~conn-spec)
-                                     :listener? true))
-         future# (future-call ; Thread to long-poll for messages
-                  (bound-fn []
-                    (while true ; Closes when conn closes
-                      (let [reply# (protocol/get-unparsed-reply in# {})]
-                        (try
-                          (@handler-atom# reply# @state-atom#)
-                          (catch Throwable t#
-                            (timbre/error t# "Listener handler exception")))))))]
-
-     (protocol/with-context conn# ~@body
-       (protocol/execute-requests (not :get-replies) nil))
-     (Listener. conn# handler-atom# state-atom# future#)))
+  `(-with-new-listener
+     {:conn-spec  ~conn-spec
+      :init-state ~initial-state
+      :handler    ~handler
+      :body-fn    (fn [] ~@body)}))
 
 (defmacro with-open-listener
-  "Evaluates body within the context of given listener's preexisting persistent
+  "Evaluates body within the context of given listener's pre-existing persistent
   connection."
   [listener & body]
   `(protocol/with-context (:connection ~listener) ~@body
@@ -461,6 +479,19 @@
 (defn close-listener [listener]
   (conns/close-conn (:connection listener))
   (future-cancel (:future listener)))
+
+(defn -with-new-pubsub-listener
+  "Implementation detail."
+  [{:keys [conn-spec msg-handler-fns body-fn]}]
+  (-with-new-listener
+    {:conn-spec  (assoc conn-spec :pubsub-listener? true)
+     :init-state msg-handler-fns ; {<chan-or-pattern> (fn [msg])}
+     :body-fn    body-fn
+     :handler-fn
+     (fn [msg state]
+       (let [[_msg-type chan-or-pattern _msg-content] msg]
+         (when-let [hf (clojure.core/get msg-handler-fns chan-or-pattern)]
+           (hf msg))))}))
 
 (defmacro with-new-pubsub-listener
   "A wrapper for `with-new-listener`.
@@ -485,15 +516,10 @@
 
   [1] You probably do *NOT* want a :timeout for your `conn-spec` here."
   [conn-spec message-handlers & subscription-commands]
-  `(with-new-listener (assoc ~conn-spec :pubsub-listener? true)
-
-     ;; Message handler (fn [message state])
-     (fn [[_# source-channel# :as incoming-message#] msg-handlers#]
-       (when-let [f# (clojure.core/get msg-handlers# source-channel#)]
-         (f# incoming-message#)))
-
-     ~message-handlers ; Initial state
-     ~@subscription-commands))
+  `(-with-new-pubsub-listener
+     {:conn-spec       ~conn-spec
+      :msg-handler-fns ~message-handlers
+      :body-fn         (fn [] ~@subscription-commands)}))
 
 ;;;; Atomic macro
 ;; The design here's a little on the heavy side; I'd suggest instead reaching
