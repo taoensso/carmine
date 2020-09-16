@@ -12,7 +12,8 @@
 (enc/declare-remote
   taoensso.carmine/ping
   taoensso.carmine/auth
-  taoensso.carmine/select)
+  taoensso.carmine/select
+  taoensso.carmine/parse)
 
 ;;; Outline/nomenclature
 ;; connection -> Connection object.
@@ -23,23 +24,30 @@
 ;; conn opts  -> {:pool <pool-opts> :spec <spec-opts>} as taken by `wcar`, etc.
 
 (defprotocol IConnection
+  (-conn-error [this])
   (conn-alive? [this])
   (close-conn  [this]))
 
 (defrecord Connection [^Socket socket spec in out]
   IConnection
-  (conn-alive? [this]
-    (if (:listener? spec)
-      true ; TODO Waiting on Ref. http://goo.gl/LPhIO
-      (= "PONG"
-        (try
-          (protocol/with-context this
-            (protocol/with-replies
-              (taoensso.carmine/ping)))
+  (conn-alive? [this] (nil? (-conn-error this)))
+  (-conn-error [this]
+    (try
+      (let [resp
+            (protocol/with-context this
+              (taoensso.carmine/parse nil
+                (protocol/with-replies
+                  (taoensso.carmine/ping))))]
 
-          (catch Exception ex
-            (when-let [f (get-in spec [:instrument :on-conn-error])]
-              (f {:spec spec :ex ex})))))))
+        ;; Ref. https://github.com/redis/redis/issues/420
+        (when (not= resp (if (:listener? this) ["ping" ""] "PONG"))
+          (throw
+            (ex-info "Unexpected PING response" {:resp resp}))))
+
+      (catch Exception ex
+        (when-let [f (get-in spec [:instrument :on-conn-error])]
+          (f {:spec spec :ex ex}))
+        ex)))
 
   (close-conn [_]
     (when-let [f (get-in spec [:instrument :on-conn-close])] (f {:spec spec}))
