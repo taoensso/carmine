@@ -250,16 +250,19 @@
         listener (car/with-new-pubsub-listener
                    {} {"ps-foo" #(swap! received conj %)}
                    (car/subscribe "ps-foo"))]
+
     (wcar* (car/publish "ps-foo" "one")
            (car/publish "ps-foo" "two")
            (car/publish "ps-foo" "three"))
+
     (Thread/sleep 500)
     (car/close-listener listener)
+
     (is (= [["subscribe" "ps-foo" 1]
             ["message"   "ps-foo" "one"]
             ["message"   "ps-foo" "two"]
             ["message"   "ps-foo" "three"]]
-           @received))))
+          @received))))
 
 (deftest pubsub-multi-channels-test
   (let [received (atom [])
@@ -267,11 +270,14 @@
                    {} {"ps-foo" #(swap! received conj %)
                        "ps-baz" #(swap! received conj %)}
                    (car/subscribe "ps-foo" "ps-baz"))]
+
     (wcar* (car/publish "ps-foo" "one")
            (car/publish "ps-bar" "two")
            (car/publish "ps-baz" "three"))
+
     (Thread/sleep 500)
     (car/close-listener listener)
+
     (is (= [["subscribe" "ps-foo" 1]
             ["subscribe" "ps-baz" 2]
             ["message"   "ps-foo" "one"]
@@ -287,6 +293,7 @@
     (car/with-open-listener listener
       (car/psubscribe "ps-*")
       (car/subscribe  "ps-foo"))
+
     (wcar* (car/publish "ps-foo" "one")
            (car/publish "ps-bar" "two")
            (car/publish "ps-baz" "three"))
@@ -311,7 +318,68 @@
             ["unsubscribe" "ps-foo" 1]
             ["pmessage"    "ps-*"   "ps-foo" "four"]
             ["pmessage"    "ps-*"   "ps-baz" "five"]]
-           @received))))
+          @received))))
+
+(defn- strip-msg-noise [m]
+  (if-not (map? m)
+    m
+    (let [m (assoc m :raw {:test/raw (count (get m :raw))})
+          m
+          (if (get-in m [:payload :throwable])
+            (assoc-in m [:payload :throwable] :test/throwable)
+            (do       m))
+
+          m
+          (if (get-in m [:payload :listener])
+            (assoc-in m [:payload :listener] :test/listener)
+            (do       m))]
+      m)))
+
+(comment (strip-msg-noise {:kind :foo :payload {:throwable "t" :listener "l"}}))
+
+(deftest pubsub-ping-and-errors-test
+  (let [received_ (atom [])
+        listener
+        (car/with-new-pubsub-listener
+          {:ping-ms 1000} ^:parse
+          (fn [msg _]
+            (let [{:keys [kind channel pattern payload raw]} msg]
+              (swap! received_ conj msg)
+              (when (= payload "throw") (throw (Exception. "Whoops!")))))
+          (car/psubscribe "*"))]
+
+    (wcar*
+      (car/publish "chan1" "msg1")
+      (car/publish "chan1" "msg2")
+      (car/publish "chan2" "msg1")
+      (car/publish "chan2" "throw")
+      (car/publish "chan2" "msg2"))
+
+    (Thread/sleep 1500) ; Time for ping msg
+
+    (wcar* (car/publish "chan1" "msg3"))
+
+    (Thread/sleep 100)
+    (car/close-listener listener)
+
+    (Thread/sleep 100)
+
+    (let [[r0 r1 r2 r3 r4 r5 r6 r7 r8 r9] (mapv strip-msg-noise @received_)]
+      (is (= r0 {:kind "psubscribe",               :channel "*",     :payload 1,       :raw #:test{:raw 3}}))
+      (is (= r1 {:kind "pmessage",   :pattern "*", :channel "chan1", :payload "msg1",  :raw #:test{:raw 4}}))
+      (is (= r2 {:kind "pmessage",   :pattern "*", :channel "chan1", :payload "msg2",  :raw #:test{:raw 4}}))
+      (is (= r3 {:kind "pmessage",   :pattern "*", :channel "chan2", :payload "msg1",  :raw #:test{:raw 4}}))
+      (is (= r4 {:kind "pmessage",   :pattern "*", :channel "chan2", :payload "throw", :raw #:test{:raw 4}}))
+      (is (= r5 {:kind "carmine",                  :channel "carmine:listener:error",
+                 :payload {:error :handler-ex, :throwable :test/throwable, :listener :test/listener},
+                 :raw #:test{:raw 3}}))
+
+      (is (= r6 {:kind "pmessage", :pattern "*", :channel "chan2", :payload "msg2", :raw #:test{:raw 4}}))
+      (is (= r7 {:kind "pong",                                     :payload "",     :raw #:test{:raw 2}}))
+      (is (= r8 {:kind "pmessage", :pattern "*", :channel "chan1", :payload "msg3", :raw #:test{:raw 4}}))
+      (is (= r9 {:kind "carmine",                :channel "carmine:listener:error",
+                  :payload {:error :conn-closed, :throwable nil, :listener :test/listener},
+                  :raw #:test{:raw 3}})))))
 
 (deftest bin-safety-test
   (let [k  (tkey "binary-safety")

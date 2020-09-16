@@ -414,60 +414,14 @@
 
 (declare close-listener)
 
-(defrecord Listener [connection handler state future]
+(defrecord Listener [connection handler state future id status_]
   java.io.Closeable
   (close [this] (close-listener this)))
 
-(defn -with-new-listener
-  "Implementation detail. Returns new Listener."
-  [{:keys [conn-spec init-state handler-fn body-fn]}]
-  (let [state_      (atom init-state)
-        handler-fn_ (atom handler-fn)
-
-        {:keys [in] :as conn}
-        (conns/make-new-connection
-          (assoc (conns/conn-spec conn-spec)
-            :listener? true))
-
-        f
-        (future-call ; Thread to long-poll for messages
-          (bound-fn []
-            (while true ; Closes when conn closes
-              (let [reply (protocol/get-unparsed-reply in {})]
-                (try
-                  (@handler-fn_ reply @state_)
-                  (catch Throwable t
-                    (timbre/error  t
-                      "Listener handler exception")))))))]
-
-    (protocol/with-context conn (body-fn)
-       (protocol/execute-requests (not :get-replies) nil))
-
-    (Listener. conn handler-fn_ state_ f)))
-
-(defmacro with-new-listener
-  "Creates a persistent[1] connection to Redis server and a thread to listen for
-  server messages on that connection.
-
-  Incoming messages will be dispatched (with current listener state) to
-  (fn handler [msg state]).
-
-  Evaluates body within the context of the connection and returns a
-  general-purpose Listener containing:
-    1. The underlying persistent connection to facilitate `close-listener` and
-       `with-open-listener`.
-    2. An atom containing the function given to handle incoming server messages.
-    3. An atom containing any other optional listener state.
-
-  Useful for Pub/Sub, monitoring, etc.
-
-  [1] You probably do *NOT* want a :timeout for your `conn-spec` here."
-  [conn-spec handler initial-state & body]
-  `(-with-new-listener
-     {:conn-spec  ~conn-spec
-      :init-state ~initial-state
-      :handler    ~handler
-      :body-fn    (fn [] ~@body)}))
+(defn close-listener [listener]
+  (when (compare-and-set! (:status_ listener) :running :closed)
+    (conns/close-conn (:connection listener))
+    (future-cancel    (:future     listener))))
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's pre-existing persistent
@@ -476,50 +430,275 @@
   `(protocol/with-context (:connection ~listener) ~@body
      (protocol/execute-requests (not :get-replies) nil)))
 
-(defn close-listener [listener]
-  (conns/close-conn (:connection listener))
-  (future-cancel (:future listener)))
+(defn- get-ping-fn
+  "Returns (fn ping-fn [action]) with actions:
+    :reset!  ; Records activity
+    :reset!? ; Records activity and returns true iff no activity recorded in
+             ; last `msecs`"
+  ;; Much simpler to implement only for listeners than as a general conns feature
+  ;; (where hooking in to recording activity is non-trivial).
+  [msecs]
+  (let [msecs          (long msecs)
+        last-activity_ (atom (System/currentTimeMillis))]
 
-(defn -with-new-pubsub-listener
+    (fn ping-fn [action]
+      (case action
+        :reset! (enc/reset-in! last-activity_ (System/currentTimeMillis))
+        :reset!?
+        (let [now (System/currentTimeMillis)]
+          (enc/swap-in! last-activity_
+            (fn [^long last-activity]
+              (if (> (- now last-activity) msecs)
+                (enc/swapped now           true)
+                (enc/swapped last-activity false)))))))))
+
+(comment (def pfn (get-ping-fn 2000)) (pfn :reset!?))
+
+(defn parse-listener-msg
+  "Parses given listener message of form:
+    - [\"pong\"                              \"\"]
+    - [\"message\"            <channel> <payload>]
+    - [\"pmessage\" <pattern> <channel> <payload>], etc.
+
+  and returns {:kind _ :pattern _ :channel _ :payload _ :raw _}."
+  [listener-msg]
+  (let [v (enc/have vector? listener-msg)]
+    (case (count v)
+      2 (let [[x1 x2      ] v] {:kind x1                            :payload x2  :raw v})
+      3 (let [[x1 x2 x3   ] v] {:kind x1               :channel x2  :payload x3  :raw v})
+      4 (let [[x1 x2 x3 x4] v] {:kind x1  :pattern x2  :channel x3  :payload x4  :raw v})
+      (do                      {                                                 :raw v}))))
+
+(comment
+  (parse-listener-msg ["ping" ""])
+  (parse-listener-msg ["message" "chan1" "payload"]))
+
+(defn -call-with-new-listener
+  "Implementation detail. Returns new Listener."
+  [{:keys [conn-spec init-state handler-fn body-fn
+           ;; Incompatible with current unextensible macro API:
+           ;; ping-ms error-fn swapping-handler? ; TODO Future release
+           ]}]
+
+  (let [status_     (atom :running) ; e/o #{:running :closed :broken}
+        state_      (atom init-state)
+        handler-fn_ (atom handler-fn)
+        future_     (atom nil)
+        listener_   (atom nil)
+        done?_      (atom false)
+
+        {:keys [in] :as conn}
+        (conns/make-new-connection
+          (assoc (conns/conn-spec conn-spec)
+            :listener? true))
+
+        {:keys [ping-ms]} conn-spec
+        ?ping-fn (when-let [ms ping-ms] (get-ping-fn ms))
+
+        handle
+        (fn [msg]
+          (when-let [hf @handler-fn_]
+            (let [{:keys [swap parse]} (meta hf) ; Undocumented
+                  msg (if parse (parse-listener-msg msg) msg)]
+
+              (if swap
+                (swap! state_ (fn [state] (hf msg  state)))
+                (do                       (hf msg @state_))))))
+
+        handle-error
+        (fn [error throwable]
+          (try
+            (handle
+              ["carmine" "carmine:listener:error"
+               {:error     error
+                :throwable throwable
+                :listener  @listener_}])
+
+            true
+            (catch Throwable t
+              (timbre/error  t "Listener (error) handler exception")
+              false)))
+
+        done!
+        (fn [throwable]
+          (when (compare-and-set! done?_ false true)
+            (if (compare-and-set! status_ :running :broken)
+              (do ; Breaking
+                (when-let [f @future_] (future-cancel f))
+                (or
+                  (handle-error :conn-broken throwable)
+                  (if-let [t throwable]
+                    (timbre/error t "Listener connection broken")
+                    (timbre/error   "Listener connection broken"))))
+
+              (or ; Closing
+                (handle-error :conn-closed nil)
+                (timbre/error "Listener connection closed"))))
+
+          nil ; Never handle as msg
+          )
+
+        msg-polling-future
+        (future-call
+          (bound-fn []
+            (loop []
+              (when-not @done?_
+
+                (when-let [pfn ?ping-fn] (pfn :reset!)) ; Record activity on conn
+                (when-let [msg
+                           (try
+                             (protocol/get-unparsed-reply in {})
+
+                             (catch java.net.SocketTimeoutException _
+                               (when-let [ex (conns/-conn-error conn)]
+                                 (done! ex)))
+
+                             (catch Exception ex
+                               (done! ex)))]
+
+                  (try
+                    (handle msg)
+                    (catch Throwable t
+                      (or
+                        (handle-error :handler-ex t)
+                        (timbre/error t "Listener handler exception")))))
+
+                (recur)))))
+
+        listener
+        (Listener. conn handler-fn_ state_ msg-polling-future
+          (enc/uuid-str) status_)]
+
+    (reset! listener_ listener)
+    (reset! future_   msg-polling-future)
+
+    (protocol/with-context conn (body-fn)
+      (protocol/execute-requests (not :get-replies) nil))
+
+    (when-let [pfn ?ping-fn]
+      (let [sleep-msecs (+ (long ping-ms) 100)
+            f
+            (bound-fn []
+              (loop []
+                (when-not @done?_
+                  (Thread/sleep sleep-msecs)
+                  (when (pfn :reset!?) ; Should ping now?
+                    (try
+                      (protocol/with-context conn (ping)
+                        (protocol/execute-requests (not :get-replies) nil))
+                      (catch Exception ex
+                        (done! ex))))
+                  (recur))))]
+
+        (doto (Thread. ^Runnable f)
+          (.setDaemon true)
+          (.start))))
+
+    listener))
+
+(defn -call-with-new-pubsub-listener
   "Implementation detail."
-  [{:keys [conn-spec msg-handler-fns body-fn]}]
-  (-with-new-listener
-    {:conn-spec  (assoc conn-spec :pubsub-listener? true)
-     :init-state msg-handler-fns ; {<chan-or-pattern> (fn [msg])}
-     :body-fn    body-fn
-     :handler-fn
-     (fn [msg state]
-       (let [[_msg-type chan-or-pattern _msg-content] msg]
-         (when-let [hf (clojure.core/get msg-handler-fns chan-or-pattern)]
-           (hf msg))))}))
+  [{:keys [conn-spec handler body-fn]}]
+  (let [?msg-handler-fns (when (map? handler) handler)]
+    (-call-with-new-listener
+      {:conn-spec  (assoc conn-spec :pubsub-listener? true)
+       :init-state (when-let [m ?msg-handler-fns] m)
+       :body-fn    body-fn
+       :handler-fn
+       (if-let [msg-handler-fns ?msg-handler-fns] ; {<chan-or-pattern> (fn [msg])}
+         (fn [msg _state]
+           (let [{:keys [channel pattern]} (parse-listener-msg msg)]
+             (enc/cond
+               :if-let [hf (clojure.core/get msg-handler-fns channel)] (hf msg)
+               :if-let [hf (clojure.core/get msg-handler-fns pattern)] (hf msg)
+
+               ;; Useful for "carmine"-kind messages
+               :if-let [hf (clojure.core/get msg-handler-fns "*")]     (hf msg))))
+
+         handler)})))
+
+(defmacro with-new-listener
+  "Creates a persistent[1] connection to Redis server and a future to listen for
+  server messages on that connection.
+
+  (fn handler [msg current-state]) will be called on each incoming message [2].
+
+  Evaluates body within the context of the connection and returns a
+  general-purpose Listener containing:
+
+    1. The connection for use with `with-open-listener`, `close-listener`.
+    2. An atom containing the handler fn.
+    3. An atom containing optional listener state.
+
+  Useful for Pub/Sub, monitoring, etc.
+
+  Errors will be published to \"carmine:listener:error\" channel with Clojure
+  payload {:keys [error throwable listener]},
+    :error e/o #{:conn-closed :conn-broken :handler-ex}.
+
+  [1] You probably do *NOT* want a :timeout for your `conn-spec` here.
+  `conn-spec` can include `:ping-ms`, which'll test conn every given msecs.
+  0
+  [2] See also `parse-listener-msg`."
+  ;; [{:keys []} & body] ; TODO Future release
+  [conn-spec handler-fn init-state & body]
+  `(-call-with-new-listener
+     {:conn-spec  ~conn-spec
+      :init-state ~init-state
+      :handler-fn ~handler-fn
+      :body-fn    (fn [] ~@body)}))
 
 (defmacro with-new-pubsub-listener
-  "A wrapper for `with-new-listener`.
+  "Like `with-new-listener` but `handler` is:
+  {<channel-or-pattern> (fn handler [msg])}.
 
-  Creates a persistent[1] connection to Redis server and a thread to
-  handle messages published to channels that you subscribe to with
-  `subscribe`/`psubscribe` calls in body.
+  Example:
 
-  Handlers will receive messages of form:
-    [<msg-type> <channel/pattern> <message-content>].
+    (with-new-pubsub-listener
+      {} ; Connection spec, as per `wcar` docstring [1]
 
-  (with-new-pubsub-listener
-    {} ; Connection spec, as per `wcar` docstring [1]
-    {\"channel1\" (fn [[type match content :as msg]] (prn \"Channel match: \" msg))
-     \"user*\"    (fn [[type match content :as msg]] (prn \"Pattern match: \" msg))}
-    (subscribe \"foobar\") ; Subscribe thread conn to \"foobar\" channel
-    (psubscribe \"foo*\")  ; Subscribe thread conn to \"foo*\" channel pattern
-   )
+      {\"channel1\" (fn [msg] (println \"Channel match: \" msg))
+       \"user*\"    (fn [msg] (println \"Pattern match: \" msg))}
 
-  Returns the Listener to allow manual closing and adjustments to
-  message-handlers.
+      (subscribe \"foobar\") ; Subscribe thread conn to \"foobar\" channel
+      (psubscribe \"foo*\")  ; Subscribe thread conn to \"foo*\"   channel pattern
+      )
 
-  [1] You probably do *NOT* want a :timeout for your `conn-spec` here."
-  [conn-spec message-handlers & subscription-commands]
-  `(-with-new-pubsub-listener
-     {:conn-spec       ~conn-spec
-      :msg-handler-fns ~message-handlers
-      :body-fn         (fn [] ~@subscription-commands)}))
+  See `with-new-listener` for more info."
+  ;; [{:keys []} & body] ; TODO Future release
+  [conn-spec handler & subscription-commands]
+  `(-call-with-new-pubsub-listener
+     {:conn-spec ~conn-spec
+      :handler   ~handler
+      :body-fn   (fn [] ~@subscription-commands)}))
+
+(comment
+  (wcar {:cache-buster 1} :as-pipeline
+    (return (conns/-conn-error (:conn protocol/*context*)))
+    (ping)
+    (subscribe "foo")
+    (return (conns/-conn-error (:conn protocol/*context*)))
+    (ping)
+    (quit))
+
+  (def my-listener
+    (with-new-pubsub-listener {:ping-ms 3000 :cache-buster 2}
+      ^:parse
+      (fn [msg state]
+        (let [{:keys [kind channel pattern payload raw]} msg]
+          (println [:debug/global msg])
+          (when (= payload "throw")
+            (throw (Exception. "Whoops!")))))
+      #_
+      {"chan1" (fn [msg] (println [:debug/chan1 msg]))
+       "*"     (fn [msg] (println [:debug/*     msg]))}
+
+      (subscribe   "chan1")
+      (psubscribe "pchan1" "*")))
+
+  (wcar {} (publish "chan1" "msg"))
+  (wcar {} (publish "chan1" "throw"))
+  (close-listener my-listener))
 
 ;;;; Atomic macro
 ;; The design here's a little on the heavy side; I'd suggest instead reaching
