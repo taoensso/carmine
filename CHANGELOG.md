@@ -1,5 +1,32 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v3.0.0 / 2020 Sep 22
+
+```clojure
+[com.taoensso/carmine "3.0.0"]
+```
+
+> This is a major feature + security release. It may be **BREAKING**.  
+> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+
+#### Changes since `v2.20.0`
+
+  - **[BREAKING]** Bumped minimum Clojure version from `v1.5` to `v1.7`.
+  - **[BREAKING]** Bump Nippy to [v3](https://github.com/ptaoussanis/nippy/releases/tag/v3.0.0) for an **important security fix**. See [here](https://github.com/ptaoussanis/nippy/issues/130) for details incl. **necessary upgrade instructions** for folks using Carmine's automatic de/serialization feature.
+  - Bump Timbre to [v5](https://github.com/ptaoussanis/timbre/releases/tag/v5.0.0).
+
+#### New since `v2.20.0`
+
+  - Update to [latest Redis commands spec](https://github.com/redis/redis-doc/blob/25555fe05a571454fa0f11dca28cb5796e04112f/commands.json).
+  - Listeners (incl. Pub/Sub) significantly improved:
+    - [#15] Allow `conn-alive?` check for listener connections
+    - [#219] Try ping on socket timeouts for increased reliability (@ylgrgyq)
+    - [#207] Publish connection and handler errors to handlers, enabling convenient reconnect logic (@aravindbaskaran)
+    - [#207] Support optional ping-ms keep-alive for increased reliability (@aravindbaskaran)
+    - Added `parse-listener-msg` util for more easily writing handler fns
+    - Allow `with-new-pubsub-listener` to take a single direct handler-fn
+
+
 ## v2.21.0-RC1 / 2020 Sep 11
 
 ```clojure
@@ -17,8 +44,6 @@
 #### New since `v2.20.0`
 
   - Update to [latest Redis commands spec](https://github.com/redis/redis-doc/blob/25555fe05a571454fa0f11dca28cb5796e04112f/commands.json).
-
-#### Fixes since `v2.20.0`
 
 
 ## v2.20.0 / 2020 Sep 11

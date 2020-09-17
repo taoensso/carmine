@@ -4,15 +4,14 @@
 **[CHANGELOG]** | [API] | current [Break Version]:
 
 ```clojure
-[com.taoensso/carmine "2.21.0-RC1"] ; BREAKING, see CHANGELOG for details
-[com.taoensso/carmine "2.20.0"]     ; Stable
+[com.taoensso/carmine "3.0.0"] ; See CHANGELOG for details
 ```
 
 > See [here](https://taoensso.com/clojure/backers) if you're interested in helping support my open-source work, thanks! - Peter Taoussanis
 
 # Carmine
 
-### A Clojure Redis client & message queue
+### A pure-Clojure Redis client & message queue
 
 [Redis] is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
 
@@ -46,7 +45,7 @@ Your link here?          | **PR's welcome!**
 Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "2.20.0"]
+[com.taoensso/carmine "3.0.0"]
 ```
 
 And setup your namespace imports:
