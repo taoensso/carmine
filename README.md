@@ -9,9 +9,7 @@
 
 > See [here](https://taoensso.com/clojure/backers) if you're interested in helping support my open-source work, thanks! - Peter Taoussanis
 
-# Carmine
-
-### A pure-Clojure Redis client & message queue
+# Carmine: a pure-Clojure Redis client & message queue
 
 [Redis] is _awesome_ and it's getting [more awesome](http://www.redis.io/commands/eval) [every day](http://redis.io/topics/cluster-spec). It deserves a great Clojure client.
 
@@ -45,7 +43,8 @@ Your link here?          | **PR's welcome!**
 Add the necessary dependency to your project:
 
 ```clojure
-[com.taoensso/carmine "3.0.0"]
+Leiningen: [com.taoensso/carmine "3.0.0"] ; or
+deps.edn:   com.taoensso/carmine {:mvn/version "3.0.0"}
 ```
 
 And setup your namespace imports:
