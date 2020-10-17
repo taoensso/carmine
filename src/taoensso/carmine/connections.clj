@@ -12,8 +12,7 @@
 (enc/declare-remote
   taoensso.carmine/ping
   taoensso.carmine/auth
-  taoensso.carmine/select
-  taoensso.carmine/parse)
+  taoensso.carmine/select)
 
 ;;; Outline/nomenclature
 ;; connection -> Connection object.
@@ -35,7 +34,7 @@
     (try
       (let [resp
             (protocol/with-context this
-              (taoensso.carmine/parse nil
+              (protocol/parse nil
                 (protocol/with-replies
                   (taoensso.carmine/ping))))]
 
