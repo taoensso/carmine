@@ -11,10 +11,10 @@
                 *assert* true}
 
   :dependencies
-  [[com.taoensso/encore              "3.1.0"]
-   [com.taoensso/timbre              "5.0.0"]
-   [com.taoensso/nippy               "3.0.0"]
-   [org.apache.commons/commons-pool2 "2.8.1"]
+  [[com.taoensso/encore              "3.9.2"]
+   [com.taoensso/timbre              "5.1.0"]
+   [com.taoensso/nippy               "3.1.1"]
+   [org.apache.commons/commons-pool2 "2.9.0"]
    [commons-codec/commons-codec      "1.15"]]
 
   :plugins
@@ -38,7 +38,7 @@
      [[org.clojure/data.json "1.0.0"]
       [com.taoensso/faraday  "1.9.0"]
       [clj-aws-s3            "0.3.10"]
-      [ring/ring-core        "1.8.1"]]}]}
+      [ring/ring-core        "1.8.2"]]}]}
 
   :test-paths ["test" "src"]
 
