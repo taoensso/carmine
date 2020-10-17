@@ -24,7 +24,7 @@
   [conn-opts & [{:keys [key-prefix expiration-secs]
                  :or   {key-prefix      "carmine:session"
                         expiration-secs (enc/secs :days 30)}}]]
-  (CarmineSessionStore. conn-opts key-prefix expiration-secs))
+  (->CarmineSessionStore conn-opts key-prefix expiration-secs))
 
 (enc/deprecated
   (defn make-carmine-store ; 1.x backwards compatiblity

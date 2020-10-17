@@ -566,7 +566,7 @@
                 (recur)))))
 
         listener
-        (Listener. conn handler-fn_ state_ msg-polling-future
+        (->Listener conn handler-fn_ state_ msg-polling-future
           (enc/uuid-str) status_)]
 
     (reset! listener_ listener)

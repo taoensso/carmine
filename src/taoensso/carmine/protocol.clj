@@ -18,7 +18,7 @@
 
 (defmacro with-context "Implementation detail"
   [conn & body]
-  `(binding [*context* (Context. ~conn (atom []))
+  `(binding [*context* (->Context ~conn (atom []))
              *parser*  nil]
      ~@body))
 

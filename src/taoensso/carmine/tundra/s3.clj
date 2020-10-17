@@ -58,7 +58,7 @@
 
   Supported Freezer io types: byte[]s."
   [creds bucket] {:pre [(string? bucket)]}
-  (S3DataStore. creds bucket))
+  (->S3DataStore creds bucket))
 
 (comment
   (def dstore  (s3-datastore creds "ensso-store/folder"))

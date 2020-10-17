@@ -55,7 +55,7 @@
   "Alpha - subject to change.
   Requires JVM 1.7+.
   Supported Freezer io types: byte[]s."
-  [path] {:pre [(string? path)]} (DiskDataStore. path))
+  [path] {:pre [(string? path)]} (->DiskDataStore path))
 
 (comment
   (def dstore  (disk-datastore "./tundra"))

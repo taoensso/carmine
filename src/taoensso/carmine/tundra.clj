@@ -79,7 +79,7 @@
   (freeze [_ x]  (nippy/freeze x  opts))
   (thaw   [_ ba] (nippy/thaw   ba opts)))
 
-(def nippy-freezer "Default Nippy Freezer." (NippyFreezer. {}))
+(def nippy-freezer "Default Nippy Freezer." (->NippyFreezer {}))
 
 ;;;;
 
@@ -285,7 +285,7 @@
          ;; (or (nil? freezer) (satisfies? IFreezer freezer))
          (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))]}
 
-  (TundraStore. datastore freezer
+  (->TundraStore datastore freezer
     {:tqname (format "tundra:%s" (name tqname))
      :redis-ttl-ms redis-ttl-ms}))
 

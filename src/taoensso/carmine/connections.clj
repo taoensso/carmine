@@ -104,7 +104,7 @@
           socket)
 
         buff-size 16384 ; Err on the large size since we're pooling
-        conn (Connection. socket spec
+        conn (->Connection socket spec
                (-> (.getInputStream socket)
                    (BufferedInputStream. buff-size)
                    (DataInputStream.))
@@ -193,7 +193,7 @@
               {:max-total-per-key 16 ; from 8
                :max-idle-per-key  16 ; Same as above to avoid early connection closing
                }]
-          (ConnectionPool.
+          (->ConnectionPool
             (reduce-kv set-pool-option
               (GenericKeyedObjectPool. (make-connection-factory))
               (merge jedis-defaults carmine-defaults pool-opts))))))))
