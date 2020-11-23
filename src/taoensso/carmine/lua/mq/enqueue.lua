@@ -57,6 +57,12 @@ if state == nil then
       redis.call('lpush', _:qk-mid-circle, 'end-of-circle');
    end
 
+   -- Set the initial backoff if requested
+   local initial_backoff_ms = tonumber(_:initial-backoff-ms);
+   if (initial_backoff_ms ~= 0) then
+      redis.call('hset', _:qk-backoffs, _:mid, now + initial_backoff_ms);
+   end
+
    redis.call('lpush', _:qk-mid-circle, _:mid);
    return {_:mid};
 else

@@ -106,24 +106,25 @@
                            perform a de-duplication check. If unspecified, a
                            unique id will be auto-generated.
     * allow-requeue?     - When true, allow buffered escrow-requeue for a
-                           message in the :locked or :done-with-backoff state."
-  ;; TODO Option to enqueue something with an init backoff?
+                           message in the :locked or :done-with-backoff state.
+    * initial-backoff-ms - Initial backoff in millis."
   (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))]
-    (fn [qname message & [unique-message-id allow-requeue?]]
+    (fn [qname message & [{:keys [unique-message-id allow-requeue? initial-backoff-ms]}]]
       (car/parse
         #(if (vector? %) (get % 0) {:carmine.mq/error (keyword %)})
         (car/lua script
-          {:qk-messages    (qkey qname :messages)
-           :qk-locks       (qkey qname :locks)
-           :qk-backoffs    (qkey qname :backoffs)
-           :qk-nattempts   (qkey qname :nattempts)
-           :qk-mid-circle  (qkey qname :mid-circle)
-           :qk-done        (qkey qname :done)
-           :qk-requeue     (qkey qname :requeue)}
-          {:now            (enc/now-udt)
-           :mid            (or unique-message-id (enc/uuid-str))
-           :mcontent       (car/freeze message)
-           :allow-requeue? (if allow-requeue? "true" "false")})))))
+          {:qk-messages        (qkey qname :messages)
+           :qk-locks           (qkey qname :locks)
+           :qk-backoffs        (qkey qname :backoffs)
+           :qk-nattempts       (qkey qname :nattempts)
+           :qk-mid-circle      (qkey qname :mid-circle)
+           :qk-done            (qkey qname :done)
+           :qk-requeue         (qkey qname :requeue)}
+          {:now                (enc/now-udt)
+           :mid                (or unique-message-id (enc/uuid-str))
+           :mcontent           (car/freeze message)
+           :allow-requeue?     (if allow-requeue? "true" "false")
+           :initial-backoff-ms (or initial-backoff-ms 0)})))))
 
 (def dequeue
   "IMPLEMENTATION DETAIL: Use `worker` instead.
