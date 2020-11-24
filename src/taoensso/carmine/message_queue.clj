@@ -99,27 +99,41 @@
           {:now         (enc/now-udt)
            :mid         mid})))))
 
-(def enqueue
-  "Pushes given message (any Clojure datatype) to named queue and returns unique
-  message id or {:carmine.mq/error <message-status>}. Options:
-    * unique-message-id  - Specify an explicit message id (e.g. message hash) to
-                           perform a de-duplication check. If unspecified, a
-                           unique id will be auto-generated.
-    * allow-requeue?     - When true, allow buffered escrow-requeue for a
-                           message in the :locked or :done-with-backoff state.
-    * initial-backoff-ms - Initial backoff in millis."
-  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))]
-    (fn [qname message & [{:keys [unique-message-id allow-requeue? initial-backoff-ms]}]]
+(let [script_ (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua")))]
+  (defn enqueue
+    "Pushes given message (any Clojure datatype) to named queue and returns unique
+     message id or {:carmine.mq/error <message-status>}. Options:
+       * unique-message-id  - Specify an explicit message id (e.g. message hash) to
+                              perform a de-duplication check. If unspecified, a
+                              unique id will be auto-generated.
+       * allow-requeue?     - When true, allow buffered escrow-requeue for a
+                              message in the :locked or :done-with-backoff state.
+       * initial-backoff-ms - Initial backoff in millis."
+
+    ;; Note some gymnastics here for backwards-compatible API change:
+    ;; [a b & [c d]] -> [a b ?{:keys [c d]}]
+    {:arglists
+     '([qname message]
+       [qname message {:keys [unique-message-id allow-requeue? initial-backoff-ms]}])}
+
+    [qname message & more]
+    (let [{:keys [unique-message-id allow-requeue? initial-backoff-ms]}
+          (when-let [[m1 m2] more]
+            (if (map? m1)
+              m1 ; Common case (new API)
+              {:unique-message-id  m1
+               :allow-requeue?     m2}))]
+
       (car/parse
         #(if (vector? %) (get % 0) {:carmine.mq/error (keyword %)})
-        (car/lua script
-          {:qk-messages        (qkey qname :messages)
-           :qk-locks           (qkey qname :locks)
-           :qk-backoffs        (qkey qname :backoffs)
-           :qk-nattempts       (qkey qname :nattempts)
-           :qk-mid-circle      (qkey qname :mid-circle)
-           :qk-done            (qkey qname :done)
-           :qk-requeue         (qkey qname :requeue)}
+        (car/lua @script_
+          {:qk-messages   (qkey qname :messages)
+           :qk-locks      (qkey qname :locks)
+           :qk-backoffs   (qkey qname :backoffs)
+           :qk-nattempts  (qkey qname :nattempts)
+           :qk-mid-circle (qkey qname :mid-circle)
+           :qk-done       (qkey qname :done)
+           :qk-requeue    (qkey qname :requeue)}
           {:now                (enc/now-udt)
            :mid                (or unique-message-id (enc/uuid-str))
            :mcontent           (car/freeze message)
