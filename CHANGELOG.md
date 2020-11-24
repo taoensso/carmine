@@ -1,5 +1,18 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v3.1.0 / 2020 Nov 24
+
+```clojure
+[com.taoensso/carmine "3.1.0"]
+```
+
+> This is a minor feature release. It should be non-breaking.
+
+#### New since `v3.0.0`
+
+* [#244 #245] Message queue: add `initial-backoff-ms` option to `enqueue` (@st3fan)
+
+
 ## v3.0.0 / 2020 Sep 22
 
 ```clojure
