@@ -236,8 +236,10 @@
         :success (done status mid backoff-ms)
         :retry   (done status mid backoff-ms)
         :error   (error mid poll-reply throwable)
-        (do (done :success mid) ; For backwards-comp with old API
-            (timbre/warnf "Invalid handler status: %s" status))))))
+        (do
+          (done :success mid) ; For backwards-comp with old API
+          (timbre/warn "Invalid handler status"
+            {:qname qname :status status :mid mid}))))))
 
 ;;;; Workers
 
