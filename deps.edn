@@ -1,0 +1,8 @@
+{:paths ["src"]
+
+ :deps {com.taoensso/encore              {:mvn/version "3.9.2"}
+        com.taoensso/timbre              {:mvn/version "5.1.0"}
+        com.taoensso/nippy               {:mvn/version "3.1.1"}
+        org.apache.commons/commons-pool2 {:mvn/version "2.9.0"}
+        commons-codec/commons-codec      {:mvn/version "1.15"}
+        ring/ring-core                   {:mvn/version "1.8.2"}}}
