@@ -257,7 +257,8 @@
 
 (comment
   (count command-spec) ; 197
-  (get command-spec "HMGET")
+  (clojure.core/get command-spec "HMGET")
+  (clojure.core/get command-spec "AUTH")
   (macroexpand
     '(defcommand "HMGET"
        {:fn-name "hmget", :fn-docstring "doc", :fn-params-fixed [key field],

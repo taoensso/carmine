@@ -75,7 +75,7 @@
       ^Socket socket ^String host ^Integer port true)))
 
 (defn make-new-connection
-  [{:keys [host port password db conn-setup-fn
+  [{:keys [host port user password db conn-setup-fn
            conn-timeout-ms read-timeout-ms timeout-ms ssl-fn] :as spec}]
   (let [;; :timeout-ms controls both :conn-timeout-ms and :read-timeout-ms
         ;; unless those are specified individually
@@ -118,7 +118,9 @@
     (when (or password db conn-setup-fn)
       (protocol/with-context conn
         (protocol/with-replies ; Discard replies
-          (when password (taoensso.carmine/auth password))
+          (when password (if user
+                           (taoensso.carmine/auth user password)
+                           (taoensso.carmine/auth password)))
           (when db       (taoensso.carmine/select (str db)))
           (when conn-setup-fn
             (conn-setup-fn {:conn conn :spec spec})))))
@@ -208,10 +210,11 @@
           port (.getPort uri)
           db (if-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
                (Integer. ^String db-str))]
-      (-> {:host (.getHost uri)}
-          (#(if (pos? port)        (assoc % :port     port)     %))
-          (#(if (and db (pos? db)) (assoc % :db       db)       %))
-          (#(if password           (assoc % :password password) %))))))
+      (cond-> {:host (.getHost uri)}
+        (pos? port)        (assoc :port     port)
+        (and db (pos? db)) (assoc :db       db)
+        password           (assoc :password password)
+        user               (assoc :user     user)))))
 
 (comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/7"))
 
