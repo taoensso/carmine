@@ -7,7 +7,10 @@
 
 (defrecord CarmineSessionStore [conn-opts prefix ttl-secs]
   ring.middleware.session.store/SessionStore
-  (read-session   [_ k] (wcar conn-opts (car/get k)))
+  (read-session   [_ k] (wcar conn-opts
+                              (when-let [session (car/get k)]
+                                (when ttl-secs (car/expire k ttl-secs))
+                                session)))
   (delete-session [_ k] (wcar conn-opts (car/del k)) nil)
   (write-session  [_ k data]
     (let [k (or k (str prefix ":" (enc/uuid-str)))]
