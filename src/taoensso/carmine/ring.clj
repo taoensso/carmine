@@ -5,9 +5,15 @@
             [taoensso.encore  :as enc]
             [taoensso.carmine :as car :refer (wcar)]))
 
-(defrecord CarmineSessionStore [conn-opts prefix ttl-secs]
+(defrecord CarmineSessionStore [conn-opts prefix ttl-secs extend-on-read?]
   ring.middleware.session.store/SessionStore
-  (read-session   [_ k] (wcar conn-opts (car/get k)))
+  (read-session [_ k]
+    (last
+      (wcar conn-opts :as-pipeline
+        (when (and extend-on-read? ttl-secs)
+          (car/expire k ttl-secs))
+        (car/get k))))
+
   (delete-session [_ k] (wcar conn-opts (car/del k)) nil)
   (write-session  [_ k data]
     (let [k (or k (str prefix ":" (enc/uuid-str)))]
@@ -18,13 +24,17 @@
       k)))
 
 (defn carmine-store
-  "Creates and returns a Carmine-backed Ring SessionStore. Use `expiration-secs`
-  to specify how long session data will survive after last write. When nil,
-  sessions will never expire."
-  [conn-opts & [{:keys [key-prefix expiration-secs]
+  "Creates and returns a Carmine-backed Ring SessionStore.
+  Options include:
+    :expiration-secs - How long session data should persist after last
+                       write. nil => persist forever.
+    :extend-on-read? - If true, expiration will also be extended by
+                       session reads."
+  [conn-opts & [{:keys [key-prefix expiration-secs extend-on-read?]
                  :or   {key-prefix      "carmine:session"
-                        expiration-secs (enc/secs :days 30)}}]]
-  (->CarmineSessionStore conn-opts key-prefix expiration-secs))
+                        expiration-secs (enc/secs :days 30)
+                        extend-on-read? false}}]]
+  (->CarmineSessionStore conn-opts key-prefix expiration-secs extend-on-read?))
 
 (enc/deprecated
   (defn make-carmine-store ; 1.x backwards compatiblity
