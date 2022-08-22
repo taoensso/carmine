@@ -1,6 +1,6 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis (@ptaoussanis)"}
-  (:refer-clojure :exclude [time get set key keys type sync sort eval])
+  (:refer-clojure :exclude [time get set key keys type sync sort eval parse-double parse-long])
   (:require [clojure.string       :as str]
             [taoensso.encore      :as enc]
             [taoensso.timbre      :as timbre]
