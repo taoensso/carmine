@@ -7,45 +7,50 @@
             :distribution :repo
             :comments "Same as Clojure"}
   :min-lein-version "2.3.3"
-  :global-vars {*warn-on-reflection* true
-                *assert* true}
+  :global-vars
+  {*warn-on-reflection* true
+   *assert*             true
+   *unchecked-math*     false #_:warn-on-boxed}
 
   :dependencies
-  [[com.taoensso/encore              "3.9.2"]
-   [com.taoensso/timbre              "5.1.0"]
-   [com.taoensso/nippy               "3.1.1"]
-   [org.apache.commons/commons-pool2 "2.9.0"]
+  [[com.taoensso/encore              "3.39.0"]
+   [com.taoensso/timbre              "6.0.2"]
+   [com.taoensso/nippy               "3.2.0"]
+   [org.apache.commons/commons-pool2 "2.11.1"]
    [commons-codec/commons-codec      "1.15"]]
 
   :plugins
   [[lein-pprint  "1.3.2"]
-   [lein-ancient "0.6.15"]
-   [lein-codox   "0.10.7"]]
+   [lein-ancient "0.7.0"]
+   [lein-codox   "0.10.8"]]
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
    :server-jvm {:jvm-opts ^:replace ["-server"]}
-   :provided {:dependencies [[org.clojure/clojure    "1.7.0"]]}
-   :1.7      {:dependencies [[org.clojure/clojure    "1.7.0"]]}
-   :1.8      {:dependencies [[org.clojure/clojure    "1.8.0"]]}
-   :1.9      {:dependencies [[org.clojure/clojure    "1.9.0"]]}
-   :1.10     {:dependencies [[org.clojure/clojure    "1.10.1"]]}
-   :test     {:dependencies [[org.clojure/test.check "1.1.0"]]}
-   :depr     {:jvm-opts ["-Dtaoensso.elide-deprecated=true"]}
-   :dev
-   [:1.10 :test :server-jvm :depr
-    {:dependencies
-     [[org.clojure/data.json "1.0.0"]
-      [com.taoensso/faraday  "1.9.0"]
-      [clj-aws-s3            "0.3.10"]
-      [ring/ring-core        "1.8.2"]]}]}
+   :provided {:dependencies [[org.clojure/clojure "1.11.1"]]}
+   :c1.11    {:dependencies [[org.clojure/clojure "1.11.1"]]}
+   :c1.10    {:dependencies [[org.clojure/clojure "1.10.1"]]}
+   :c1.9     {:dependencies [[org.clojure/clojure "1.9.0"]]}
 
-  :test-paths ["test" "src"]
+   :depr     {:jvm-opts ["-Dtaoensso.elide-deprecated=true"]}
+   :test     {:dependencies [[org.clojure/test.check "1.1.1"]]}
+   :dev
+   [:c1.11 :test :server-jvm :depr
+    {:dependencies
+     [[org.clojure/data.json "2.4.0"]
+      [com.taoensso/faraday  "1.11.4"]
+      [clj-aws-s3            "0.3.10"]
+      [ring/ring-core        "1.9.6"]]}]}
+
+  :test-paths ["test" #_"src"]
 
   :aliases
   {"start-dev"  ["with-profile" "+dev" "repl" ":headless"]
-   "deploy-lib" ["do" "deploy" "clojars," "install"]
-   "test-all"   ["with-profile" "+1.10:+1.9:+1.8:+1.7" "test"]}
+   "deploy-lib" ["do" ["build-once"] ["deploy" "clojars"] ["install"]]
+
+   "test-all"
+   ["do" ["clean"]
+    "with-profile" "+c1.11:+c1.10:+c1.9" "test"]}
 
   :repositories
   {"sonatype-oss-public"
