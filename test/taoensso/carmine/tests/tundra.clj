@@ -30,6 +30,12 @@
 (defn- s->ba [^String s] (.getBytes s "UTF-8"))
 (defn- ba->s [^bytes ba] (String.  ba "UTF-8"))
 
+(defn sleep [n]
+  (let [n (case n :c1 400 :c2 1200 :c3 8000 n)]
+    (Thread/sleep n) (str "slept " n "msecs")))
+
+;;;;
+
 (deftest datastore-tests
   (test/testing "Basic put and fetch case"
     (tundra/put-key dstore (tkey :foo) (s->ba "hello world"))
@@ -77,6 +83,7 @@
                tstore  (tundra/tundra-store dstore {:tqname tqname})
                tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100})]
 
+           (sleep :c1)
            (wcar* (car/mset (tkey 0) [:clj-val]
                             (tkey 1) [:clj-val]
                             (tkey 2) [:clj-val])) ; Reset vals
@@ -87,8 +94,10 @@
                                      (tkey 0) (tkey 1) (tkey 2))
                        (catch Exception _ nil)))
 
-           (Thread/sleep 8000) ; Wait for replication
+           (sleep :c3) ; Wait for replication
            (mq/stop tworker)
+
+           (sleep :c1)
            (wcar* (car/del (tkey 0))
                   (car/set (tkey 2) [:clj-val-new])) ; Make some local modifications
 
@@ -105,10 +114,15 @@
   (is (= [-1 -1 -1] ; nil eviction timeout (default) is respected!
          (let [tstore  (tundra/tundra-store dstore {:tqname tqname})
                tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100})]
+
+           (sleep :c1)
            (wcar* (car/mset (tkey 0) "0" (tkey 1) "1" (tkey 2) "1") ; Clears timeouts
                   (tundra/dirty tstore (tkey 0) (tkey 1) (tkey 2)))
-           (Thread/sleep 8000) ; Wait for replication
+
+           (sleep :c3) ; Wait for replication
            (mq/stop tworker)
+
+           (sleep :c1)
            (wcar* (tundra/ensure-ks tstore (tkey 0) (tkey 1) (tkey 2))
                   (mapv #(car/ttl (tkey %)) [0 1 2]))))))
 
@@ -125,15 +139,17 @@
                tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100
                                                  :auto-start false})]
 
+           (sleep :c1)
            (wcar* (car/set (tkey 0) "0") ; Clears timeout
              (tundra/dirty tstore (tkey 0)))
 
            [(wcar* (car/pttl (tkey 0))) ; `dirty` doesn't set ttl immediately
             (do (mq/start tworker)
-                (Thread/sleep 5000) ; Wait for replication (> exp-backoff)
+                (sleep :c3) ; Wait for replication (> exp-backoff)
                 (mq/stop tworker)
+                (sleep :c1)
                 (wcar* (car/pttl (tkey 0)))) ; Worker sets ttl after successful put
-            (do (Thread/sleep 1000)
+            (do (sleep :c2)
                 (wcar* (tundra/ensure-ks tstore (tkey 0))
                        (car/pttl (tkey 0))))])))))
 

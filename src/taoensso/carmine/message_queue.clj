@@ -8,7 +8,7 @@
     * carmine:mq:<qname>:locks        - hash, {mid lock-expiry-time}.
     * carmine:mq:<qname>:backoffs     - hash, {mid backoff-expiry-time}.
     * carmine:mq:<qname>:nattempts    - hash, {mid attempt-count}.
-    * carmine:mq:<qname>:mid-circle   - list, rotating list of mids.
+    * carmine:mq:<qname>:mid-circle   - list, rotating list of mids (next on right).
     * carmine:mq:<qname>:done         - set, awaiting gc, requeue, etc.
     * carmine:mq:<qname>:requeue      - set, for `allow-requeue?` option.
     * carmine:mq:<qname>:eoq-backoff? - ttl flag, used for queue-wide
@@ -239,7 +239,9 @@
         (do
           (done :success mid) ; For backwards-comp with old API
           (timbre/warn "Invalid handler status"
-            {:qname qname :status status :mid mid}))))))
+            {:qname qname :status status :mid mid})))
+
+      status)))
 
 ;;;; Workers
 
