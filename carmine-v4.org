@@ -1,0 +1,74 @@
+#+TITLE: Title
+#+STARTUP: indent overview hidestars
+#+TAGS: { Cost: c1(1) c2(2) c3(3) c4(4) c5(5) }
+#+TAGS: nb(n) urgent(u)
+
+* Next
+** Manually pre-parse conn-opts, remove var indirection; re-bench
+** Port SSL API improvements from Telemere? Relevant?
+** Review config
+
+** Add SSB stats to pooled manager (borrow time, etc.)?
+** Add SSB stats to Sentinel?
+** Review arch needs for Cluster
+
+** Common & core util to parse-?marked-ba -> [<kind> <payload>]
+** Some way to implement a parser over >1 replies?
+E.g. fetch two sets, and parser to merge -> single reply
+
+* Later
+** New Pub/Sub API? (note RESP2 vs RESP3 differences)
+Pub/Sub + Sentinel integration
+psubscribe* to Sentinel server
+check for `switch-master` channel name
+"switch-master" <master-name> <old-ip> <old-port> <new-ip> <new-port>
+
+** Implement Cluster (enough user demand?)
+** Use Telemere (shell API?)
+
+* Polish
+** Print methods, toString content, etc.
+** Check all errors: eids, messages, data, cbids
+** Check all dynamic bindings and sys-vals, ensure accessible
+** Document `*default-conn-opts*`,     incl. cbs
+** Document `*default-sentinel-opts*`, incl. cbs
+** Complete (esp. high-level / integration) tests
+** Review all config, docstring, privacy, etc.
+** Grep for TODOs
+
+* Refactor commands
+** Add modules support
+** Support custom (e.g. newer) commands.json or edn
+** Refactor helpers API, etc.
+** Modern Tundra?
+** Further MQ improvements?
+
+* Release
+** v4 upgrade/migration plan
+** v4 wiki with changes, migration, new features, examples, etc.
+** First public alpha
+
+* CHANGELOG
+** [new] Full RESP3 support, incl. streaming, etc.
+*** Enabled by default, requires Redis >= v6 (2020-04-30).
+** [new] Full Redis Sentinel support - incl. auto failover and read replicas.
+** [mod] Hugely improved connections API, incl. improved:
+*** Flexibility
+*** Docs
+*** Usability (e.g. opts validation, hard shutdowns, closing managed conns, etc.).
+*** Transparency (deref stats, cbs, timings for profiling, etc.).
+**** Derefs: Conns, ConnManagers, SentinelSpecs.
+*** Protocols for extension by advanced users.
+*** Full integration with Sentinel, incl.:
+**** Auto invalidation of pool conns on master changes.
+**** Auto verification of addresses on pool borrows.
+*** [new] Common conn utils are now aliased in core Carmine ns for convenience.
+*** [new] Improved pool efficiency, incl. smarter sub-pool keying.
+*** [mod] Improved parsing API, incl.:
+**** General simplifications.
+**** Aggregate parsers, with xform support.
+*** [new] *auto-serialize?*, *auto-deserialize?*
+*** [new] Greatly improved `skip-replies` performance
+*** [mod] Simplified parsers API
+*** [new] Improvements to docs, error messages, debug data, etc.
+*** [new] New Wiki with further documentation and examples.
