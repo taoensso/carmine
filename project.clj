@@ -50,11 +50,17 @@
     [[lein-pprint  "1.3.2"]
      [lein-ancient "0.7.0"]]}}
 
+  :test-selectors
+  {:v3 (fn [{:keys [ns]} & _] (.startsWith (str ns) "taoensso.carmine."))
+   :v4 (fn [{:keys [ns]} & _] (.startsWith (str ns) "taoensso.carmine-v4."))}
+
   :aliases
   {"start-dev"     ["with-profile" "+dev" "repl" ":headless"]
    ;; "build-once" ["do" ["clean"] ["cljsbuild" "once"]]
    "deploy-lib"    ["do" #_["build-once"] ["deploy" "clojars"] ["install"]]
 
+   "test-v3"      ["with-profile" "+c1.12:+c1.11:+c1.10" "test" ":v3"]
+   "test-v4"      ["with-profile" "+c1.12:+c1.11:+c1.10" "test" ":v4"]
    "test-clj"     ["with-profile" "+c1.12:+c1.11:+c1.10" "test"]
-   ;; "test-cljs" ["with-profile" "+c1.12" "cljsbuild"   "test"]
+   ;; "test-cljs" ["with-profile" "+c1.12" "cljsbuild"         "test"]
    "test-all"     ["do" ["clean"] ["test-clj"] #_["test-cljs"]]})
