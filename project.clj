@@ -43,6 +43,7 @@
       [clj-aws-s3            "0.3.10"]
       [ring/ring-core        "1.9.6"]]}]}
 
+  :java-source-paths ["src"]
   :test-paths ["test" #_"src"]
 
   :aliases
