@@ -13,6 +13,13 @@
   (remove-ns      'taoensso.carmine.impl.resp.common)
   (test/run-tests 'taoensso.carmine.impl.resp.common))
 
+(enc/declare-remote
+  ^:dynamic taoensso.carmine-v4/*auto-deserialize?*
+  ^:dynamic taoensso.carmine-v4/*keywordize-maps?*
+  taoensso.carmine-v4/issue-83-workaround?)
+
+(alias 'core 'taoensso.carmine-v4)
+
 ;;;;
 
 (def unicode-string "ಬಾ ಇಲ್ಲಿ ಸಂಭವಿಸ\r\n")
@@ -83,86 +90,29 @@
 (deftest ^:private _skip1
   [(is (= (.readLine (skip1 (with-out->in (.write out (str->bytes "+hello\r\n"))))) "hello"))])
 
-;;;; Config
+;;;; Blob markers
 
 (do
-  (def ^:const target-version
-    "A high-level option to specify the \"target\" version of Carmine.
-    A best effort will be made to try maintain compatibility with
-    that version when possible.
-
-    Intended to help ease migration to newer Carmine versions.
-    See the relevant CHANGELOG for details.
-
-    As of the latest major version of Carmine (v4), valid options are:
-
-      4 - Disable all available backwards-compatibility features (target Carmine v4).
-      3 - Enable  all available backwards-compatibility features for Carmine v3.
-
-    When nil (default):
-      - Enable  features relating to data backwards-compatibility.
-      - Disable features relating to API  backwards-compatibility."
-
-    (enc/as-?int
-      (enc/get-sys-val
-        "taoensso.carmine.target-version"
-        "TAOENSSO_CARMINE_TARGET_VERSION")))
-
-  (def ^:const read-blob-markers?
-    "Auto deserialize non-(string, keyword, number) types?"
-    (enc/get-sys-bool
-      (case target-version (1 2 3 nil) true 4 false)
-      "taoensso.carmine.legacy.read-blob-markers"
-      "TAOENSSO_CARMINE_LEGACY_READ_BLOB_MARKERS"))
-
-  (def ^:const write-blob-markers?
-    "Auto serialize non-(string, keyword, number) types?"
-    (enc/get-sys-bool
-      ;; (case target-version (1 2 3 #_nil) true (4 nil) false) ; TODO BREAKING
-      (case    target-version (1 2 3   nil) true  4      false)
-      "taoensso.carmine.legacy.write-blob-markers"
-      "TAOENSSO_CARMINE_LEGACY_WRITE_BLOB_MARKERS"))
-
-  (def ^:const reserve-nulls?
-    (enc/get-sys-bool true
-      "taoensso.carmine.legacy.reserve-nulls"
-      "TAOENSSO_CARMINE_LEGACY_RESERVE_NULLS"))
-
-  (def ^:const issue-83-workaround?
-    "A bug in v2.6.0 (2014-04-01) to v2.6.1 (2014-05-01) caused Nippy
-    blobs to be marked with `ba-bin` instead of `ba-npy`,
-    Ref. https://github.com/ptaoussanis/carmine/issues/83
-
-    Only relevant if `read-blob-markers?` is true."
-    (enc/get-sys-bool
-      ;; (case target-version (1 2 3 #_nil) true (4 nil) false) ; TODO BREAKING
-      (case target-version    (1 2 3   nil) true  4      false)
-      "taoensso.carmine.issue-83-workaround"
-      "TAOENSSO_CARMINE_ISSUE_83_WORKAROUND")))
-
-;;;; Consts, etc.
-
-(do ; Blob markers
   (def ba-npy (str->bytes "\u0000>"))
   (def ba-bin (str->bytes "\u0000<"))
   (def ba-nil (str->bytes "\u0000_")))
 
 (defn read-blob-?marker
   "Returns e/o {nil :nil :bin :npy}, and possibly advances position
-    in stream to skip (consume) any blob markers (`ba-npy`, etc.)."
+  in stream to skip (consume) any blob markers (`ba-npy`, etc.)."
   [^DataInputStream in ^long n]
-  ;; Won't be called if `read-blob-markers?` is false
+  ;; Won't be called if `*auto-deserialize?*` is false
   (when (>= n 2) ; >= 2 for marker+?payload
     (.mark in 2)
-    (if-not (zero? (.readByte in)) ; Possible marker iff 1st byte null
+    (if-not (== (.readByte in) 0) ; Possible marker iff 1st byte null
       (do (.reset in) nil)
       (enc/case-eval (.readByte in) ; 2nd byte would identify marker kind
         (byte \_) :nil ; ba-nil
         (byte \>) :npy ; ba-npy
         (byte \<)      ; ba-bin
         (enc/cond
-          (not issue-83-workaround?) :bin
-          (< n 7)                    :bin ; >= +5 for Nippy payload (4 header + data)
+          (not core/issue-83-workaround?) :bin
+          (< n 7)                         :bin ; >= +5 for Nippy payload (4 header + data)
           :do (.mark in 3)
           (not (== (.readByte in) #=(byte \N))) (do (.reset in) :bin)
           (not (== (.readByte in) #=(byte \P))) (do (.reset in) :bin)
@@ -186,6 +136,8 @@
    (is (= (test-blob-?marker "\u0000<NPYmore") [:npy "NPYmore"]))
    (is (= (test-blob-?marker "\u0000<NPmore")  [:bin "NPmore"]))
    (is (= (test-blob-?marker "\u0000<Nmore")   [:bin "Nmore"]))])
+
+;; TODO Util for users to parse-?marked-ba -> [<kind> <payload>]
 
 ;;;;
 
@@ -235,3 +187,107 @@
    (is (true? (discard-crlf (xs->in+ ""))))
    (is (throws? :common {:eid :carmine.resp.read/missing-crlf}
          (discard-crlf (xs->in+ "_"))))])
+
+;;;; Read mode
+
+(def ^:dynamic *read-mode*
+  "Special read mode, e/o {nil :skip :bytes <AsThawed>}.
+  Applies mostly to blobs, except notably :skip."
+  nil)
+
+(defmacro skip-replies
+  "Establishes special read mode that discards any Redis replies
+  to requests in body."
+  [& body] `(binding [*read-mode* :skip] ~@body))
+
+(defmacro normal-replies
+  "Cancels any active special read mode."
+  [& body]
+  `(if *read-mode*
+     (do ~@body) ; Common case optmization
+     (binding [*read-mode* nil]
+       ~@body)))
+
+(defmacro as-bytes
+  "Establishes special read mode that returns raw byte arrays
+  for any blob-type Redis replies to requests in body."
+  [& body] `(binding [*read-mode* :bytes] ~@body))
+
+(defmacro as-thawed
+  "Establishes special read mode that will attempt Nippy thawing
+  for any blob-type Redis replies to requests in body."
+  [thaw-opts & body]
+  `(binding [*read-mode* (AsThawed. ~thaw-opts)]
+     ~@body))
+
+(deftype AsThawed [thaw-opts])
+(defn read-mode->?thaw-opts [read-mode]
+  (when (instance? AsThawed read-mode)
+    (or (.-thaw-opts ^AsThawed read-mode) {})))
+
+;;;; Reply parsing
+;; We choose to keep parsing capabilities simple:
+;; no nesting, no auto composition, and no concurrent fn+rf parsers.
+;;
+;; Note that *read-mode* and *parser* are distinct, and may interact.
+
+(def ^:private *parser*
+  "Reply parser, e/o #{nil <FnParser> <RfParser>}"
+  nil)
+
+(deftype FnParser [fn]) ; Applies only to non-aggregates
+(deftype RfParser [rf]) ; Applies only to     aggregates
+
+(defn fn-parser [fn] (FnParser. fn))
+(defn rf-parser
+  "Returns a reducing parser for aggregates with:
+    (rf)         => Init     acc
+    (rf acc in)  => Next     acc (accumulate step)
+    (rf end-acc) => Complete acc"
+  [rf] (RfParser. rf))
+
+(defn get-parser-fn [parser] (when (instance? FnParser parser) (.-fn ^FnParser parser)))
+(defn get-parser-rf [parser] (when (instance? RfParser parser) (.-rf ^RfParser parser)))
+
+;;;; ReadOpts, etc.
+
+(deftype ReadOpts [read-mode auto-deserialize? parser keywordize-maps?])
+(deftype Request  [read-opts req-args])
+
+(def     nil-read-opts (ReadOpts. nil nil  nil  nil))
+(def default-read-opts (ReadOpts. nil true nil true)) ; For tests/REPL, etc.
+
+(defn inner-read-opts
+  "Returns ReadOpts for internal reading by aggregates.
+  We retain (nest) all options but parser."
+  ^ReadOpts [^ReadOpts read-opts]
+  (ReadOpts.
+    (.-read-mode         read-opts)
+    (.-auto-deserialize? read-opts)
+    nil
+    (.-keywordize-maps?  read-opts)))
+
+(defn read-opts
+  "Slow convenience constructor for REPL/testing, etc."
+  (^ReadOpts [] (read-opts nil))
+  (^ReadOpts [{:keys [read-mode auto-deserialize? parser keywordize-maps?]}]
+   (ReadOpts. read-mode auto-deserialize? parser keywordize-maps?)))
+
+(defn dynamic-read-opts
+  "Slow convenience constructor for REPL/testing, etc."
+  ^ReadOpts []
+  (ReadOpts.
+    *read-mode*
+    core/*auto-deserialize?*
+    *parser*
+    core/*keywordize-maps?*))
+
+(comment (dynamic-read-opts))
+
+(defn read-opts->map
+  "For error messages, etc."
+  [^ReadOpts read-opts]
+  {:read-mode         (.-read-mode         read-opts)
+   :auto-deserialize? (.-auto-deserialize? read-opts)
+   :parser            (.-parser            read-opts)
+   :keywordize-maps?  (.-keywordize-maps?  read-opts)})

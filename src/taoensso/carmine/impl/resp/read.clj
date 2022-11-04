@@ -1,5 +1,6 @@
 (ns taoensso.carmine.impl.resp.read
-  "Read part of RESP3 implementation."
+  "Read-side implementation of the Redis RESP3 protocol,
+  Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
    [clojure.string  :as str]
@@ -13,115 +14,211 @@
 
   (:import
    [java.nio.charset StandardCharsets]
-   [java.io DataInputStream]))
+   [java.io DataInputStream]
+   [taoensso.carmine.impl.resp.common ReadOpts Request]))
 
 (comment
   (remove-ns      'taoensso.carmine.impl.resp.read)
   (test/run-tests 'taoensso.carmine.impl.resp.read))
 
-;;;; Blobs
+(enc/declare-remote
+  ^:dynamic taoensso.carmine-v4/*keywordize-maps?*)
 
-(enc/defalias blobs/read-blob)
+(alias 'core 'taoensso.carmine-v4)
 
 ;;;; Aggregates
 
 (defn- read-basic-reply
   "Basic version of `read-reply`, useful for testing"
-  [^DataInputStream in]
+  [_read-opts ^DataInputStream in]
   (let [kind-b (.readByte in)]
     (enc/case-eval kind-b
       (byte \+)                 (.readLine in)  ; Simple string
-      (byte \:) (Long/parseLong (.readLine in)) ; Int64
+      (byte \:) (Long/parseLong (.readLine in)) ; Simple long
       (byte \.) (do (com/discard-crlf in) ::end-of-aggregate-stream)
       )))
 
-(defn- read-aggregate-into
-  [to read-reply ^DataInputStream in]
-  (let [size-str (.readLine in)]
-    (if-let [stream? (= size-str "?")]
+(defn- read-aggregate-by-ones
+  [to ^ReadOpts read-opts read-reply ^DataInputStream in]
+  (let [size-str (.readLine in)
+        inner-read-opts (com/inner-read-opts read-opts)
+        skip? (identical? (.-read-mode read-opts) :skip)
 
-      (loop [acc (transient (empty to))]
-        (let [item (read-reply in)]
-          (if (identical? item ::end-of-aggregate-stream)
-            (persistent!  acc)
-            (recur (conj! acc item)))))
+        aggregate-reply
+        (if-let [stream? (= size-str "?")]
 
-      (let [n (Integer/parseInt size-str)]
-        (if (<= n 0)
-          (if (zero? n) to nil) ; -1 for RESP2 support
-          (enc/repeatedly-into to n #(read-reply in)))))))
+          ;; Streaming
+          (enc/cond
 
-(deftest ^:private _read-aggregate-into
-  [(is (= (read-aggregate-into [] nil (xs->in+  0))) "Empty")
-   (is (= (read-aggregate-into [] nil (xs->in+ -1))) "RESP2 null")
+            skip?
+            (loop []
+              (let [x (read-reply inner-read-opts in)]
+                (if (identical? x ::end-of-aggregate-stream)
+                  :carmine/_skipped
+                  (recur))))
 
-   (is (= (read-aggregate-into [] read-basic-reply (xs->in+ 2   ":1" ":2"))     [1 2]))
-   (is (= (read-aggregate-into [] read-basic-reply (xs->in+ "?" ":1" ":2" ".")) [1 2]) "Streaming")])
+            ;; Reducing parser
+            :if-let [rf (com/get-parser-rf (.-parser read-opts))]
+            (loop [acc (rf)] ; Init acc
+              (let [x (read-reply inner-read-opts in)]
+                (if (identical? x ::end-of-aggregate-stream)
+                  (do    (rf acc)) ; Complete acc
+                  (recur (rf acc x)))))
 
-(let [strings->keywords (fn [x] (if (string? x) (keyword x) x))
-      get-fn
-      (fn [?opt]
-        (if (identical? ?opt :strings->keywords)
-          strings->keywords
-          (if (nil? ?opt)
-            identity
-            ?opt)))
+            :default
+            (loop [acc (transient (empty to))]
+              (let [x (read-reply inner-read-opts in)]
+                (if (identical? x ::end-of-aggregate-stream)
+                  (persistent!  acc)
+                  (recur (conj! acc x))))))
 
-      default-pre  {:key-fn :strings->keywords :val-fn nil}
-      default-post {:key-fn  strings->keywords :val-fn identity}]
+          ;; Not streaming
+          (let [n (Integer/parseInt size-str)]
+            (if (<= n 0) ; Empty or RESP2 null
+              (if (== n 0) to nil)
 
-  (def ^:dynamic *kv-fns*
-    ;; TODO Document
-    default-pre)
+              (enc/cond
 
-  (defn- get-kv-fns [kv-fns]
-    (if (identical? kv-fns default-pre)
-      default-post ; Optimized common case
-      (let [{:keys [key-fn val-fn]} kv-fns]
-        {:key-fn (get-fn key-fn)
-         :val-fn (get-fn val-fn)}))))
+                skip?
+                (enc/reduce-n
+                  (fn [_ _]
+                    (read-reply inner-read-opts in))
+                  0 n)
 
-(comment (enc/qb 1e6 (get-kv-fns *kv-fns*)))
+                ;; Reducing parser
+                :if-let [rf (com/get-parser-rf (.-parser read-opts))]
+                (let [init-acc (rf)]
+                  (rf ; Complete acc
+                    (enc/reduce-n
+                      (fn [acc _n]
+                        (rf acc (read-reply inner-read-opts in)))
+                      init-acc
+                      n)))
 
-(defn- read-aggregate-into-map
-  [read-reply ^DataInputStream in]
-  (let [size-str (.readLine in)]
-    (if-let [stream? (= size-str "?")]
+                :default
+                (enc/repeatedly-into to n
+                  #(read-reply inner-read-opts in))))))]
 
-      (let [{:keys [key-fn val-fn]} (get-kv-fns *kv-fns*)]
-        (loop [acc (transient {})]
-          (let [item (read-reply in)]
-            (if (identical? item ::end-of-aggregate-stream)
-              (persistent! acc)
-              (let [k item
-                    v (read-reply in)]
-                (recur (assoc! acc (key-fn k) (val-fn v))))))))
+    (when-not skip?
+      (if-let [f (com/get-parser-fn (.-parser read-opts))]
+        (f  aggregate-reply)
+        (do aggregate-reply)))))
 
-      (let [n (Integer/parseInt size-str)]
-        (if (<= n 0)
-          (if (zero? n) {} nil) ; -1 for RESP2 support
-          (let [{:keys [key-fn val-fn]} (get-kv-fns *kv-fns*)]
-            (if (> n 10)
-              (persistent! (enc/reduce-n (fn [m _] (let [k (read-reply in), v (read-reply in)] (assoc! m (key-fn k) (val-fn v)))) (transient {}) n))
-              (do          (enc/reduce-n (fn [m _] (let [k (read-reply in), v (read-reply in)] (assoc  m (key-fn k) (val-fn v))))            {}  n)))))))))
+(deftest ^:private _read-aggregate-by-ones-bootstrap
+  ;; Very basic bootstrap tests using only `read-basic-reply`
+  [(is (= (read-aggregate-by-ones [] com/default-read-opts nil (xs->in+  0))  []) "Empty blob")
+   (is (= (read-aggregate-by-ones [] com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
 
-(deftest ^:private _read-aggregate-into-map
+   (is (= (read-aggregate-by-ones [] com/default-read-opts read-basic-reply (xs->in+ 2   ":1" ":2"))     [1 2]))
+   (is (= (read-aggregate-by-ones [] com/default-read-opts read-basic-reply (xs->in+ "?" ":1" ":2" ".")) [1 2]) "Streaming")])
+
+(let [keywordize (fn [x] (if (string? x) (keyword x) x))]
+  (defn- read-aggregate-by-pairs
+    "Like `read-aggregate-by-ones` but optimized for read-pair
+    cases (notably maps)."
+    [^ReadOpts read-opts read-reply ^DataInputStream in]
+    (let [size-str (.readLine in)
+          inner-read-opts (com/inner-read-opts read-opts)
+          skip? (identical? (.-read-mode read-opts) :skip)
+
+          aggregate-reply
+          (if-let [stream? (= size-str "?")]
+
+            ;; Streaming
+            (enc/cond
+
+              skip?
+              (loop []
+                (let [x (read-reply inner-read-opts in)]
+                  (if (identical? x ::end-of-aggregate-stream)
+                    :carmine/_skipped
+                    (let [_k x
+                          _v (read-reply inner-read-opts in)]
+                      (recur)))))
+
+              ;; Reducing parser
+              :if-let [rf (com/get-parser-rf (.-parser read-opts))]
+              (loop [acc (rf)] ; Init acc
+                (let [x (read-reply inner-read-opts in)]
+                  (if (identical? x ::end-of-aggregate-stream)
+                    (rf acc) ; Complete acc
+                    (let [k x ; Without kfn!
+                          v (read-reply inner-read-opts in)]
+                      (recur (rf acc k v))))))
+
+              :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
+              :default
+              (loop [acc (transient {})]
+                (let [x (read-reply inner-read-opts in)]
+                  (if (identical? x ::end-of-aggregate-stream)
+                    (persistent! acc)
+                    (let [k (kfn x)
+                          v (read-reply inner-read-opts in)]
+                      (recur (assoc! acc k v)))))))
+
+            ;; Not streaming
+            (let [n (Integer/parseInt size-str)]
+              (if (<= n 0) ; Empty or RESP2 null
+                (if (== n 0) {} nil)
+
+                (enc/cond
+
+                  skip?
+                  (enc/reduce-n
+                    (fn [_ _]
+                      (let [_k (read-reply inner-read-opts in)
+                            _v (read-reply inner-read-opts in)]
+                        nil))
+                    0 n)
+
+                  ;; Reducing parser
+                  :if-let [rf (com/get-parser-rf (.-parser read-opts))]
+                  (let [init-acc (rf)]
+                    (rf ; Complete
+                      (enc/reduce-n
+                        (fn [acc _n]
+                          (let [k (read-reply inner-read-opts in) ; Without kfn!
+                                v (read-reply inner-read-opts in)]
+                            (rf acc k v)))
+                        init-acc
+                        n)))
+
+                  :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
+                  :default
+                  (if (> n 10)
+                    (persistent!
+                      (enc/reduce-n
+                        (fn [m _]
+                          (let [k (kfn (read-reply inner-read-opts in))
+                                v      (read-reply inner-read-opts in)]
+                            (assoc! m k v)))
+                        (transient {})
+                        n))
+
+                    (enc/reduce-n
+                      (fn [m _]
+                        (let [k (kfn (read-reply inner-read-opts in))
+                              v      (read-reply inner-read-opts in)]
+                          (assoc m k v)))
+                      {}
+                      n))))))]
+
+      (when-not skip?
+        (if-let [f (com/get-parser-fn (.-parser read-opts))]
+          (f  aggregate-reply)
+          (do aggregate-reply))))))
+
+(deftest ^:private _read-aggregate-by-pairs-bootstrap
+  ;; Very basic bootstrap tests using only `read-basic-reply`
   [(testing "Basics"
-     [(is (= (read-aggregate-into-map nil (xs->in+  0))  {}) "Empty")
-      (is (= (read-aggregate-into-map nil (xs->in+ -1)) nil) "RESP2 null")
+     [(is (= (read-aggregate-by-pairs com/default-read-opts nil (xs->in+  0))  {}) "Empty blob")
+      (is (= (read-aggregate-by-pairs com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
 
-      (is (= (read-aggregate-into-map read-basic-reply (xs->in+ 2   "+k1" "+v1" "+k2" "+v2"))     {:k1 "v1" :k2 "v2"}))
-      (is (= (read-aggregate-into-map read-basic-reply (xs->in+ "?" "+k1" "+v1" "+k2" "+v2" ".")) {:k1 "v1" :k2 "v2"}) "Streaming")
-      (is (= (read-aggregate-into-map read-basic-reply (xs->in+ "?" ":1"  "+v1" "+k2" "+v2" ".")) {1   "v1" :k2 "v2"}) "Streaming")])
+      (is (= (read-aggregate-by-pairs com/default-read-opts read-basic-reply (xs->in+ 2 "+k1" "+v1" "+k2" "+v2")) {:k1  "v1" :k2 "v2"}) "With keywordize")
+      (is (= (read-aggregate-by-pairs com/nil-read-opts     read-basic-reply (xs->in+ 2 "+k1" "+v1"  ":2" "+v2")) {"k1" "v1",  2 "v2"}) "W/o  keywordize")
 
-   (testing "*kv-fns*"
-     (binding [*kv-fns* nil]
-       [(is (= (read-aggregate-into-map read-basic-reply (xs->in+ 2   "+k1" "+v1" "+k2" "+v2"))     {"k1" "v1" "k2" "v2"}))
-        (is (= (read-aggregate-into-map read-basic-reply (xs->in+ "?" "+k1" "+v1" "+k2" "+v2" ".")) {"k1" "v1" "k2" "v2"}))])
-
-     (binding [*kv-fns* {:val-fn (fn [x] (if (string? x) (str/upper-case x) x))}]
-       [(is (= (read-aggregate-into-map read-basic-reply (xs->in+ 2   "+k1" "+v1" "+k2" ":2"))     {"k1" "V1" "k2" 2}))
-        (is (= (read-aggregate-into-map read-basic-reply (xs->in+ "?" "+k1" "+v1" "+k2" ":2" ".")) {"k1" "V1" "k2" 2}))]))])
+      (is (= (read-aggregate-by-pairs com/default-read-opts read-basic-reply (xs->in+ "?" "+k1" "+v1" ":2" "+v2" ".")) {:k1  "v1"  2 "v2"}) "Streaming, with keywordize")
+      (is (= (read-aggregate-by-pairs com/nil-read-opts     read-basic-reply (xs->in+ "?" "+k1" "+v1" ":2" "+v2" ".")) {"k1" "v1", 2 "v2"}) "Streaming, w/o  keywordize")])])
 
 (defn- redis-reply-error [?message]
   (let [^String message (if (nil? ?message) "" ?message)
@@ -141,7 +238,7 @@
 (enc/defonce push-agent_
   (delay (agent nil :error-mode :continue)))
 
-(def ^:dynamic *push-fn*
+(def ^:dynamic *push-fn* ; TODO move to core
   "?(fn [data-vec]) -> ?effects.
   If provided (non-nil), this fn should never throw."
   ;; TODO Proper docstring for this & push-handler, etc.
@@ -164,101 +261,135 @@
 
 (defn read-reply
   "Blocks to read reply from given DataInputStream."
-  [^DataInputStream in]
-  (let [kind-b (.readByte in)]
-    (try
-      (enc/case-eval kind-b
-        ;; RESP3 ⊃ RESP2
 
-        ;; --- RESP2 ---------------------------------------------------------------
-        (byte \+)                    (.readLine in)  ; Simple string ✓
-        (byte \:) (Long/parseLong    (.readLine in)) ; Int64 ✓
-        (byte \-) (redis-reply-error (.readLine in)) ; Simple error ✓
-        (byte \$) (read-blob true               in)  ; Blob string/other ✓
+  ([in] ; For REPL/testing
+   (read-reply (com/dynamic-read-opts) in))
 
-        (byte \*) ; Aggregate array ✓
-        (blobs/as-default
-          (read-aggregate-into []
-            read-reply in))
+  ([^ReadOpts read-opts ^DataInputStream in]
+   ;; Since dynamic vars are ephemeral and reply reading is lazy, neither this
+   ;; fn nor any of its children should access dynamic vars. Instead, we'll capture
+   ;; dynamic config to `com/ReadOpts` at the appropriate time.
+   (let [kind-b (.readByte in)
+         skip?  (identical? (.-read-mode read-opts) :skip)
 
-        ;; --- RESP3 ---------------------------------------------------------------
-        (byte \.) (do (com/discard-crlf in) ::end-of-aggregate-stream) ; End of aggregate stream ✓
-        (byte \_) ; Null ✓
-        (do
-          (com/discard-crlf in)
-          ;; We apply *bxf* to both user-blobs and nulls
-          (blobs/complete-blob blobs/*bxf* nil true))
+         reply
+         (try
+           (enc/case-eval kind-b
+             ;; --- RESP2 ⊂ RESP3 -------------------------------------------------------
+             (byte \+) (.readLine in) ; Simple string ✓
+             (byte \:) ; Simple long ✓
+             (let [s (.readLine in)]
+               (when-not skip?
+                 (Long/parseLong s)))
 
-        (byte \#) ; Bool ✓
-        (let [b (.readByte in)]
-          (com/discard-crlf in)
-          (== b #=(byte \t)))
+             (byte \-) ; Simple error ✓
+             (let [s (.readLine in)]
+               (when-not skip?
+                 (redis-reply-error s)))
 
-        (byte \!) (redis-reply-error (read-blob false in)) ; Blob error ✓
+             (byte \$) ; Blob (nil/string/bytes/thawed) ✓
+             (blobs/read-blob
+               ;; User blob => obey read-opts
+               (.-read-mode         read-opts)
+               (.-auto-deserialize? read-opts)
+               in)
 
-        (byte \=) ; Verbatim string ; ✓
-        (let [^String s (read-blob false in)
-              format  (subs s 0 3) ; "txt", "mkd", etc.
-              payload (subs s 4)]
-          [:carmine/verbatim-string format payload]) ; TODO API okay?
+             (byte \*) ; Aggregate array ✓
+             (read-aggregate-by-ones [] read-opts
+               read-reply in)
 
-        (byte \,) ; Double ✓
-        (let [s (.readLine in)]
-          (enc/cond
-            (= s  "inf") Double/POSITIVE_INFINITY
-            (= s "-inf") Double/NEGATIVE_INFINITY
-            :else       (Double/parseDouble s)))
+             ;; --- RESP3 ∖ RESP2 -------------------------------------------------------
+             (byte \.) (do (com/discard-crlf in) ::end-of-aggregate-stream) ; End of aggregate stream ✓
+             (byte \_) (do (com/discard-crlf in) nil) ; Null ✓
 
-        (byte \() ; Big integer ✓
-        (let [s (.readLine in)]
-          (bigint (BigInteger. s)))
+             (byte \#) ; Bool ✓
+             (let [b (.readByte in)]
+               (com/discard-crlf in)
+               (== b #=(byte \t)))
 
-        (byte \~) (read-aggregate-into #{} read-reply in) ; Aggregate set ✓
-        (byte \%) (read-aggregate-into-map read-reply in) ; Aggregate map ✓
+             (byte \!) ; Blob error ✓
+             (let [;; Nb cancel read-mode, markers
+                   blob-reply (blobs/read-blob nil false in)]
+               (when-not skip?
+                 (redis-reply-error blob-reply) ))
 
-        (byte \|) ; Attribute map ✓
-        (blobs/as-default
-          (let [attrs (read-aggregate-into-map read-reply in)
-                target (read-reply in)]
+             (byte \=) ; Verbatim string ; ✓
+             (let [;; Nb cancel read-mode, markers
+                   ^String s (blobs/read-blob nil false in)]
+               (when-not skip?
+                 (let [format  (subs s 0 3) ; "txt", "mkd", etc.
+                       payload (subs s 4)]
+                   ;; TODO API okay?
+                   [:carmine/verbatim-string format payload])))
 
-            ;; TODO API okay?
-            (if (instance? clojure.lang.IObj target)
-              (with-meta target {:carmine/attributes attrs})
-              [:carmine/with-attributes target attrs]
-              #_
-              (throw
-                (ex-info "[Carmine] Attributes reply for unexpected (non-IObj) type"
-                  {:eid :carmine.resp.read/attributes-for-unexpected-type
-                   :target {:type (type target) :value target}
-                   :attributes attrs})))))
+             (byte \,) ; Double ✓
+             (let [s (.readLine in)]
+               (when-not skip?
+                 (enc/cond
+                   (= s  "inf") Double/POSITIVE_INFINITY
+                   (= s "-inf") Double/NEGATIVE_INFINITY
+                   :else       (Double/parseDouble s))))
 
-        (byte \>) ; Push ✓
-        (blobs/as-default
-          (let [v (read-aggregate-into [] read-reply in)]
-            (when-let [push-fn *push-fn*]
-              (try ; Silently swallow errors (fn should have own error handling)
-                (push-fn v)
-                (catch Throwable _)))
+             (byte \() ; Big integer ✓
+             (let [s (.readLine in)]
+               (when-not skip?
+                 (bigint (BigInteger. s))))
 
-            ;; Continue to actual reply
-            (read-reply in)))
+             (byte \~) (read-aggregate-by-ones #{} read-opts read-reply in) ; Aggregate set ✓
+             (byte \%) (read-aggregate-by-pairs    read-opts read-reply in) ; Aggregate map ✓
 
-        (throw
-          (ex-info "[Carmine] Unexpected reply kind"
-            {:eid :carmine.resp.read/unexpected-reply-kind
-             :kind
-             (enc/assoc-when
-               {:as-byte kind-b :as-char (byte kind-b)}
-               :end-of-stream? (== kind-b -1))})))
+             (byte \|) ; Attribute map ✓
+             (let [attrs  (read-aggregate-by-pairs read-opts read-reply in)
+                   target (read-reply              read-opts            in)]
 
-      (catch Throwable t
-        (throw
-          (ex-info "[Carmine] Unexpected reply error"
-            {:eid :carmine.resp.read/reply-error
-             :kind {:as-byte kind-b :as-char (char kind-b)}}
-            t))))))
+               (when-not skip?
+                 ;; TODO API okay?
+                 (if (instance? clojure.lang.IObj target)
+                   (with-meta target {:carmine/attributes attrs})
+                   [:carmine/with-attributes target attrs]
+                   #_
+                   (throw
+                     (ex-info "[Carmine] Attributes reply for unexpected (non-IObj) type"
+                       {:eid :carmine.resp.read/attributes-for-unexpected-type
+                        :target {:type (type target) :value target}
+                        :attributes attrs})))))
+
+             (byte \>) ; Push ✓
+             (let [;; Completely neutral read-opts
+                   v (read-aggregate-by-ones [] com/nil-read-opts read-reply in)]
+               (when-let [push-fn *push-fn*] ; Not part of read-opts, reasonable?
+                 (try ; Silently swallow errors (fn should have own error handling)
+                   (push-fn v)
+                   (catch Throwable _)))
+
+               ;; Continue to actual reply
+               (read-reply read-opts in))
+
+             (throw
+               (ex-info "[Carmine] Unexpected reply kind"
+                 {:eid :carmine.resp.read/unexpected-reply-kind
+                  :read-opts (com/read-opts->map read-opts)
+                  :kind
+                  (enc/assoc-when
+                    {:as-byte kind-b :as-char (byte kind-b)}
+                    :end-of-stream? (== kind-b -1))})))
+
+           (catch Throwable t
+             (throw
+               (ex-info "[Carmine] Unexpected reply error"
+                 {:eid :carmine.resp.read/reply-error
+                  :read-opts (com/read-opts->map read-opts)
+                  :kind {:as-byte kind-b :as-char (char kind-b)}}
+                 t))))]
+
+     (if skip?
+       (if (identical? reply ::end-of-aggregate-stream)
+         reply
+         :carmine/skipped)
+       reply))))
 
 (deftest ^:private _read-reply
+  ;; TODO Update
   [(testing "Basics"
      [(is (= (read-reply
                (xs->in+ "*10" "+simple string"
@@ -362,3 +493,44 @@
 
         [(is (= reply "get reply"))
          (is (= (deref p_ 0 nil) ["pubsub" "message" "channel" "message content"]))])])])
+
+;;;;
+
+(let [read-reply              read-reply
+      get-carmine-reply-error com/get-carmine-reply-error]
+
+  (defn read-replies
+    ;; TODO Update
+    [in as-pipeline? reqs]
+    (let [n-reqs   (count reqs)
+          big-n?   (> n-reqs 10)
+          complete (if big-n? persistent! identity)
+          conj*    (if big-n? conj!       conj)
+          error_   (volatile! nil)
+
+          replies
+          (complete
+            (reduce
+              (fn [acc req]
+                ;; TODO read-mode, etc.
+                (let [reply (read-reply in)]
+                  (enc/cond
+                    (identical? reply :carmine/skipped) acc
+
+                    :if-let [reply-error (get-carmine-reply-error reply)]
+                    (do
+                      (vreset! error_ reply-error)
+                      (conj*   acc    reply-error))
+
+                    :else (conj* acc reply))))
+
+              (if big-n? (transient []) [])
+              reqs))]
+
+      (if (or as-pipeline? (> (count replies) 1))
+        replies ; Return replies as vector
+
+        ;; Return single value, throw if reply error
+        (if-let [error @error_]
+          (throw error)
+          (nth replies 0))))))

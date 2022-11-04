@@ -1,5 +1,6 @@
 (ns taoensso.carmine.impl.resp.write
-  "Write part of RESP3 implementation."
+  "Write-side implementation of the Redis RESP3 protocol,
+  Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
    [clojure.string  :as str]
@@ -16,6 +17,11 @@
 (comment
   (remove-ns      'taoensso.carmine.impl.resp.write)
   (test/run-tests 'taoensso.carmine.impl.resp.write))
+
+(enc/declare-remote
+  ^:dynamic taoensso.carmine-v4/*auto-serialize?*)
+
+(alias 'core 'taoensso.carmine-v4)
 
 ;;;; Bulk byte strings
 
@@ -159,18 +165,18 @@
        (.write         out ba-payload 0 payload-len)
        (.write         out ba-crlf    0           2)))))
 
-(defn- reserved-null!
+(defn- reserve-null!
   "This is a Carmine (not Redis) limitation to support auto null-prefixed
   blob markers with special semantics (`ba-npy`, etc.)."
   [^String s]
-  (when (and com/reserve-nulls? (not (.isEmpty s)) (zero? ^int (.charAt s 0)))
+  (when (and (not (.isEmpty s)) (== ^int (.charAt s 0) 0))
     (throw
-      (ex-info "[Carmine] String args can't begin with null (char 0) when `write-blob-markers?` is true"
-        {:eid :carmine.resp.write/reserved-null
+      (ex-info "[Carmine] String args can't begin with null (char 0)"
+        {:eid :carmine.resp.write/null-reserved
          :arg s}))))
 
 (defn- write-bulk-str [^BufferedOutputStream out s]
-  (reserved-null!                s)
+  (reserve-null!                 s)
   (write-bulk-ba out (str->bytes s)))
 
 (deftest ^:private _write-bulk-str
@@ -180,9 +186,9 @@
    (is (= (with-out->str (write-bulk-str out com/unicode-string))
          "$43\r\nಬಾ ಇಲ್ಲಿ ಸಂಭವಿಸ\r\n\r\n"))
 
-   (testing "reserved-null!"
-     [(is (nil?                                                     (reserved-null! "")))
-      (is (throws? :common {:eid :carmine.resp.write/reserved-null} (reserved-null! "\u0000<")))])
+   (testing "reserve-null!"
+     [(is (nil?                                                     (reserve-null! "")))
+      (is (throws? :common {:eid :carmine.resp.write/null-reserved} (reserve-null! "\u0000<")))])
 
    (testing "Bulk num/str equivalence"
      [(is (=
@@ -283,11 +289,11 @@
           (str ns "/" (name kw))
           (do         (name kw))))
 
-      unsupported-type!
+      non-native-type!
       (fn [arg]
         (throw
-          (ex-info "[Carmine] Trying to send unsupported argument type to Redis (`write-blob-markers?` is false, so auto serialization is disabled)"
-            {:eid :carmine.resp.write/unsupported-arg-type
+          (ex-info "[Carmine] Trying to send argument of non-native type to Redis while `*auto-serialize?` is false"
+            {:eid :carmine.resp.write/non-native-arg-type
              :arg {:type (type arg) :value arg}})))]
 
   (extend-protocol IRedisArg
@@ -306,26 +312,26 @@
     ToFrozen
     (write-bulk-arg [x out]
       (let [ba (or (.-?frozen-ba x) (nippy/freeze x (.-freeze-opts x)))]
-        (if com/write-blob-markers?
+        (if core/*auto-serialize?*
           (write-bulk-ba out ba-npy ba)
           (write-bulk-ba out        ba))))
 
     Object
     (write-bulk-arg [x out]
-      (if com/write-blob-markers?
+      (if core/*auto-serialize?*
         (write-bulk-ba out ba-npy (nippy/freeze x))
-        (unsupported-type!                      x)))
+        (non-native-type!                       x)))
 
     nil
     (write-bulk-arg [x ^BufferedOutputStream out]
-      (if com/write-blob-markers?
+      (if core/*auto-serialize?*
         (.write out bulk-nil 0 bulk-nil-len)
-        (unsupported-type! x))))
+        (non-native-type! x))))
 
   (extend-type (Class/forName "[B") ; Extra `extend` needed due to CLJ-1381
     IRedisArg
     (write-bulk-arg [ba out]
-      (if com/write-blob-markers?
+      (if core/*auto-serialize?*
         (write-bulk-ba out ba-bin ba) ; Write   marked bytes
         (write-bulk-ba out        ba) ; Write unmarked bytes
         ))))
@@ -333,7 +339,7 @@
 ;;;;
 
 (defn write-requests
-  "Sends requests to Redis server using its byte string protocol:
+  "Sends pipelined requests to Redis server using its byte string protocol:
       *<num of args> crlf
         [$<size of arg> crlf
           <arg payload> crlf ...]"
@@ -341,7 +347,7 @@
   (enc/run!
     (fn [req-args]
       (let [n-args (count req-args)]
-        (when-not (zero? n-args)
+        (when-not (== n-args 0)
           (write-array-len out n-args)
           (enc/run!
             (fn [arg] (write-bulk-arg arg out))
@@ -365,9 +371,21 @@
             "*7\r\n$3\r\nstr\r\n:1\r\n:2\r\n:3\r\n$3\r\n4.0\r\n$2\r\nkw\r\n$1\r\nx\r\n"))])
 
    (testing "Blob markers"
-     [(is (= (with-out->str (write-requests out [[nil]])) "*1\r\n$2\r\n\u0000_\r\n")            "ba-nil marker")
-      (is (= (with-out->str (write-requests out [[{}]]))  "*1\r\n$7\r\n\u0000>NPY\u0000\r\n") "ba-npy marker")
+     [(testing "Auto serialization enabled"
+        (binding [core/*auto-serialize?* true]
+          [(is (= (with-out->str (write-requests out [[nil]])) "*1\r\n$2\r\n\u0000_\r\n")            "nil arg => ba-nil marker")
+           (is (= (with-out->str (write-requests out [[{}]]))  "*1\r\n$7\r\n\u0000>NPY\u0000\r\n") "clj arg => ba-npy marker")
 
-      (let [ba (byte-array [(byte \a) (byte \b) (byte \c)])]
-        [(is (= (with-out->str (write-requests out [[          ba]]))  "*1\r\n$5\r\n\u0000<abc\r\n") "ba-bin marker")
-         (is (= (with-out->str (write-requests out [[(to-bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Unmarked bin")])])])
+           (let [ba (byte-array [(byte \a) (byte \b) (byte \c)])]
+             [(is (= (with-out->str (write-requests out [[          ba]]))  "*1\r\n$5\r\n\u0000<abc\r\n") "ba-bin marker")
+              (is (= (with-out->str (write-requests out [[(to-bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Unmarked bin")])]))
+
+      (testing "Auto serialization disabled"
+        (binding [core/*auto-serialize?* false]
+          (let [pattern {:eid :carmine.resp.write/non-native-arg-type}]
+           [(is (throws? :common pattern (with-out->str (write-requests out [[nil]]))) "nil arg => throw")
+            (is (throws? :common pattern (with-out->str (write-requests out [[{}]])))  "clj arg => throw")
+
+            (let [ba (byte-array [(byte \a) (byte \b) (byte \c)])]
+              [(is (= (with-out->str (write-requests out [[          ba]]))  "*1\r\n$3\r\nabc\r\n") "Unmarked bin")
+               (is (= (with-out->str (write-requests out [[(to-bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Same unmarked bin with `to-bytes`")])])))])])
