@@ -34,10 +34,9 @@
 ;; - First alpha release
 
 ;;;; TODO
-;; - Update current `read-reply` tests
-;;   - New `read-reply` tests
-;;     - Incl. fn-parser, rf-parser (which should ignore *keywordize-maps?*)
-;;     - read-mode, marking options, empties, nulls
+;;  - New `read-reply` tests
+;;    - Incl. fn-parser, rf-parser (which should ignore *keywordize-maps?*)
+;;    - read-mode, marking options, empties, nulls
 
 ;; - Update `read-replies` to take `com/Request` [<read-opts> <args>]
 ;; - v4 util wcar to create `com/Request`s, test
