@@ -7,15 +7,17 @@
    [clojure.test    :as test :refer [deftest testing is]]
    [taoensso.encore :as enc  :refer [throws?]]
    [taoensso.nippy  :as nippy]
-   [taoensso.carmine.impl.resp.common :as com
+   [taoensso.carmine.impl.resp.common :as resp-com
     :refer [str->bytes bytes->str xs->in+]]
 
-   [taoensso.carmine.impl.resp.read.blobs :as blobs])
+   [taoensso.carmine.impl.resp.read.blobs  :as blobs]
+   [taoensso.carmine.impl.resp.read.common :as read-com])
 
   (:import
    [java.nio.charset StandardCharsets]
    [java.io DataInputStream]
-   [taoensso.carmine.impl.resp.common ReadOpts Request FnParser]))
+   [taoensso.carmine.impl.resp.read.common
+    ReadOpts Request FnParser]))
 
 (comment
   (remove-ns      'taoensso.carmine.impl.resp.read)
@@ -35,13 +37,13 @@
     (enc/case-eval kind-b
       (byte \+)                 (.readLine in)  ; Simple string
       (byte \:) (Long/parseLong (.readLine in)) ; Simple long
-      (byte \.) (do (com/discard-crlf in) ::end-of-aggregate-stream)
+      (byte \.) (do (resp-com/discard-crlf in) ::end-of-aggregate-stream)
       )))
 
 (defn- read-aggregate-by-ones
   [to ^ReadOpts read-opts read-reply ^DataInputStream in]
   (let [size-str (.readLine in)
-        inner-read-opts (com/inner-read-opts read-opts)
+        inner-read-opts (read-com/inner-read-opts read-opts)
         skip? (identical? (.-read-mode read-opts) :skip)]
 
     (if-let [stream? (= size-str "?")]
@@ -57,7 +59,7 @@
               (recur))))
 
         ;; Reducing parser
-        :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+        :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
         (let [rf (rfc)]
           (loop [acc (rf)] ; Init acc
             (let [x (read-reply inner-read-opts in)]
@@ -86,7 +88,7 @@
               0 n)
 
             ;; Reducing parser
-            :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+            :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
             (let [rf (rfc)
                   init-acc (rf)]
               (rf ; Complete acc
@@ -102,11 +104,11 @@
 
 (deftest ^:private _read-aggregate-by-ones-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
-  [(is (= (read-aggregate-by-ones [] com/default-read-opts nil (xs->in+  0))  []) "Empty blob")
-   (is (= (read-aggregate-by-ones [] com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
+  [(is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+  0))  []) "Empty blob")
+   (is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
 
-   (is (= (read-aggregate-by-ones [] com/default-read-opts read-basic-reply (xs->in+ 2   ":1" ":2"))     [1 2]))
-   (is (= (read-aggregate-by-ones [] com/default-read-opts read-basic-reply (xs->in+ "?" ":1" ":2" ".")) [1 2]) "Streaming")])
+   (is (= (read-aggregate-by-ones [] read-com/default-read-opts read-basic-reply (xs->in+ 2   ":1" ":2"))     [1 2]))
+   (is (= (read-aggregate-by-ones [] read-com/default-read-opts read-basic-reply (xs->in+ "?" ":1" ":2" ".")) [1 2]) "Streaming")])
 
 (let [keywordize (fn [x] (if (string? x) (keyword x) x))]
   (defn- read-aggregate-by-pairs
@@ -114,7 +116,7 @@
     cases (notably maps)."
     [^ReadOpts read-opts read-reply ^DataInputStream in]
     (let [size-str (.readLine in)
-          inner-read-opts (com/inner-read-opts read-opts)
+          inner-read-opts (read-com/inner-read-opts read-opts)
           skip? (identical? (.-read-mode read-opts) :skip)]
 
       (if-let [stream? (= size-str "?")]
@@ -132,7 +134,7 @@
                   (recur)))))
 
           ;; Reducing parser
-          :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+          :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
           (let [rf (rfc)]
             (loop [acc (rf)] ; Init acc
               (let [x (read-reply inner-read-opts in)]
@@ -168,7 +170,7 @@
                 0 n)
 
               ;; Reducing parser
-              :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+              :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
               (let [rf (rfc)
                     init-acc (rf)]
                 (rf ; Complete
@@ -203,20 +205,20 @@
 (deftest ^:private _read-aggregate-by-pairs-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
   [(testing "Basics"
-     [(is (= (read-aggregate-by-pairs com/default-read-opts nil (xs->in+  0))  {}) "Empty blob")
-      (is (= (read-aggregate-by-pairs com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
+     [(is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+  0))  {}) "Empty blob")
+      (is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
 
-      (is (= (read-aggregate-by-pairs com/default-read-opts read-basic-reply (xs->in+ 2 "+k1" "+v1" "+k2" "+v2")) {:k1  "v1" :k2 "v2"}) "With keywordize")
-      (is (= (read-aggregate-by-pairs com/nil-read-opts     read-basic-reply (xs->in+ 2 "+k1" "+v1"  ":2" "+v2")) {"k1" "v1",  2 "v2"}) "W/o  keywordize")
+      (is (= (read-aggregate-by-pairs read-com/default-read-opts read-basic-reply (xs->in+ 2 "+k1" "+v1" "+k2" "+v2")) {:k1  "v1" :k2 "v2"}) "With keywordize")
+      (is (= (read-aggregate-by-pairs read-com/nil-read-opts     read-basic-reply (xs->in+ 2 "+k1" "+v1"  ":2" "+v2")) {"k1" "v1",  2 "v2"}) "W/o  keywordize")
 
-      (is (= (read-aggregate-by-pairs com/default-read-opts read-basic-reply (xs->in+ "?" "+k1" "+v1" ":2" "+v2" ".")) {:k1  "v1"  2 "v2"}) "Streaming, with keywordize")
-      (is (= (read-aggregate-by-pairs com/nil-read-opts     read-basic-reply (xs->in+ "?" "+k1" "+v1" ":2" "+v2" ".")) {"k1" "v1", 2 "v2"}) "Streaming, w/o  keywordize")])])
+      (is (= (read-aggregate-by-pairs read-com/default-read-opts read-basic-reply (xs->in+ "?" "+k1" "+v1" ":2" "+v2" ".")) {:k1  "v1"  2 "v2"}) "Streaming, with keywordize")
+      (is (= (read-aggregate-by-pairs read-com/nil-read-opts     read-basic-reply (xs->in+ "?" "+k1" "+v1" ":2" "+v2" ".")) {"k1" "v1", 2 "v2"}) "Streaming, w/o  keywordize")])])
 
 (defn- redis-reply-error [?message]
   (let [^String message (if (nil? ?message) "" ?message)
         code (re-find #"^\S+" message)] ; "ERR", "WRONGTYPE", etc.
 
-    (com/carmine-reply-error
+    (resp-com/carmine-reply-error
       (ex-info "[Carmine] Redis replied with an error"
         {:eid :carmine.resp.read/error-reply
          :message message
@@ -255,7 +257,7 @@
   "Blocks to read reply from given DataInputStream."
 
   ;; For REPL/testing
-  ([in] (read-reply (com/new-read-opts) in))
+  ([in] (read-reply (read-com/new-read-opts) in))
 
   ([^ReadOpts read-opts ^DataInputStream in]
    ;; Since dynamic vars are ephemeral and reply reading is lazy, neither this
@@ -291,12 +293,12 @@
                read-reply in)
 
              ;; --- RESP3 ∖ RESP2 -------------------------------------------------------
-             (byte \.) (do (com/discard-crlf in) ::end-of-aggregate-stream) ; End of aggregate stream ✓
-             (byte \_) (do (com/discard-crlf in) nil) ; Null ✓
+             (byte \.) (do (resp-com/discard-crlf in) ::end-of-aggregate-stream) ; End of aggregate stream ✓
+             (byte \_) (do (resp-com/discard-crlf in) nil) ; Null ✓
 
              (byte \#) ; Bool ✓
              (let [b (.readByte in)]
-               (com/discard-crlf in)
+               (resp-com/discard-crlf in)
                (== b #=(byte \t)))
 
              (byte \!) ; Blob error ✓
@@ -348,7 +350,7 @@
 
              (byte \>) ; Push ✓
              (let [;; Completely neutral read-opts
-                   v (read-aggregate-by-ones [] com/nil-read-opts read-reply in)]
+                   v (read-aggregate-by-ones [] read-com/nil-read-opts read-reply in)]
                (when-let [push-fn *push-fn*] ; Not part of read-opts, reasonable?
                  (try ; Silently swallow errors (fn should have own error handling)
                    (push-fn v)
@@ -360,7 +362,7 @@
              (throw
                (ex-info "[Carmine] Unexpected reply kind"
                  {:eid :carmine.resp.read/unexpected-reply-kind
-                  :read-opts (com/describe-read-opts read-opts)
+                  :read-opts (read-com/describe-read-opts read-opts)
                   :kind
                   (enc/assoc-when
                     {:as-byte kind-b :as-char (byte kind-b)}
@@ -370,7 +372,7 @@
              (throw
                (ex-info "[Carmine] Unexpected reply error"
                  {:eid :carmine.resp.read/reply-error
-                  :read-opts (com/describe-read-opts read-opts)
+                  :read-opts (read-com/describe-read-opts read-opts)
                   :kind {:as-byte kind-b :as-char (char kind-b)}}
                  t))))]
 
@@ -387,7 +389,7 @@
        (let [parser-fn   (.-fn          ^FnParser parser)
              parser-opts (.-parser-opts ^FnParser parser)]
 
-         (if (com/carmine-reply-error? reply)
+         (if (resp-com/carmine-reply-error? reply)
            (if (get parser-opts :parse-errors?)
              (parser-fn reply)
              (do        reply))
@@ -412,7 +414,7 @@
    (testing "Errors"
      [(testing "Simple errors"
         [(let [r1 (read-reply (xs->in+ "-ERR Foo bar baz"))]
-           (is (com/crex-match? r1
+           (is (resp-com/crex-match? r1
                  {:eid :carmine.resp.read/error-reply
                   :message "ERR Foo bar baz"
                   :code    "ERR"})))
@@ -420,12 +422,12 @@
          (let [[r1 r2 r3 r4] (read-reply (xs->in+ "*4" ":1" "-CODE1 a" ":2" "-CODE2 b"))]
            [(is (= r1 1))
             (is (= r3 2))
-            (com/crex-match? r2 {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a"})
-            (com/crex-match? r4 {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b"})])])
+            (resp-com/crex-match? r2 {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a"})
+            (resp-com/crex-match? r4 {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b"})])])
 
       (testing "Bulk errors"
         [(let [r1 (read-reply (xs->in+ "!10" "CODE Foo\r\n"))]
-           (is (com/crex-match? r1
+           (is (resp-com/crex-match? r1
                  {:eid :carmine.resp.read/error-reply
                   :message "CODE Foo\r\n"
                   :code    "CODE"})
@@ -434,8 +436,8 @@
          (let [[r1 r2 r3 r4] (read-reply (xs->in+ "*4" ":1" "!9" "CODE1 a\r\n" ":2" "!9" "CODE2 b\r\n"))]
            [(is (= r1 1))
             (is (= r3 2))
-            (com/crex-match? r2 {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a\r\n"})
-            (com/crex-match? r4 {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b\r\n"})])])])
+            (resp-com/crex-match? r2 {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a\r\n"})
+            (resp-com/crex-match? r4 {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b\r\n"})])])])
 
    (testing "Nested aggregates"
      [(is (= [[1 "2" 3] ["a" "b"] []]
@@ -470,9 +472,7 @@
                 "%?" "+k1" "+v1" ":2" ":2" "." ; Map val
                 "~2" "+a" "+b"                 ; Set key
                 "~?" ":1" ":2" "."             ; Set val
-                ))))
-
-      ])
+                ))))])
 
    (testing "Misc types"
      [(is (= (read-reply (xs->in+ "=11" "txt:hello\r\n")) [:carmine/verbatim-string "txt" "hello\r\n"])
@@ -505,7 +505,7 @@
 ;;;;
 
 (let [read-reply              read-reply
-      get-carmine-reply-error com/get-carmine-reply-error]
+      get-carmine-reply-error resp-com/get-carmine-reply-error]
 
   (defn read-replies
     ;; TODO Update

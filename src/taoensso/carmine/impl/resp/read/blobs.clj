@@ -6,13 +6,15 @@
    [clojure.test    :as test :refer [deftest testing is]]
    [taoensso.encore :as enc  :refer [throws?]]
    [taoensso.nippy  :as nippy]
-   [taoensso.carmine.impl.resp.common :as com
-    :refer [str->bytes bytes->str xs->in+]])
+   [taoensso.carmine.impl.resp.common :as resp-com
+    :refer [str->bytes bytes->str xs->in+]]
+
+   [taoensso.carmine.impl.resp.read.common :as read-com])
 
   (:import
    [java.nio.charset StandardCharsets]
    [java.io DataInputStream]
-   [taoensso.carmine.impl.resp.common AsThawed]))
+   [taoensso.carmine.impl.resp.read.common AsThawed]))
 
 (comment
   (remove-ns      'taoensso.carmine.impl.resp.read.blobs)
@@ -54,7 +56,7 @@
           (if-let [marker
                    (and
                      read-markers?
-                     (com/read-blob-?marker in n))]
+                     (resp-com/read-blob-?marker in n))]
             ;; Marked
             (read-marked-blob read-mode marker n in)
 
@@ -63,18 +65,18 @@
 
               ;; Skip
               (do
-                (.skipBytes       in n)
-                (com/discard-crlf in)
+                (.skipBytes            in n)
+                (resp-com/discard-crlf in)
                 :carmine/_skipped)
 
               ;; Don't skip
               (let [ba (byte-array n)]
-                (.readFully       in ba 0 n)
-                (com/discard-crlf in)
+                (.readFully            in ba 0 n)
+                (resp-com/discard-crlf in)
                 (complete-blob read-mode ba)))))))))
 
-(let [discard-stream-separator com/discard-stream-separator
-      discard-crlf             com/discard-crlf]
+(let [discard-stream-separator resp-com/discard-stream-separator
+      discard-crlf             resp-com/discard-crlf]
 
   (defn- read-streaming-blob
     [read-mode ^DataInputStream in]
@@ -123,12 +125,12 @@
             (.readFully in ba 0 n)
             (do            ba)))]
 
-    (com/discard-crlf in)
+    (resp-com/discard-crlf in)
     (case marker
       :nil nil
       :bin (or ?ba (byte-array 0))
       :npy
-      (let [?thaw-opts (com/read-mode->?thaw-opts read-mode)]
+      (let [?thaw-opts (read-com/read-mode->?thaw-opts read-mode)]
         ;; ?ba should be nnil when marked
         (blob->thawed ?thaw-opts ?ba)))))
 
@@ -138,7 +140,7 @@
   (try
     (nippy/thaw ba ?thaw-opts)
     (catch Throwable t
-      (com/carmine-reply-error
+      (resp-com/carmine-reply-error
         (ex-info "[Carmine] Nippy threw an error while thawing blob reply"
           (enc/assoc-when
             {:eid :carmine.resp.read.blob/nippy-thaw-error
@@ -152,7 +154,7 @@
     (identical?    read-mode    nil) (bytes->str ba) ; Common case
     (identical?    read-mode :bytes)             ba
     ;; (identical? read-mode :skip) :carmine/_skipped ; Shouldn't be here at all
-    :if-let [thaw-opts (com/read-mode->?thaw-opts read-mode)]
+    :if-let [thaw-opts (read-com/read-mode->?thaw-opts read-mode)]
     (blob->thawed thaw-opts ba)))
 
 ;;;; Tests
@@ -174,10 +176,10 @@
       (is (= (bytes->str (read-blob :bytes true (xs->in+ 7 "hello\r\n"))) "hello\r\n") "Binary safe")
 
       (let [pattern {:eid :carmine.resp.read/missing-crlf}]
-        [(is (throws? :common pattern (read-blob nil    true (com/str->in "5\r\nhello"))))
-         (is (throws? :common pattern (read-blob :bytes true (com/str->in "5\r\nhello"))))
-         (is (throws? :common pattern (read-blob nil    true (com/str->in "5\r\nhello__"))))
-         (is (throws? :common pattern (read-blob :bytes true (com/str->in "5\r\nhello__"))))])])
+        [(is (throws? :common pattern (read-blob nil    true (resp-com/str->in "5\r\nhello"))))
+         (is (throws? :common pattern (read-blob :bytes true (resp-com/str->in "5\r\nhello"))))
+         (is (throws? :common pattern (read-blob nil    true (resp-com/str->in "5\r\nhello__"))))
+         (is (throws? :common pattern (read-blob :bytes true (resp-com/str->in "5\r\nhello__"))))])])
 
    (testing "Streaming"
      [(is (=             (read-blob nil    true (xs->in+ "?" ";5" "hello" ";1" " " ";6" "world!" ";0"))  "hello world!"))
@@ -197,7 +199,7 @@
 
       (let [data       nippy/stress-data-comparable
             ba         (nippy/freeze data)
-            marked-ba  (com/xs->ba com/ba-npy ba)
+            marked-ba  (resp-com/xs->ba resp-com/ba-npy ba)
             marked-len (alength ^bytes marked-ba)]
 
         (is (= (read-blob nil true (xs->in+ marked-len marked-ba)) data) "Simple Nippy data"))
@@ -205,7 +207,7 @@
       (let [data       nippy/stress-data-comparable
             pwd        [:salted "secret"]
             ba         (nippy/freeze data {:password pwd})
-            marked-ba  (com/xs->ba com/ba-npy ba)
+            marked-ba  (resp-com/xs->ba resp-com/ba-npy ba)
             marked-len (alength ^bytes marked-ba)]
 
         [(is (= (read-blob (AsThawed. {:password pwd}) true (xs->in+ marked-len marked-ba)) data)
@@ -213,8 +215,8 @@
 
          (let [r (read-blob nil true (xs->in+ marked-len marked-ba))]
 
-           [(is (com/crex-match? r {:eid :carmine.resp.read.blob/nippy-thaw-error})
+           [(is (resp-com/crex-match? r {:eid :carmine.resp.read.blob/nippy-thaw-error})
               "Encrypted Nippy data (bad password)")
 
-            (is (enc/ba= (-> r com/get-carmine-reply-error ex-data :bytes :content) ba)
+            (is (enc/ba= (-> r resp-com/get-carmine-reply-error ex-data :bytes :content) ba)
               "Unthawed Nippy data still provided")])])])])

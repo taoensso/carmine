@@ -11,10 +11,11 @@
     [protocol    :as legacy-protocol]
     [commands    :as legacy-cmds]]
 
-   [taoensso.carmine.impl.resp.common     :as resp-com]
-   [taoensso.carmine.impl.resp.read       :as resp-read]
-   [taoensso.carmine.impl.resp.write      :as resp-write]
-   [taoensso.carmine.impl.resp.read.blobs :as resp-blobs]))
+   [taoensso.carmine.impl.resp.common      :as resp-com]
+   [taoensso.carmine.impl.resp.read.common :as read-com]
+   [taoensso.carmine.impl.resp.read        :as resp-read]
+   [taoensso.carmine.impl.resp.write       :as resp-write]
+   [taoensso.carmine.impl.resp.read.blobs  :as resp-blobs]))
 
 (comment
   (remove-ns 'taoensso.carmine-v4)
@@ -147,10 +148,10 @@
 ;;;; Aliases
 
 (do
-  (enc/defalias resp-com/skip-replies)
-  (enc/defalias resp-com/normal-replies)
-  (enc/defalias resp-com/as-bytes)
-  (enc/defalias resp-com/as-thawed)
+  (enc/defalias read-com/skip-replies)
+  (enc/defalias read-com/normal-replies)
+  (enc/defalias read-com/as-bytes)
+  (enc/defalias read-com/as-thawed)
 
   ;; (enc/defalias resp-blobs/as-long)
   ;; (enc/defalias resp-blobs/as-?long)
