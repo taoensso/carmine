@@ -144,8 +144,9 @@
 ;; Wrapper to identify Carmine-generated reply errors for
 ;; possible throwing or unwrapping
 (deftype  CarmineReplyError [ex-info])
-(defn     carmine-reply-error [x] (CarmineReplyError. x))
-(defn get-carmine-reply-error [x]
+(defn     carmine-reply-error  [x] (CarmineReplyError. x))
+(defn     carmine-reply-error? [x] (instance? CarmineReplyError x))
+(defn get-carmine-reply-error  [x]
   (when (instance? CarmineReplyError x)
     (.-ex-info ^CarmineReplyError x)))
 
@@ -235,27 +236,103 @@
   "Reply parser, e/o #{nil <FnParser> <RfParser>}"
   nil)
 
-(deftype FnParser [fn]) ; Applies only to non-aggregates
-(deftype RfParser [rf]) ; Applies only to     aggregates
+;; Parser opts are an advanced/undocumented feature for internal use
+(deftype FnParser [fn  parser-opts]) ; Applies only to non-aggregates
+(deftype RfParser [rfc parser-opts]) ; Applies only to     aggregates
 
-(defn fn-parser [fn] (FnParser. fn))
+(defn- parser-error
+  [cause data]
+  (carmine-reply-error
+    (ex-info "[Carmine] Reply parser threw an error"
+      (conj
+        {:eid :carmine.resp.read/parser-error}
+        data)
+      cause)))
+
+(defn- catching-parser-fn [f parser-opts]
+  (fn catching-parser-fn [x]
+    (try
+      (f x)
+      (catch Throwable t
+        (parser-error t
+          {:kind        :fn-parser
+           :parser-opts parser-opts
+           :arg         {:value x :type (type x)}})))))
+
+(defn fn-parser [f parser-opts]
+  (let [f
+        (if (get parser-opts :no-catch?) ; Undocumented
+          (do                 f)
+          (catching-parser-fn f parser-opts))]
+    (FnParser. f (not-empty parser-opts))))
+
+(defn- catching-parser-rfc
+  "Returns a stateful parser-rf that'll catch errors. Once the first
+  error is caught, all future calls to rf will noop and return that
+  first error. Nb: this parser-rf will allow entire stream to be read,
+  even in the event of a parsing error."
+  [rfc parser-opts]
+  (fn catching-rf-constructor []
+    (let [;; Once first error is caught, all future calls will noop
+          ;; and just return that first error. This'll allow the stream
+          ;; to still be read, while retaining the correct (first) error.
+          caught_ (volatile! nil)
+          catch!  (fn [t data] (vreset! caught_ (parser-error t data)))
+          rf
+          (try
+            (rfc)
+            (catch Throwable t
+              (catch! t
+                {:kind        :rf-parser-constructor
+                 :parser-opts parser-opts
+                 :arity       '[]})))]
+
+      (fn catching-parser-rf
+        ([      ] (try (or @caught_ (rf))        (catch Throwable t (catch! t {:kind :rf-parser :parser-opts parser-opts :arity '[]}))))
+        ([acc   ] (try (or @caught_ (rf acc))    (catch Throwable t (catch! t {:kind :rf-parser :parser-opts parser-opts :arity '[acc] :acc {:value acc :type (type acc)}}))))
+        ([acc in] (try (or @caught_ (rf acc in)) (catch Throwable t (catch! t {:kind :rf-parser :parser-opts parser-opts :arity '[acc in]
+                                                                               :acc {:value acc :type (type acc)}
+                                                                               :in  {:value in  :type (type in)}}))))))))
+
 (defn rf-parser
-  "Returns a reducing parser for aggregates with:
+  "(rf-constructor) should return a (possibly stateful) reducing fn (rf)
+  for parsing aggregates such that:
     (rf)         => Init     acc
     (rf acc in)  => Next     acc (accumulate step)
     (rf end-acc) => Complete acc"
-  [rf] (RfParser. rf))
+  [rf-constructor parser-opts]
+  (let [rfc
+        (if (get parser-opts :no-catch?) ; Undocumented
+          (do                  rf-constructor)
+          (catching-parser-rfc rf-constructor parser-opts))]
+    (RfParser. rfc (not-empty parser-opts))))
 
-(defn get-parser-fn [parser] (when (instance? FnParser parser) (.-fn ^FnParser parser)))
-(defn get-parser-rf [parser] (when (instance? RfParser parser) (.-rf ^RfParser parser)))
+(defn get-parser-fn   [parser] (when (instance? FnParser parser) (.-fn  ^FnParser parser)))
+(defn get-parser-rfc  [parser] (when (instance? RfParser parser) (.-rfc ^RfParser parser)))
+(defn get-parser-opts [parser]
+  (cond
+    (instance? FnParser parser) (.-parser-opts ^FnParser parser)
+    (instance? RfParser parser) (.-parser-opts ^RfParser parser)))
+
+(defn describe-parser
+  "For error messages, etc."
+  [parser]
+  (when parser
+    (cond
+      (instance? FnParser parser) {:kind :fn :fn  (.-fn  ^FnParser parser) :parser-opts (.-parser-opts ^FnParser parser)}
+      (instance? RfParser parser) {:kind :rf :rfc (.-rfc ^RfParser parser) :parser-opts (.-parser-opts ^RfParser parser)})))
+
+(comment
+  (describe-parser (fn-parser identity                 {:a :A}))
+  (describe-parser (rf-parser (fn [] (constantly nil)) {:a :A})))
 
 ;;;; ReadOpts, etc.
 
-(deftype ReadOpts [read-mode auto-deserialize? parser keywordize-maps?])
 (deftype Request  [read-opts req-args])
+(deftype ReadOpts [read-mode parser auto-deserialize? keywordize-maps?])
 
 (def     nil-read-opts (ReadOpts. nil nil  nil  nil))
-(def default-read-opts (ReadOpts. nil true nil true)) ; For tests/REPL, etc.
+(def default-read-opts (ReadOpts. nil nil true true)) ; For REPL/tests, etc.
 
 (defn inner-read-opts
   "Returns ReadOpts for internal reading by aggregates.
@@ -264,30 +341,47 @@
   (ReadOpts.
     (.-read-mode         read-opts)
     (.-auto-deserialize? read-opts)
-    nil
-    (.-keywordize-maps?  read-opts)))
+    (.-keywordize-maps?  read-opts)
+    nil))
 
-(defn read-opts
-  "Slow convenience constructor for REPL/testing, etc."
-  (^ReadOpts [] (read-opts nil))
-  (^ReadOpts [{:keys [read-mode auto-deserialize? parser keywordize-maps?]}]
-   (ReadOpts. read-mode auto-deserialize? parser keywordize-maps?)))
+(let [skipping-read-opts (ReadOpts. :skip nil nil nil)]
+  (defn new-read-opts
+    (^ReadOpts []
+     (let [read-mode *read-mode*]
+       (if (identical? read-mode :skip)
+         skipping-read-opts ; Optimization, all else irrelevant
+         (let [parser *parser*]
 
-(defn dynamic-read-opts
-  "Slow convenience constructor for REPL/testing, etc."
-  ^ReadOpts []
-  (ReadOpts.
-    *read-mode*
-    core/*auto-deserialize?*
-    *parser*
-    core/*keywordize-maps?*))
+           ;; Advanced/undocumented: allow parser-opts to influence
+           ;; dynamic ReadOpts. This is exactly equivalent to
+           ;; (parse <...> (establish-bindings <...>)).
+           (if-let [parser-opts (get-parser-opts parser)]
+             (ReadOpts.
+               (get parser-opts :read-mode read-mode)
+               (if-let [e (find parser-opts :auto-deserialize?)] (val e) core/*auto-deserialize?*)
+               (if-let [e (find parser-opts :keywordize-maps?)]  (val e) core/*keywordize-maps?*)
+               parser)
 
-(comment (dynamic-read-opts))
+             ;; Common case (no parser-opts present)
+             (ReadOpts.
+               read-mode
+               core/*auto-deserialize?*
+               parser
+               core/*keywordize-maps?*))))))
 
-(defn read-opts->map
+    (^ReadOpts [opts] ; For REPL/tests
+     (if (empty? opts)
+       nil-read-opts
+       (let [{:keys [read-mode auto-deserialize? parser keywordize-maps?]} opts]
+         (ReadOpts.  read-mode auto-deserialize? parser keywordize-maps?))))))
+
+(comment (enc/qb 1e6 (new-read-opts))) ; 54.84
+
+(defn describe-read-opts
   "For error messages, etc."
-  [^ReadOpts read-opts]
-  {:read-mode         (.-read-mode         read-opts)
-   :auto-deserialize? (.-auto-deserialize? read-opts)
-   :parser            (.-parser            read-opts)
-   :keywordize-maps?  (.-keywordize-maps?  read-opts)})
+  [read-opts]
+  (when-let [^ReadOpts read-opts read-opts]
+    {:read-mode             (.-read-mode         read-opts)
+     :auto-deserialize?     (.-auto-deserialize? read-opts)
+     :keywordize-maps?      (.-keywordize-maps?  read-opts)
+     :parser            (-> (.-parser            read-opts) describe-parser)}))

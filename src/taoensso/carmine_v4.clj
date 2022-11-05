@@ -33,10 +33,6 @@
 ;; - First alpha release
 
 ;;;; TODO
-
-;; - Should parsers have some way of overriding read-opts?
-
-
 ;; - Update current `read-reply` tests
 ;;   - New `read-reply` tests
 ;;     - Incl. fn-parser, rf-parser (which should ignore *keywordize-maps?*)
@@ -51,6 +47,7 @@
 ;;     Possible interaction with *read-mode*
 
 ;; - Add common and v4 util to parse-?marked-ba -> [<kind> <payload>]
+;; - Add dummy (local?) replies
 ;; - Move *push-fn* to v4
 
 ;;;; Later
@@ -83,7 +80,9 @@
 ;;;; CHANGELOG
 ;; - [new] Full RESP3 support, incl. streaming, etc.
 ;; - [new] *auto-serialize?*, *auto-deserialize?*
-;; - [mod] Simplified parsers API, support for aggregate (rf) parsers
+;; - [new] Greatly improved `skip-replies` performance
+;; - [mod] Simplified parsers API, support for stateful
+;;         aggregate (rf) parsers (!!)
 
 ;;;; Config
 

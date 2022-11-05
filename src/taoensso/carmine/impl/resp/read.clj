@@ -15,7 +15,7 @@
   (:import
    [java.nio.charset StandardCharsets]
    [java.io DataInputStream]
-   [taoensso.carmine.impl.resp.common ReadOpts Request]))
+   [taoensso.carmine.impl.resp.common ReadOpts Request FnParser]))
 
 (comment
   (remove-ns      'taoensso.carmine.impl.resp.read)
@@ -42,67 +42,63 @@
   [to ^ReadOpts read-opts read-reply ^DataInputStream in]
   (let [size-str (.readLine in)
         inner-read-opts (com/inner-read-opts read-opts)
-        skip? (identical? (.-read-mode read-opts) :skip)
+        skip? (identical? (.-read-mode read-opts) :skip)]
 
-        aggregate-reply
-        (if-let [stream? (= size-str "?")]
+    (if-let [stream? (= size-str "?")]
 
-          ;; Streaming
+      ;; Streaming
+      (enc/cond
+
+        skip?
+        (loop []
+          (let [x (read-reply inner-read-opts in)]
+            (if (identical? x ::end-of-aggregate-stream)
+              :carmine/_skipped
+              (recur))))
+
+        ;; Reducing parser
+        :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+        (let [rf (rfc)]
+          (loop [acc (rf)] ; Init acc
+            (let [x (read-reply inner-read-opts in)]
+              (if (identical? x ::end-of-aggregate-stream)
+                (do    (rf acc)) ; Complete acc
+                (recur (rf acc x))))))
+
+        :default
+        (loop [acc (transient (empty to))]
+          (let [x (read-reply inner-read-opts in)]
+            (if (identical? x ::end-of-aggregate-stream)
+              (persistent!  acc)
+              (recur (conj! acc x))))))
+
+      ;; Not streaming
+      (let [n (Integer/parseInt size-str)]
+        (if (<= n 0) ; Empty or RESP2 null
+          (if (== n 0) to nil)
+
           (enc/cond
 
             skip?
-            (loop []
-              (let [x (read-reply inner-read-opts in)]
-                (if (identical? x ::end-of-aggregate-stream)
-                  :carmine/_skipped
-                  (recur))))
+            (enc/reduce-n
+              (fn [_ _]
+                (read-reply inner-read-opts in))
+              0 n)
 
             ;; Reducing parser
-            :if-let [rf (com/get-parser-rf (.-parser read-opts))]
-            (loop [acc (rf)] ; Init acc
-              (let [x (read-reply inner-read-opts in)]
-                (if (identical? x ::end-of-aggregate-stream)
-                  (do    (rf acc)) ; Complete acc
-                  (recur (rf acc x)))))
+            :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+            (let [rf (rfc)
+                  init-acc (rf)]
+              (rf ; Complete acc
+                (enc/reduce-n
+                  (fn [acc _n]
+                    (rf acc (read-reply inner-read-opts in)))
+                  init-acc
+                  n)))
 
             :default
-            (loop [acc (transient (empty to))]
-              (let [x (read-reply inner-read-opts in)]
-                (if (identical? x ::end-of-aggregate-stream)
-                  (persistent!  acc)
-                  (recur (conj! acc x))))))
-
-          ;; Not streaming
-          (let [n (Integer/parseInt size-str)]
-            (if (<= n 0) ; Empty or RESP2 null
-              (if (== n 0) to nil)
-
-              (enc/cond
-
-                skip?
-                (enc/reduce-n
-                  (fn [_ _]
-                    (read-reply inner-read-opts in))
-                  0 n)
-
-                ;; Reducing parser
-                :if-let [rf (com/get-parser-rf (.-parser read-opts))]
-                (let [init-acc (rf)]
-                  (rf ; Complete acc
-                    (enc/reduce-n
-                      (fn [acc _n]
-                        (rf acc (read-reply inner-read-opts in)))
-                      init-acc
-                      n)))
-
-                :default
-                (enc/repeatedly-into to n
-                  #(read-reply inner-read-opts in))))))]
-
-    (when-not skip?
-      (if-let [f (com/get-parser-fn (.-parser read-opts))]
-        (f  aggregate-reply)
-        (do aggregate-reply)))))
+            (enc/repeatedly-into to n
+              #(read-reply inner-read-opts in))))))))
 
 (deftest ^:private _read-aggregate-by-ones-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
@@ -119,94 +115,90 @@
     [^ReadOpts read-opts read-reply ^DataInputStream in]
     (let [size-str (.readLine in)
           inner-read-opts (com/inner-read-opts read-opts)
-          skip? (identical? (.-read-mode read-opts) :skip)
+          skip? (identical? (.-read-mode read-opts) :skip)]
 
-          aggregate-reply
-          (if-let [stream? (= size-str "?")]
+      (if-let [stream? (= size-str "?")]
 
-            ;; Streaming
+        ;; Streaming
+        (enc/cond
+
+          skip?
+          (loop []
+            (let [x (read-reply inner-read-opts in)]
+              (if (identical? x ::end-of-aggregate-stream)
+                :carmine/_skipped
+                (let [_k x
+                      _v (read-reply inner-read-opts in)]
+                  (recur)))))
+
+          ;; Reducing parser
+          :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+          (let [rf (rfc)]
+            (loop [acc (rf)] ; Init acc
+              (let [x (read-reply inner-read-opts in)]
+                (if (identical? x ::end-of-aggregate-stream)
+                  (rf acc) ; Complete acc
+                  (let [k x ; Without kfn!
+                        v (read-reply inner-read-opts in)]
+                    (recur (rf acc k v)))))))
+
+          :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
+          :default
+          (loop [acc (transient {})]
+            (let [x (read-reply inner-read-opts in)]
+              (if (identical? x ::end-of-aggregate-stream)
+                (persistent! acc)
+                (let [k (kfn x)
+                      v (read-reply inner-read-opts in)]
+                  (recur (assoc! acc k v)))))))
+
+        ;; Not streaming
+        (let [n (Integer/parseInt size-str)]
+          (if (<= n 0) ; Empty or RESP2 null
+            (if (== n 0) {} nil)
+
             (enc/cond
 
               skip?
-              (loop []
-                (let [x (read-reply inner-read-opts in)]
-                  (if (identical? x ::end-of-aggregate-stream)
-                    :carmine/_skipped
-                    (let [_k x
-                          _v (read-reply inner-read-opts in)]
-                      (recur)))))
+              (enc/reduce-n
+                (fn [_ _]
+                  (let [_k (read-reply inner-read-opts in)
+                        _v (read-reply inner-read-opts in)]
+                    nil))
+                0 n)
 
               ;; Reducing parser
-              :if-let [rf (com/get-parser-rf (.-parser read-opts))]
-              (loop [acc (rf)] ; Init acc
-                (let [x (read-reply inner-read-opts in)]
-                  (if (identical? x ::end-of-aggregate-stream)
-                    (rf acc) ; Complete acc
-                    (let [k x ; Without kfn!
-                          v (read-reply inner-read-opts in)]
-                      (recur (rf acc k v))))))
+              :if-let [rfc (com/get-parser-rfc (.-parser read-opts))]
+              (let [rf (rfc)
+                    init-acc (rf)]
+                (rf ; Complete
+                  (enc/reduce-n
+                    (fn [acc _n]
+                      (let [k (read-reply inner-read-opts in) ; Without kfn!
+                            v (read-reply inner-read-opts in)]
+                        (rf acc k v)))
+                    init-acc
+                    n)))
 
               :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
               :default
-              (loop [acc (transient {})]
-                (let [x (read-reply inner-read-opts in)]
-                  (if (identical? x ::end-of-aggregate-stream)
-                    (persistent! acc)
-                    (let [k (kfn x)
-                          v (read-reply inner-read-opts in)]
-                      (recur (assoc! acc k v)))))))
-
-            ;; Not streaming
-            (let [n (Integer/parseInt size-str)]
-              (if (<= n 0) ; Empty or RESP2 null
-                (if (== n 0) {} nil)
-
-                (enc/cond
-
-                  skip?
+              (if (> n 10)
+                (persistent!
                   (enc/reduce-n
-                    (fn [_ _]
-                      (let [_k (read-reply inner-read-opts in)
-                            _v (read-reply inner-read-opts in)]
-                        nil))
-                    0 n)
+                    (fn [m _]
+                      (let [k (kfn (read-reply inner-read-opts in))
+                            v      (read-reply inner-read-opts in)]
+                        (assoc! m k v)))
+                    (transient {})
+                    n))
 
-                  ;; Reducing parser
-                  :if-let [rf (com/get-parser-rf (.-parser read-opts))]
-                  (let [init-acc (rf)]
-                    (rf ; Complete
-                      (enc/reduce-n
-                        (fn [acc _n]
-                          (let [k (read-reply inner-read-opts in) ; Without kfn!
-                                v (read-reply inner-read-opts in)]
-                            (rf acc k v)))
-                        init-acc
-                        n)))
-
-                  :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
-                  :default
-                  (if (> n 10)
-                    (persistent!
-                      (enc/reduce-n
-                        (fn [m _]
-                          (let [k (kfn (read-reply inner-read-opts in))
-                                v      (read-reply inner-read-opts in)]
-                            (assoc! m k v)))
-                        (transient {})
-                        n))
-
-                    (enc/reduce-n
-                      (fn [m _]
-                        (let [k (kfn (read-reply inner-read-opts in))
-                              v      (read-reply inner-read-opts in)]
-                          (assoc m k v)))
-                      {}
-                      n))))))]
-
-      (when-not skip?
-        (if-let [f (com/get-parser-fn (.-parser read-opts))]
-          (f  aggregate-reply)
-          (do aggregate-reply))))))
+                (enc/reduce-n
+                  (fn [m _]
+                    (let [k (kfn (read-reply inner-read-opts in))
+                          v      (read-reply inner-read-opts in)]
+                      (assoc m k v)))
+                  {}
+                  n)))))))))
 
 (deftest ^:private _read-aggregate-by-pairs-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
@@ -262,8 +254,8 @@
 (defn read-reply
   "Blocks to read reply from given DataInputStream."
 
-  ([in] ; For REPL/testing
-   (read-reply (com/dynamic-read-opts) in))
+  ;; For REPL/testing
+  ([in] (read-reply (com/new-read-opts) in))
 
   ([^ReadOpts read-opts ^DataInputStream in]
    ;; Since dynamic vars are ephemeral and reply reading is lazy, neither this
@@ -368,7 +360,7 @@
              (throw
                (ex-info "[Carmine] Unexpected reply kind"
                  {:eid :carmine.resp.read/unexpected-reply-kind
-                  :read-opts (com/read-opts->map read-opts)
+                  :read-opts (com/describe-read-opts read-opts)
                   :kind
                   (enc/assoc-when
                     {:as-byte kind-b :as-char (byte kind-b)}
@@ -378,14 +370,30 @@
              (throw
                (ex-info "[Carmine] Unexpected reply error"
                  {:eid :carmine.resp.read/reply-error
-                  :read-opts (com/read-opts->map read-opts)
+                  :read-opts (com/describe-read-opts read-opts)
                   :kind {:as-byte kind-b :as-char (char kind-b)}}
                  t))))]
 
-     (if skip?
+     (enc/cond
+
+       skip?
        (if (identical? reply ::end-of-aggregate-stream)
-         reply
+         reply ; Always pass through
          :carmine/skipped)
+
+       :let [parser (.-parser read-opts)]
+
+       (instance? FnParser parser)
+       (let [parser-fn   (.-fn          ^FnParser parser)
+             parser-opts (.-parser-opts ^FnParser parser)]
+
+         (if (com/carmine-reply-error? reply)
+           (if (get parser-opts :parse-errors?)
+             (parser-fn reply)
+             (do        reply))
+           (parser-fn reply)))
+
+       :default
        reply))))
 
 (deftest ^:private _read-reply
@@ -501,6 +509,7 @@
 
   (defn read-replies
     ;; TODO Update
+    ;; TODO Support dummy (local?) replies
     [in as-pipeline? reqs]
     (let [n-reqs   (count reqs)
           big-n?   (> n-reqs 10)
