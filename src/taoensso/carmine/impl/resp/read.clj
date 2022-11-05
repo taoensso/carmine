@@ -3,21 +3,21 @@
   Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.string  :as str]
    [clojure.test    :as test :refer [deftest testing is]]
    [taoensso.encore :as enc  :refer [throws?]]
    [taoensso.nippy  :as nippy]
    [taoensso.carmine.impl.resp.common :as resp-com
     :refer [str->bytes bytes->str xs->in+]]
 
-   [taoensso.carmine.impl.resp.read.blobs  :as blobs]
-   [taoensso.carmine.impl.resp.read.common :as read-com])
+   [taoensso.carmine.impl.resp.read.common  :as read-com]
+   [taoensso.carmine.impl.resp.read.blobs   :as blobs]
+   [taoensso.carmine.impl.resp.read.parsing :as parsing])
 
   (:import
    [java.nio.charset StandardCharsets]
    [java.io DataInputStream]
-   [taoensso.carmine.impl.resp.read.common
-    ReadOpts Request FnParser]))
+   [taoensso.carmine.impl.resp.read.common ReadOpts Request]
+   [taoensso.carmine.impl.resp.read.parsing Parser]))
 
 (comment
   (remove-ns      'taoensso.carmine.impl.resp.read)
@@ -59,9 +59,10 @@
               (recur))))
 
         ;; Reducing parser
-        :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
-        (let [rf (rfc)]
-          (loop [acc (rf)] ; Init acc
+        :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
+        (let [rf ((.rfc p))
+              init-acc (rf)]
+          (loop [acc init-acc]
             (let [x (read-reply inner-read-opts in)]
               (if (identical? x ::end-of-aggregate-stream)
                 (do    (rf acc)) ; Complete acc
@@ -82,14 +83,12 @@
           (enc/cond
 
             skip?
-            (enc/reduce-n
-              (fn [_ _]
-                (read-reply inner-read-opts in))
+            (enc/reduce-n (fn [_ _] (read-reply inner-read-opts in))
               0 n)
 
             ;; Reducing parser
-            :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
-            (let [rf (rfc)
+            :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
+            (let [rf ((.-rfc p))
                   init-acc (rf)]
               (rf ; Complete acc
                 (enc/reduce-n
@@ -134,15 +133,21 @@
                   (recur)))))
 
           ;; Reducing parser
-          :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
-          (let [rf (rfc)]
-            (loop [acc (rf)] ; Init acc
+          :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
+          (let [rf    ((.-rfc    p))
+                kv-rf? (.-kv-rf? p)
+                init-acc (rf)]
+
+            (loop [acc init-acc]
               (let [x (read-reply inner-read-opts in)]
                 (if (identical? x ::end-of-aggregate-stream)
                   (rf acc) ; Complete acc
                   (let [k x ; Without kfn!
                         v (read-reply inner-read-opts in)]
-                    (recur (rf acc k v)))))))
+                    (recur
+                      (if kv-rf?
+                        (rf acc  k v)
+                        (rf acc [k v]))))))))
 
           :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
           :default
@@ -170,15 +175,18 @@
                 0 n)
 
               ;; Reducing parser
-              :if-let [rfc (read-com/get-parser-rfc (.-parser read-opts))]
-              (let [rf (rfc)
+              :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
+              (let [rf    ((.-rfc    p))
+                    kv-rf? (.-kv-rf? p)
                     init-acc (rf)]
                 (rf ; Complete
                   (enc/reduce-n
                     (fn [acc _n]
                       (let [k (read-reply inner-read-opts in) ; Without kfn!
                             v (read-reply inner-read-opts in)]
-                        (rf acc k v)))
+                        (if kv-rf?
+                          (rf acc  k v)
+                          (rf acc [k v]))))
                     init-acc
                     n)))
 
@@ -218,7 +226,7 @@
   (let [^String message (if (nil? ?message) "" ?message)
         code (re-find #"^\S+" message)] ; "ERR", "WRONGTYPE", etc.
 
-    (resp-com/carmine-reply-error
+    (resp-com/reply-error
       (ex-info "[Carmine] Redis replied with an error"
         {:eid :carmine.resp.read/error-reply
          :message message
@@ -383,23 +391,17 @@
          reply ; Always pass through
          :carmine/skipped)
 
-       :let [parser (.-parser read-opts)]
-
-       (instance? FnParser parser)
-       (let [parser-fn   (.-fn          ^FnParser parser)
-             parser-opts (.-parser-opts ^FnParser parser)]
-
-         (if (resp-com/carmine-reply-error? reply)
-           (if (get parser-opts :parse-errors?)
-             (parser-fn reply)
-             (do        reply))
-           (parser-fn reply)))
+       :if-let [^Parser p (parsing/when-fn-parser (.-parser read-opts))]
+       (if (resp-com/reply-error? reply)
+         (if (get (.-opts p) :parse-errors?)
+           ((.-f p) reply)
+           (do      reply))
+         ((.-f p) reply))
 
        :default
        reply))))
 
 (deftest ^:private _read-reply
-  ;; TODO Update
   [(testing "Basics"
      [(is (= (read-reply
                (xs->in+ "*10" "+simple string"
@@ -414,30 +416,32 @@
    (testing "Errors"
      [(testing "Simple errors"
         [(let [r1 (read-reply (xs->in+ "-ERR Foo bar baz"))]
-           (is (resp-com/crex-match? r1
+           (is (resp-com/reply-error?
                  {:eid :carmine.resp.read/error-reply
                   :message "ERR Foo bar baz"
-                  :code    "ERR"})))
+                  :code    "ERR"}
+                 r1)))
 
          (let [[r1 r2 r3 r4] (read-reply (xs->in+ "*4" ":1" "-CODE1 a" ":2" "-CODE2 b"))]
            [(is (= r1 1))
             (is (= r3 2))
-            (resp-com/crex-match? r2 {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a"})
-            (resp-com/crex-match? r4 {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b"})])])
+            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a"} r2)
+            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b"} r4)])])
 
       (testing "Bulk errors"
         [(let [r1 (read-reply (xs->in+ "!10" "CODE Foo\r\n"))]
-           (is (resp-com/crex-match? r1
+           (is (resp-com/reply-error?
                  {:eid :carmine.resp.read/error-reply
                   :message "CODE Foo\r\n"
-                  :code    "CODE"})
+                  :code    "CODE"}
+                 r1)
              "Binary safe"))
 
          (let [[r1 r2 r3 r4] (read-reply (xs->in+ "*4" ":1" "!9" "CODE1 a\r\n" ":2" "!9" "CODE2 b\r\n"))]
            [(is (= r1 1))
             (is (= r3 2))
-            (resp-com/crex-match? r2 {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a\r\n"})
-            (resp-com/crex-match? r4 {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b\r\n"})])])])
+            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a\r\n"} r2)
+            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b\r\n"} r4)])])])
 
    (testing "Nested aggregates"
      [(is (= [[1 "2" 3] ["a" "b"] []]
@@ -504,8 +508,8 @@
 
 ;;;;
 
-(let [read-reply              read-reply
-      get-carmine-reply-error resp-com/get-carmine-reply-error]
+(let [read-reply      read-reply
+      get-reply-error resp-com/get-reply-error]
 
   (defn read-replies
     ;; TODO Update
@@ -526,7 +530,7 @@
                   (enc/cond
                     (identical? reply :carmine/skipped) acc
 
-                    :if-let [reply-error (get-carmine-reply-error reply)]
+                    :if-let [reply-error (get-reply-error reply)]
                     (do
                       (vreset! error_ reply-error)
                       (conj*   acc    reply-error))

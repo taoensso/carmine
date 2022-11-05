@@ -2,7 +2,6 @@
   "Experimental, baggage-free modern Redis client prototype."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.string   :as str]
    [clojure.test     :as test :refer [deftest testing is]]
    [taoensso.encore  :as enc  :refer [throws?]]
    [taoensso.carmine :as legacy-core]
@@ -19,70 +18,69 @@
 
 (comment
   (remove-ns 'taoensso.carmine-v4)
-  (do
+  (merge-with (fn [l r] (if (keyword? r) r (+ l r)))
     (test/run-all-tests #"taoensso\.carmine\.impl\..*")
     (test/run-tests      'taoensso.carmine-v4)))
 
-;;;; Roadmap
-;; x RESP3 prototype
-;;
-;; - Sentinel & Cluster prototype
-;; - Refactor connections API
-;; - Refactor general API
-;;   - Modules support
-;; - Backwards-compatibility, documentation
-;; - First alpha release
+(enc/assert-min-encore-version [3 32 0])
 
 ;;;; TODO
-;;  - New `read-reply` tests
-;;    - Incl. fn-parser, rf-parser (which should ignore *keywordize-maps?*)
-;;    - read-mode, marking options, empties, nulls
+
+;; - Additional `read-reply` tests
+;;   - `read-reply` w/ fn parser against nil/empty/non-aggr/aggr: +/- opts, errs
+;;   - `read-reply` w/ rf parser against nil/empty/non-aggr/aggr: +/- opts, errs, xform
+;;     - Observe `:parse-errors?`
+;;     - Ignore `*keywordize-maps?*`
+;;     - No nesting!
+
+;; - v4: add `parse-long`, etc. with docstrings
+;; - v4: add `unparsed`, `parse`, `parse-aggregate` with docstrings
+;;   - Mention: no auto composition, doesn't apply w/in aggregates,
+;;     possible interaction with *read-mode*, etc.
 
 ;; - Update `read-replies` to take `com/Request` [<read-opts> <args>]
 ;; - v4 util wcar to create `com/Request`s, test
-
-;; - Add `parse->long`, etc. with good docstrings
-;; - Add `parse`, `parse-aggregate`, `unparsed` with good docstrings
-;;   - Mention: no auto composition, doesn't apply w/in aggregates, etc.
-;;     Possible interaction with *read-mode*
+;;   - Issues with laziness / bindings re: new lazy arg->ba implementation?
+;;     - Realise lazy seqs?
 
 ;; - Add common and v4 util to parse-?marked-ba -> [<kind> <payload>]
 ;; - Add dummy (local?) replies
-;; - Move *push-fn* to v4
+;; - Move *push-fn* to v4, finish implementation, document
+;; - v4: add freeze & thaw stuff (incl. bindings)
 
-;;;; Later
 ;; - Investigate Sentinel &/or Cluster
 ;; - Investigate new conns design (incl. breakage tests, etc.)
 ;;   - (wcar {:hello {}}) and/or (wcar {:init-fn _}) support
+
+;; - Refactor connections API
+;; - Refactor commands, add modules support
 ;; - Refactor stashing :as-pipeline, etc.
 ;; - Refactor pub/sub, etc. (note RESP2 vs RESP3 differences)
-;; - ^{:deprecated <str>}
+;; - Refactor helpers API, etc.
 
-;;;; Misc
-;; - Finish *push-fn* implementation, document
+;; - Plan for ->v4 upgrade with back compatibility?
+;;   - ^{:deprecated <str>}
 
-;; - Interaction between laziness and new lazy arg->ba implementation?
+;; - Final Jedis IO benching (grep for `.read`), and/or remove Jedis code?
+;;   - `jedis.RedisInputStream`: readLineBytes, readIntCrLf, readLongCrLf
+;;   - `jedis.RedisOutputStream`: writeCrLf, writeIntCrLf
 
-;; - [Perf] Do further benching (grep for `.read`) with:
-;; - `jedis.RedisInputStream`: readLineBytes, readIntCrLf, readLongCrLf
-;; - `jedis.RedisOutputStream`: writeCrLf, writeIntCrLf
+;; - Check all errors: eids, messages, data
+;; - Check all dynamic bindings and sys-vals, ensure accessible
+;; - v4 wiki with changes, migration, new features, examples, etc.
+;; - First alpha release
 
 ;; - Could add `to-streaming-freeze` that uses the RESP3 API streaming bulk
 ;;   type to freeze objects directly to output stream (i.e. without intermediary
 ;;   ba)? Probably most useful for large objects, but complex, involves tradeoffs,
 ;;   and how often would this be useful?
 
-;; - Add freeze & thaw stuff (incl. bindings)
-
-;; - Check all errors: eids, messages, data
-;; - Check all dynamic bindings and sys-vals, ensure accessible
-
 ;;;; CHANGELOG
 ;; - [new] Full RESP3 support, incl. streaming, etc.
 ;; - [new] *auto-serialize?*, *auto-deserialize?*
 ;; - [new] Greatly improved `skip-replies` performance
-;; - [mod] Simplified parsers API, support for stateful
-;;         aggregate (rf) parsers (!!)
+;; - [mod] Simplified parsers API, support for stateful,
+;;         transducer-capable aggregate (rf) parsers (!!)
 
 ;;;; Config
 
@@ -151,6 +149,10 @@
   (enc/defalias read-com/normal-replies)
   (enc/defalias read-com/as-bytes)
   (enc/defalias read-com/as-thawed)
+
+  ;; TODO parser constructors with good documentation
+  ;; incl. re: fns, rfs (kv and in APIs), xforms, etc.
+  ;; mention options as advanced / for internal use
 
   ;; (enc/defalias resp-blobs/as-long)
   ;; (enc/defalias resp-blobs/as-?long)

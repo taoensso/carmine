@@ -2,7 +2,6 @@
   "Blob reading part of RESP3 implementation."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.string  :as str]
    [clojure.test    :as test :refer [deftest testing is]]
    [taoensso.encore :as enc  :refer [throws?]]
    [taoensso.nippy  :as nippy]
@@ -140,7 +139,7 @@
   (try
     (nippy/thaw ba ?thaw-opts)
     (catch Throwable t
-      (resp-com/carmine-reply-error
+      (resp-com/reply-error
         (ex-info "[Carmine] Nippy threw an error while thawing blob reply"
           (enc/assoc-when
             {:eid :carmine.resp.read.blob/nippy-thaw-error
@@ -215,8 +214,8 @@
 
          (let [r (read-blob nil true (xs->in+ marked-len marked-ba))]
 
-           [(is (resp-com/crex-match? r {:eid :carmine.resp.read.blob/nippy-thaw-error})
+           [(is (resp-com/reply-error? {:eid :carmine.resp.read.blob/nippy-thaw-error} r)
               "Encrypted Nippy data (bad password)")
 
-            (is (enc/ba= (-> r resp-com/get-carmine-reply-error ex-data :bytes :content) ba)
+            (is (enc/ba= (-> r resp-com/get-reply-error ex-data :bytes :content) ba)
               "Unthawed Nippy data still provided")])])])])

@@ -3,7 +3,6 @@
   Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.string  :as str]
    [clojure.test    :as test :refer [deftest testing is]]
    [taoensso.encore :as enc  :refer [throws?]]
    [taoensso.nippy  :as nippy]

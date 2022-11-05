@@ -1,7 +1,6 @@
 (ns taoensso.carmine.impl.resp.common
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.string  :as str]
    [clojure.test    :as test :refer [deftest testing is]]
    [taoensso.encore :as enc  :refer [throws?]])
 
@@ -16,7 +15,7 @@
 (enc/declare-remote
   ^:dynamic taoensso.carmine-v4/*auto-deserialize?*
   ^:dynamic taoensso.carmine-v4/*keywordize-maps?*
-  taoensso.carmine-v4/issue-83-workaround?)
+            taoensso.carmine-v4/issue-83-workaround?)
 
 (alias 'core 'taoensso.carmine-v4)
 
@@ -141,18 +140,22 @@
 
 ;;;;
 
+(defn throw! [x] (throw (ex-info "Simulated throw" {:arg {:value x :type (type x)}})))
+
 ;; Wrapper to identify Carmine-generated reply errors for
 ;; possible throwing or unwrapping
 (deftype  CarmineReplyError [ex-info])
-(defn     carmine-reply-error  [x] (CarmineReplyError. x))
-(defn     carmine-reply-error? [x] (instance? CarmineReplyError x))
-(defn get-carmine-reply-error  [x]
+(defn     reply-error [x] (CarmineReplyError. x))
+(defn get-reply-error [x]
   (when (instance? CarmineReplyError x)
     (.-ex-info ^CarmineReplyError x)))
 
-(defn crex-match? [x ex-data-sub]
-  (enc/submap? (ex-data (get-carmine-reply-error x))
-    ex-data-sub))
+(defn throw-?reply-error [x] (when-let [e (get-reply-error x)] (throw e)))
+(defn reply-error?
+  ([            x] (instance? CarmineReplyError x))
+  ([ex-data-sub x]
+   (when-let [e (get-reply-error x)]
+     (enc/submap? (ex-data e) ex-data-sub))))
 
 ;;;;
 
