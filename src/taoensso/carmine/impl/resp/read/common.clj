@@ -19,6 +19,14 @@
 (alias 'core    'taoensso.carmine-v4)
 (alias 'parsing 'taoensso.carmine.impl.resp.read.parsing)
 
+;;;; Sentinels
+;; As a security measure, will avoid the use of keywords for
+;; flow control due to the risk of malicious user data
+
+(defonce sentinel-null-reply              (Object.))
+(defonce sentinel-skipped-reply           (Object.))
+(defonce sentinel-end-of-aggregate-stream (Object.))
+
 ;;;; Read mode
 
 (def ^:dynamic *read-mode*

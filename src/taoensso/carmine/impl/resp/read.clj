@@ -38,79 +38,84 @@
     (enc/case-eval kind-b
       (byte \+)                 (.readLine in)  ; Simple string
       (byte \:) (Long/parseLong (.readLine in)) ; Simple long
-      (byte \.) (do (resp-com/discard-crlf in) ::end-of-aggregate-stream)
-      )))
+      (byte \.)
+      (do
+        (resp-com/discard-crlf in)
+        read-com/sentinel-end-of-aggregate-stream))))
 
-(defn- read-aggregate-by-ones
-  [to ^ReadOpts read-opts read-reply ^DataInputStream in]
-  (let [size-str (.readLine in)
-        inner-read-opts (read-com/inner-read-opts read-opts)
-        skip? (identical? (.-read-mode read-opts) :skip)]
+(let [sentinel-end-of-aggregate-stream read-com/sentinel-end-of-aggregate-stream]
+  (defn- read-aggregate-by-ones
+    [to ^ReadOpts read-opts read-reply ^DataInputStream in]
+    (let [size-str (.readLine in)
+          inner-read-opts (read-com/inner-read-opts read-opts)
+          skip? (identical? (.-read-mode read-opts) :skip)]
 
-    (if-let [stream? (= size-str "?")]
+      (if-let [stream? (= size-str "?")]
 
-      ;; Streaming
-      (enc/cond
+        ;; Streaming
+        (enc/cond
 
-        skip?
-        (loop []
-          (let [x (read-reply inner-read-opts in)]
-            (if (identical? x ::end-of-aggregate-stream)
-              :carmine/skipped-reply_
-              (recur))))
-
-        ;; Reducing parser
-        :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
-        (let [rf ((.rfc p))
-              init-acc (rf)]
-          (loop [acc init-acc]
+          skip?
+          (loop []
             (let [x (read-reply inner-read-opts in)]
-              (if (identical? x ::end-of-aggregate-stream)
-                (do    (rf acc)) ; Complete acc
-                (recur (rf acc x))))))
+              (if (identical? x sentinel-end-of-aggregate-stream)
+                read-com/sentinel-skipped-reply
+                (recur))))
 
-        :default
-        (loop [acc (transient (empty to))]
-          (let [x (read-reply inner-read-opts in)]
-            (if (identical? x ::end-of-aggregate-stream)
-              (persistent!  acc)
-              (recur (conj! acc x))))))
+          ;; Reducing parser
+          :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
+          (let [rf ((.rfc p))
+                init-acc (rf)]
+            (loop [acc init-acc]
+              (let [x (read-reply inner-read-opts in)]
+                (if (identical? x sentinel-end-of-aggregate-stream)
+                  (do    (rf acc)) ; Complete acc
+                  (recur (rf acc x))))))
 
-      ;; Not streaming
-      (let [n (Integer/parseInt size-str)]
-        (if (<= n 0) ; Empty or RESP2 null
-          (if (== n 0) to :carmine/null-reply)
+          :default
+          (loop [acc (transient (empty to))]
+            (let [x (read-reply inner-read-opts in)]
+              (if (identical? x sentinel-end-of-aggregate-stream)
+                (persistent!  acc)
+                (recur (conj! acc x))))))
 
-          (enc/cond
+        ;; Not streaming
+        (let [n (Integer/parseInt size-str)]
+          (if (<= n 0) ; Empty or RESP2 null
+            (if (== n 0) to read-com/sentinel-null-reply)
 
-            skip?
-            (enc/reduce-n (fn [_ _] (read-reply inner-read-opts in))
-              0 n)
+            (enc/cond
 
-            ;; Reducing parser
-            :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
-            (let [rf ((.-rfc p))
-                  init-acc (rf)]
-              (rf ; Complete acc
-                (enc/reduce-n
-                  (fn [acc _n]
-                    (rf acc (read-reply inner-read-opts in)))
-                  init-acc
-                  n)))
+              skip?
+              (enc/reduce-n (fn [_ _] (read-reply inner-read-opts in))
+                0 n)
 
-            :default
-            (enc/repeatedly-into to n
-              #(read-reply inner-read-opts in))))))))
+              ;; Reducing parser
+              :if-let [^Parser p (parsing/when-rf-parser (.-parser read-opts))]
+              (let [rf ((.-rfc p))
+                    init-acc (rf)]
+                (rf ; Complete acc
+                  (enc/reduce-n
+                    (fn [acc _n]
+                      (rf acc (read-reply inner-read-opts in)))
+                    init-acc
+                    n)))
+
+              :default
+              (enc/repeatedly-into to n
+                #(read-reply inner-read-opts in)))))))))
 
 (deftest ^:private _read-aggregate-by-ones-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
-  [(is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+  0))                  []) "Empty blob")
-   (is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+ -1)) :carmine/null-reply) "RESP2 null")
+  [(is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+  0))                           []) "Empty blob")
+   (is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+ -1)) read-com/sentinel-null-reply) "RESP2 null")
 
    (is (= (read-aggregate-by-ones [] read-com/default-read-opts read-basic-reply (xs->in+ 2   ":1" ":2"))     [1 2]))
    (is (= (read-aggregate-by-ones [] read-com/default-read-opts read-basic-reply (xs->in+ "?" ":1" ":2" ".")) [1 2]) "Streaming")])
 
-(let [keywordize (fn [x] (if (string? x) (keyword x) x))]
+(let [keywordize (fn [x] (if (string? x) (keyword x) x))
+      sentinel-end-of-aggregate-stream read-com/sentinel-end-of-aggregate-stream]
+
   (defn- read-aggregate-by-pairs
     "Like `read-aggregate-by-ones` but optimized for read-pair
     cases (notably maps)."
@@ -127,8 +132,8 @@
           skip?
           (loop []
             (let [x (read-reply inner-read-opts in)]
-              (if (identical? x ::end-of-aggregate-stream)
-                :carmine/skipped-reply_
+              (if (identical? x sentinel-end-of-aggregate-stream)
+                read-com/sentinel-skipped-reply
                 (let [_k x
                       _v (read-reply inner-read-opts in)]
                   (recur)))))
@@ -141,7 +146,7 @@
 
             (loop [acc init-acc]
               (let [x (read-reply inner-read-opts in)]
-                (if (identical? x ::end-of-aggregate-stream)
+                (if (identical? x sentinel-end-of-aggregate-stream)
                   (rf acc) ; Complete acc
                   (let [k x ; Without kfn!
                         v (read-reply inner-read-opts in)]
@@ -154,7 +159,7 @@
           :default
           (loop [acc (transient {})]
             (let [x (read-reply inner-read-opts in)]
-              (if (identical? x ::end-of-aggregate-stream)
+              (if (identical? x sentinel-end-of-aggregate-stream)
                 (persistent! acc)
                 (let [k (kfn x)
                       v (read-reply inner-read-opts in)]
@@ -163,7 +168,7 @@
         ;; Not streaming
         (let [n (Integer/parseInt size-str)]
           (if (<= n 0) ; Empty or RESP2 null
-            (if (== n 0) {} :carmine/null-reply)
+            (if (== n 0) {} read-com/sentinel-null-reply)
 
             (enc/cond
 
@@ -214,8 +219,8 @@
 (deftest ^:private _read-aggregate-by-pairs-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
   [(testing "Basics"
-     [(is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+  0))                  {}) "Empty blob")
-      (is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+ -1)) :carmine/null-reply) "RESP2 null")
+     [(is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+  0))                           {}) "Empty blob")
+      (is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+ -1)) read-com/sentinel-null-reply) "RESP2 null")
 
       (is (= (read-aggregate-by-pairs read-com/default-read-opts read-basic-reply (xs->in+ 2 "+k1" "+v1" "+k2" "+v2")) {:k1  "v1" :k2 "v2"}) "With keywordize")
       (is (= (read-aggregate-by-pairs read-com/nil-read-opts     read-basic-reply (xs->in+ 2 "+k1" "+v1"  ":2" "+v2")) {"k1" "v1",  2 "v2"}) "W/o  keywordize")
@@ -262,156 +267,159 @@
 
 ;;;;
 
-(defn read-reply
-  "Blocks to read reply from given DataInputStream."
+(let [sentinel-end-of-aggregate-stream read-com/sentinel-end-of-aggregate-stream
+      sentinel-null-reply              read-com/sentinel-null-reply]
 
-  ;; For REPL/testing
-  ([in] (read-reply (read-com/new-read-opts) in))
+  (defn read-reply
+    "Blocks to read reply from given DataInputStream."
 
-  ([^ReadOpts read-opts ^DataInputStream in]
-   ;; Since dynamic vars are ephemeral and reply reading is lazy, neither this
-   ;; fn nor any of its children should access dynamic vars. Instead, we'll capture
-   ;; dynamic config to `com/ReadOpts` at the appropriate time.
-   (let [kind-b (.readByte in)
-         skip?  (identical? (.-read-mode read-opts) :skip)
+    ;; For REPL/testing
+    ([in] (read-reply (read-com/new-read-opts) in))
 
-         reply
-         (try
-           (enc/case-eval kind-b
-             ;; --- RESP2 ⊂ RESP3 -------------------------------------------------------
-             (byte \+) (.readLine in) ; Simple string ✓
-             (byte \:) ; Simple long ✓
-             (let [s (.readLine in)]
-               (when-not skip?
-                 (Long/parseLong s)))
+    ([^ReadOpts read-opts ^DataInputStream in]
+     ;; Since dynamic vars are ephemeral and reply reading is lazy, neither this
+     ;; fn nor any of its children should access dynamic vars. Instead, we'll capture
+     ;; dynamic config to `com/ReadOpts` at the appropriate time.
+     (let [kind-b (.readByte in)
+           skip?  (identical? (.-read-mode read-opts) :skip)
 
-             (byte \-) ; Simple error ✓
-             (let [s (.readLine in)]
-               (when-not skip?
-                 (redis-reply-error s)))
+           reply
+           (try
+             (enc/case-eval kind-b
+               ;; --- RESP2 ⊂ RESP3 -------------------------------------------------------
+               (byte \+) (.readLine in)  ; Simple string ✓
+               (byte \:) ; Simple long ✓
+               (let [s (.readLine in)]
+                 (when-not skip?
+                   (Long/parseLong s)))
 
-             (byte \$) ; Blob (nil/string/bytes/thawed) ✓
-             (blobs/read-blob
-               ;; User blob => obey read-opts
-               (.-read-mode         read-opts)
-               (.-auto-deserialize? read-opts)
-               in)
+               (byte \-) ; Simple error ✓
+               (let [s (.readLine in)]
+                 (when-not skip?
+                   (redis-reply-error s)))
 
-             (byte \*) ; Aggregate array ✓
-             (read-aggregate-by-ones [] read-opts
-               read-reply in)
+               (byte \$) ; Blob (nil/string/bytes/thawed) ✓
+               (blobs/read-blob
+                 ;; User blob => obey read-opts
+                 (.-read-mode         read-opts)
+                 (.-auto-deserialize? read-opts)
+                 in)
 
-             ;; --- RESP3 ∖ RESP2 -------------------------------------------------------
-             (byte \.) (do (resp-com/discard-crlf in) ::end-of-aggregate-stream) ; End of aggregate stream ✓
-             (byte \_) (do (resp-com/discard-crlf in) :carmine/null-reply) ; Null ✓
+               (byte \*) ; Aggregate array ✓
+               (read-aggregate-by-ones [] read-opts
+                 read-reply in)
 
-             (byte \#) ; Bool ✓
-             (let [b (.readByte in)]
-               (resp-com/discard-crlf in)
-               (== b #=(byte \t)))
+               ;; --- RESP3 ∖ RESP2 -------------------------------------------------------
+               (byte \.) (do (resp-com/discard-crlf in) sentinel-end-of-aggregate-stream) ; ✓
+               (byte \_) (do (resp-com/discard-crlf in) sentinel-null-reply) ; ✓
 
-             (byte \!) ; Blob error ✓
-             (let [;; Nb cancel read-mode, markers
-                   blob-reply (blobs/read-blob nil false in)]
-               (when-not skip?
-                 (redis-reply-error blob-reply) ))
+               (byte \#) ; Bool ✓
+               (let [b (.readByte in)]
+                 (resp-com/discard-crlf in)
+                 (== b #=(byte \t)))
 
-             (byte \=) ; Verbatim string ; ✓
-             (let [;; Nb cancel read-mode, markers
-                   ^String s (blobs/read-blob nil false in)]
-               (when-not skip?
-                 (let [format  (subs s 0 3) ; "txt", "mkd", etc.
-                       payload (subs s 4)]
+               (byte \!) ; Blob error ✓
+               (let [;; Nb cancel read-mode, markers
+                     blob-reply (blobs/read-blob nil false in)]
+                 (when-not skip?
+                   (redis-reply-error blob-reply) ))
+
+               (byte \=) ; Verbatim string ; ✓
+               (let [;; Nb cancel read-mode, markers
+                     ^String s (blobs/read-blob nil false in)]
+                 (when-not skip?
+                   (let [format  (subs s 0 3) ; "txt", "mkd", etc.
+                         payload (subs s 4)]
+                     ;; TODO API okay?
+                     [:carmine/verbatim-string format payload])))
+
+               (byte \,) ; Double ✓
+               (let [s (.readLine in)]
+                 (when-not skip?
+                   (enc/cond
+                     (= s  "inf") Double/POSITIVE_INFINITY
+                     (= s "-inf") Double/NEGATIVE_INFINITY
+                     :else       (Double/parseDouble s))))
+
+               (byte \() ; Big integer ✓
+               (let [s (.readLine in)]
+                 (when-not skip?
+                   (bigint (BigInteger. s))))
+
+               (byte \~) (read-aggregate-by-ones #{} read-opts read-reply in) ; Aggregate set ✓
+               (byte \%) (read-aggregate-by-pairs    read-opts read-reply in) ; Aggregate map ✓
+
+               (byte \|) ; Attribute map ✓
+               (let [attrs  (read-aggregate-by-pairs read-opts read-reply in)
+                     target (read-reply              read-opts            in)]
+
+                 (when-not skip?
                    ;; TODO API okay?
-                   [:carmine/verbatim-string format payload])))
+                   (if (instance? clojure.lang.IObj target)
+                     (with-meta target {:carmine/attributes attrs})
+                     [:carmine/with-attributes target attrs]
+                     #_
+                     (throw
+                       (ex-info "[Carmine] Attributes reply for unexpected (non-IObj) type"
+                         {:eid :carmine.read/attributes-for-unexpected-type
+                          :target {:type (type target) :value target}
+                          :attributes attrs})))))
 
-             (byte \,) ; Double ✓
-             (let [s (.readLine in)]
-               (when-not skip?
-                 (enc/cond
-                   (= s  "inf") Double/POSITIVE_INFINITY
-                   (= s "-inf") Double/NEGATIVE_INFINITY
-                   :else       (Double/parseDouble s))))
+               (byte \>) ; Push ✓
+               (let [;; Completely neutral read-opts
+                     v (read-aggregate-by-ones [] read-com/nil-read-opts read-reply in)]
+                 (when-let [push-fn *push-fn*] ; Not part of read-opts, reasonable?
+                   (try ; Silently swallow errors (fn should have own error handling)
+                     (push-fn v)
+                     (catch Throwable _)))
 
-             (byte \() ; Big integer ✓
-             (let [s (.readLine in)]
-               (when-not skip?
-                 (bigint (BigInteger. s))))
+                 ;; Continue to actual reply
+                 (read-reply read-opts in))
 
-             (byte \~) (read-aggregate-by-ones #{} read-opts read-reply in) ; Aggregate set ✓
-             (byte \%) (read-aggregate-by-pairs    read-opts read-reply in) ; Aggregate map ✓
+               (throw
+                 (ex-info "[Carmine] Unexpected reply kind"
+                   {:eid :carmine.read/unexpected-reply-kind
+                    :read-opts (read-com/describe-read-opts read-opts)
+                    :kind
+                    (enc/assoc-when
+                      {:as-byte kind-b :as-char (byte kind-b)}
+                      :end-of-stream? (== kind-b -1))})))
 
-             (byte \|) ; Attribute map ✓
-             (let [attrs  (read-aggregate-by-pairs read-opts read-reply in)
-                   target (read-reply              read-opts            in)]
+             (catch Throwable t
+               (throw
+                 (ex-info "[Carmine] Unexpected reply error"
+                   {:eid :carmine.read/reply-error
+                    :read-opts (read-com/describe-read-opts read-opts)
+                    :kind {:as-byte kind-b :as-char (char kind-b)}}
+                   t))))]
 
-               (when-not skip?
-                 ;; TODO API okay?
-                 (if (instance? clojure.lang.IObj target)
-                   (with-meta target {:carmine/attributes attrs})
-                   [:carmine/with-attributes target attrs]
-                   #_
-                   (throw
-                     (ex-info "[Carmine] Attributes reply for unexpected (non-IObj) type"
-                       {:eid :carmine.read/attributes-for-unexpected-type
-                        :target {:type (type target) :value target}
-                        :attributes attrs})))))
-
-             (byte \>) ; Push ✓
-             (let [;; Completely neutral read-opts
-                   v (read-aggregate-by-ones [] read-com/nil-read-opts read-reply in)]
-               (when-let [push-fn *push-fn*] ; Not part of read-opts, reasonable?
-                 (try ; Silently swallow errors (fn should have own error handling)
-                   (push-fn v)
-                   (catch Throwable _)))
-
-               ;; Continue to actual reply
-               (read-reply read-opts in))
-
-             (throw
-               (ex-info "[Carmine] Unexpected reply kind"
-                 {:eid :carmine.read/unexpected-reply-kind
-                  :read-opts (read-com/describe-read-opts read-opts)
-                  :kind
-                  (enc/assoc-when
-                    {:as-byte kind-b :as-char (byte kind-b)}
-                    :end-of-stream? (== kind-b -1))})))
-
-           (catch Throwable t
-             (throw
-               (ex-info "[Carmine] Unexpected reply error"
-                 {:eid :carmine.read/reply-error
-                  :read-opts (read-com/describe-read-opts read-opts)
-                  :kind {:as-byte kind-b :as-char (char kind-b)}}
-                 t))))]
-
-     (enc/cond
-
-       skip?
-       (if (identical? reply ::end-of-aggregate-stream)
-         reply ; Always pass through
-         :carmine/skipped-reply)
-
-       :if-let [^Parser p (parsing/when-fn-parser (.-parser read-opts))]
        (enc/cond
 
-         (resp-com/reply-error? reply)
-         (if (get (.-opts p) :parse-errors?)
-           ((.-f p) reply)
-           (do      reply))
+         skip?
+         (if (identical? reply sentinel-end-of-aggregate-stream)
+           reply ; Always pass through
+           read-com/sentinel-skipped-reply)
 
-         (identical? reply :carmine/null-reply)
-         (if (get (.-opts p) :parse-nulls?)
-           ((.-f p) nil)
-           (do      nil))
+         :if-let [^Parser p (parsing/when-fn-parser (.-parser read-opts))]
+         (enc/cond
+
+           (resp-com/reply-error? reply)
+           (if (get (.-opts p) :parse-errors?)
+             ((.-f p) reply)
+             (do      reply))
+
+           (identical? reply sentinel-null-reply)
+           (if (get (.-opts p) :parse-nulls?)
+             ((.-f p) nil)
+             (do      nil))
+
+           :default
+           ((.-f p) reply))
 
          :default
-         ((.-f p) reply))
-
-       :default
-       (if (identical? reply :carmine/null-reply)
-         nil
-         reply)))))
+         (if (identical? reply sentinel-null-reply)
+           nil
+           reply))))))
 
 (enc/defalias ^:private rr read-reply)
 
@@ -604,8 +612,9 @@
 
 ;;;;
 
-(let [read-reply      read-reply
-      get-reply-error resp-com/get-reply-error]
+(let [read-reply             read-reply
+      get-reply-error        resp-com/get-reply-error
+      sentinel-skipped-reply read-com/sentinel-skipped-reply]
 
   (defn read-replies
     ;; TODO Update
@@ -624,7 +633,7 @@
                 ;; TODO read-mode, etc.
                 (let [reply (read-reply in)]
                   (enc/cond
-                    (identical? reply :carmine/skipped-reply) acc
+                    (identical? reply sentinel-skipped-reply) acc
 
                     :if-let [reply-error (get-reply-error reply)]
                     (do

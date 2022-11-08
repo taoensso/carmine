@@ -49,7 +49,7 @@
         (if (<= n 0) ; Empty or RESP2 null
           (if (== n 0)
             (if (identical? read-mode :bytes) (byte-array 0) "") ; Empty
-            :carmine/null-reply)
+            read-com/sentinel-null-reply)
 
           ;; Not empty
           (if-let [marker
@@ -66,7 +66,7 @@
               (do
                 (.skipBytes            in n)
                 (resp-com/discard-crlf in)
-                :carmine/skipped-reply_)
+                read-com/sentinel-skipped-reply)
 
               ;; Don't skip
               (let [ba (byte-array n)]
@@ -87,7 +87,7 @@
         (discard-stream-separator in)
         (let [n (Integer/parseInt (.readLine in))]
           (if (== n 0)
-            :carmine/skipped-reply_ ; Stream complete
+            read-com/sentinel-skipped-reply ; Stream complete
 
             ;; Stream continues
             (do
@@ -150,9 +150,12 @@
 
 (defn- complete-blob [read-mode ba]
   (enc/cond!
-    (identical?    read-mode    nil) (bytes->str ba) ; Common case
-    (identical?    read-mode :bytes)             ba
-    ;; (identical? read-mode :skip) :carmine/skipped-reply_ ; Shouldn't be here at all
+    (identical? read-mode    nil) (bytes->str ba) ; Common case
+    (identical? read-mode :bytes)             ba
+
+    ;; Shouldn't be here at all in this case
+    ;; (identical? read-mode :skip) read-com/sentinel-skipped-reply
+
     :if-let [thaw-opts (read-com/read-mode->?thaw-opts read-mode)]
     (blob->thawed thaw-opts ba)))
 
@@ -162,11 +165,11 @@
 
 (deftest ^:private _read-blob
   [(testing "Basics"
-     [(is (= ""                  (read-blob nil            nil (xs->in+  0))) "As default: empty blob")
-      (is (empty-bytes?          (read-blob :bytes         nil (xs->in+  0))) "As bytes:   empty blob")
-      (is (= :carmine/null-reply (read-blob nil            nil (xs->in+ -1))) "As default: RESP2 null")
-      (is (= :carmine/null-reply (read-blob :bytes         nil (xs->in+ -1))) "As bytes:   RESP2 null")
-      (is (= :carmine/null-reply (read-blob (AsThawed. {}) nil (xs->in+ -1))) "As thawed:  RESP2 null")
+     [(is (= ""                           (read-blob nil            nil (xs->in+  0))) "As default: empty blob")
+      (is (empty-bytes?                   (read-blob :bytes         nil (xs->in+  0))) "As bytes:   empty blob")
+      (is (= read-com/sentinel-null-reply (read-blob nil            nil (xs->in+ -1))) "As default: RESP2 null")
+      (is (= read-com/sentinel-null-reply (read-blob :bytes         nil (xs->in+ -1))) "As bytes:   RESP2 null")
+      (is (= read-com/sentinel-null-reply (read-blob (AsThawed. {}) nil (xs->in+ -1))) "As thawed:  RESP2 null")
 
       (is (=             (read-blob nil    nil (xs->in+ 5 "hello"))  "hello"))
       (is (= (bytes->str (read-blob :bytes nil (xs->in+ 5 "hello"))) "hello"))
