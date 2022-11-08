@@ -24,13 +24,13 @@
 (deftype Parser [kind opts f rfc kv-rf?])
 ;; rfc: auto-generated (fn rf-constructor []) => <possibly-stateful-rf*>
 ;; parser-opts:
-;;   read-mode         ; nx    ; Currently undocumented
-;;   auto-deserialize? ; nx    ; ''
-;;   keywordize-maps?  ; nx    ; ''
-;;   kv-rf?            ; false ; ''
-;;   catch-errors?     ; true  ; ''
-;;   parse-errors?     ; false
-;;   parse-nulls?      ; false
+;;   read-mode            ; nx    ; Currently undocumented
+;;   auto-deserialize?    ; nx    ; ''
+;;   keywordize-maps?     ; nx    ; ''
+;;   kv-rf?               ; false ; ''
+;;   catch-errors?        ; true  ; ''
+;;   parse-error-replies? ; false
+;;   parse-null-replies?  ; false
 
 (defn         parser? [x]            (instance? Parser x))
 (defn     when-parser [x] (when      (instance? Parser x)                     x))
@@ -209,8 +209,8 @@
   No parsing will occur *within* aggregates.
 
   Parser opts include:
-    - :parse-errors? (default false)
-    - :parse-nulls?  (default false)
+    - :parse-error-replies? (default false)
+    - :parse-null-replies?  (default false)
 
   Argument to parser may be affected by special read
   modes (`as-bytes`, etc.).
@@ -239,8 +239,7 @@
   Nested aggregate replies will be unaffected.
 
   Parser opts include:
-    - :parse-errors? (default false)
-    - :parse-nulls?  (default false)
+    - :parse-null-replies? (default false)
 
   Argument to parser may be affected by special read
   modes (`as-bytes`, etc.).

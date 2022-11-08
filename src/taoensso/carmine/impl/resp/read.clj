@@ -404,12 +404,12 @@
          (enc/cond
 
            (resp-com/reply-error? reply)
-           (if (get (.-opts p) :parse-errors?)
+           (if (get (.-opts p) :parse-error-replies?)
              ((.-f p) reply)
              (do      reply))
 
            (identical? reply sentinel-null-reply)
-           (if (get (.-opts p) :parse-nulls?)
+           (if (get (.-opts p) :parse-null-replies?)
              ((.-f p) nil)
              (do      nil))
 
@@ -560,13 +560,13 @@
          (is (->> (p/parse {} throw!               (rr (xs->in+ "+1"))) parser-error?))
 
          (testing "With parser opts"
-           [(testing ":parse-nulls?"
-              [(is (= (p/parse {}                   (fn [_] :parsed) (rr (xs->in+ "_"))) nil))
-               (is (= (p/parse {:parse-nulls? true} (fn [_] :parsed) (rr (xs->in+ "_"))) :parsed))])
+           [(testing ":parse-null-replies?"
+              [(is (= (p/parse {}                          (fn [_] :parsed) (rr (xs->in+ "_"))) nil))
+               (is (= (p/parse {:parse-null-replies? true} (fn [_] :parsed) (rr (xs->in+ "_"))) :parsed))])
 
-            (testing ":parse-errors?"
-              [(is (-> (p/parse {}                    (fn [_] :parsed) (rr (xs->in+ "-err"))) resp-com/reply-error?))
-               (is (=  (p/parse {:parse-errors? true} (fn [_] :parsed) (rr (xs->in+ "-err"))) :parsed))])
+            (testing ":parse-error-replies?"
+              [(is (-> (p/parse {}                           (fn [_] :parsed) (rr (xs->in+ "-err"))) resp-com/reply-error?))
+               (is (=  (p/parse {:parse-error-replies? true} (fn [_] :parsed) (rr (xs->in+ "-err"))) :parsed))])
 
             (testing ":read-mode"
               [(is (= (p/parse {:read-mode :bytes} bytes->str                      (rr (xs->in+ "$5" "hello")))  "hello")  "Parser  read mode (:bytes)")
