@@ -152,8 +152,8 @@
                         v (read-reply inner-read-opts in)]
                     (recur
                       (if kv-rf?
-                        (rf acc  k v)
-                        (rf acc [k v]))))))))
+                        (rf acc                               k v)
+                        (rf acc (clojure.lang.MapEntry/create k v)))))))))
 
           :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
           :default
@@ -191,8 +191,8 @@
                       (let [k (read-reply inner-read-opts in) ; Without kfn!
                             v (read-reply inner-read-opts in)]
                         (if kv-rf?
-                          (rf acc  k v)
-                          (rf acc [k v]))))
+                          (rf acc                               k v)
+                          (rf acc (clojure.lang.MapEntry/create k v)))))
                     init-acc
                     n)))
 
