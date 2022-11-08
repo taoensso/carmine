@@ -7,7 +7,7 @@
    [taoensso.encore :as enc  :refer [throws?]]
    [taoensso.nippy  :as nippy]
    [taoensso.carmine.impl.resp.common :as resp-com
-    :refer [str->bytes bytes->str xs->in+]]
+    :refer [str->bytes bytes->str xs->in+ throw!]]
 
    [taoensso.carmine.impl.resp.read.common  :as read-com]
    [taoensso.carmine.impl.resp.read.blobs   :as blobs]
@@ -27,6 +27,7 @@
   ^:dynamic taoensso.carmine-v4/*keywordize-maps?*)
 
 (alias 'core 'taoensso.carmine-v4)
+(alias 'p    'taoensso.carmine.impl.resp.read.parsing) ; For tests, etc.
 
 ;;;; Aggregates
 
@@ -55,7 +56,7 @@
         (loop []
           (let [x (read-reply inner-read-opts in)]
             (if (identical? x ::end-of-aggregate-stream)
-              :carmine/_skipped
+              :carmine/skipped-reply_
               (recur))))
 
         ;; Reducing parser
@@ -78,7 +79,7 @@
       ;; Not streaming
       (let [n (Integer/parseInt size-str)]
         (if (<= n 0) ; Empty or RESP2 null
-          (if (== n 0) to nil)
+          (if (== n 0) to :carmine/null-reply)
 
           (enc/cond
 
@@ -103,8 +104,8 @@
 
 (deftest ^:private _read-aggregate-by-ones-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
-  [(is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+  0))  []) "Empty blob")
-   (is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
+  [(is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+  0))                  []) "Empty blob")
+   (is (= (read-aggregate-by-ones [] read-com/default-read-opts nil (xs->in+ -1)) :carmine/null-reply) "RESP2 null")
 
    (is (= (read-aggregate-by-ones [] read-com/default-read-opts read-basic-reply (xs->in+ 2   ":1" ":2"))     [1 2]))
    (is (= (read-aggregate-by-ones [] read-com/default-read-opts read-basic-reply (xs->in+ "?" ":1" ":2" ".")) [1 2]) "Streaming")])
@@ -127,7 +128,7 @@
           (loop []
             (let [x (read-reply inner-read-opts in)]
               (if (identical? x ::end-of-aggregate-stream)
-                :carmine/_skipped
+                :carmine/skipped-reply_
                 (let [_k x
                       _v (read-reply inner-read-opts in)]
                   (recur)))))
@@ -162,7 +163,7 @@
         ;; Not streaming
         (let [n (Integer/parseInt size-str)]
           (if (<= n 0) ; Empty or RESP2 null
-            (if (== n 0) {} nil)
+            (if (== n 0) {} :carmine/null-reply)
 
             (enc/cond
 
@@ -213,8 +214,8 @@
 (deftest ^:private _read-aggregate-by-pairs-bootstrap
   ;; Very basic bootstrap tests using only `read-basic-reply`
   [(testing "Basics"
-     [(is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+  0))  {}) "Empty blob")
-      (is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+ -1)) nil) "RESP2 null")
+     [(is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+  0))                  {}) "Empty blob")
+      (is (= (read-aggregate-by-pairs read-com/default-read-opts nil (xs->in+ -1)) :carmine/null-reply) "RESP2 null")
 
       (is (= (read-aggregate-by-pairs read-com/default-read-opts read-basic-reply (xs->in+ 2 "+k1" "+v1" "+k2" "+v2")) {:k1  "v1" :k2 "v2"}) "With keywordize")
       (is (= (read-aggregate-by-pairs read-com/nil-read-opts     read-basic-reply (xs->in+ 2 "+k1" "+v1"  ":2" "+v2")) {"k1" "v1",  2 "v2"}) "W/o  keywordize")
@@ -228,7 +229,7 @@
 
     (resp-com/reply-error
       (ex-info "[Carmine] Redis replied with an error"
-        {:eid :carmine.resp.read/error-reply
+        {:eid :carmine.read/error-reply
          :message message
          :code    code}))))
 
@@ -241,7 +242,7 @@
   (delay (agent nil :error-mode :continue)))
 
 (def ^:dynamic *push-fn* ; TODO move to core
-  "?(fn [data-vec]) -> ?effects.
+  "?(fn [data-vec]) => ?effects.
   If provided (non-nil), this fn should never throw."
   ;; TODO Proper docstring for this & push-handler, etc.
   (fn [data-vec]
@@ -302,7 +303,7 @@
 
              ;; --- RESP3 ∖ RESP2 -------------------------------------------------------
              (byte \.) (do (resp-com/discard-crlf in) ::end-of-aggregate-stream) ; End of aggregate stream ✓
-             (byte \_) (do (resp-com/discard-crlf in) nil) ; Null ✓
+             (byte \_) (do (resp-com/discard-crlf in) :carmine/null-reply) ; Null ✓
 
              (byte \#) ; Bool ✓
              (let [b (.readByte in)]
@@ -352,7 +353,7 @@
                    #_
                    (throw
                      (ex-info "[Carmine] Attributes reply for unexpected (non-IObj) type"
-                       {:eid :carmine.resp.read/attributes-for-unexpected-type
+                       {:eid :carmine.read/attributes-for-unexpected-type
                         :target {:type (type target) :value target}
                         :attributes attrs})))))
 
@@ -369,7 +370,7 @@
 
              (throw
                (ex-info "[Carmine] Unexpected reply kind"
-                 {:eid :carmine.resp.read/unexpected-reply-kind
+                 {:eid :carmine.read/unexpected-reply-kind
                   :read-opts (read-com/describe-read-opts read-opts)
                   :kind
                   (enc/assoc-when
@@ -379,7 +380,7 @@
            (catch Throwable t
              (throw
                (ex-info "[Carmine] Unexpected reply error"
-                 {:eid :carmine.resp.read/reply-error
+                 {:eid :carmine.read/reply-error
                   :read-opts (read-com/describe-read-opts read-opts)
                   :kind {:as-byte kind-b :as-char (char kind-b)}}
                  t))))]
@@ -389,70 +390,93 @@
        skip?
        (if (identical? reply ::end-of-aggregate-stream)
          reply ; Always pass through
-         :carmine/skipped)
+         :carmine/skipped-reply)
 
        :if-let [^Parser p (parsing/when-fn-parser (.-parser read-opts))]
-       (if (resp-com/reply-error? reply)
+       (enc/cond
+
+         (resp-com/reply-error? reply)
          (if (get (.-opts p) :parse-errors?)
            ((.-f p) reply)
            (do      reply))
+
+         (identical? reply :carmine/null-reply)
+         (if (get (.-opts p) :parse-nulls?)
+           ((.-f p) nil)
+           (do      nil))
+
+         :default
          ((.-f p) reply))
 
        :default
-       reply))))
+       (if (identical? reply :carmine/null-reply)
+         nil
+         reply)))))
+
+(enc/defalias ^:private rr read-reply)
 
 (deftest ^:private _read-reply
   [(testing "Basics"
-     [(is (= (read-reply
-               (xs->in+ "*10" "+simple string"
-                 ":1" ",1" ",1.5" ",inf" ",-inf" "(1" "#t" "#f" "_"))
+     [(is (= (rr (xs->in+ "*10" "+simple string"
+                   ":1" ",1" ",1.5" ",inf" ",-inf" "(1" "#t" "#f" "_"))
             ["simple string" 1 1.0 1.5 ##Inf ##-Inf 1N true false nil]))
 
-      (is (= (read-reply (xs->in+ "$7" "hello\r\n")) "hello\r\n") "Binary safe")
-      (is (= (read-reply (xs->in+ "$?" ";5" "hello" ";9" " world!\r\n" ";0")) "hello world!\r\n") "Streaming")
-      (is (= (read-reply (xs->in+ "*3" ":1" "$?" ";4" "bulk" ";6" "string" ";0" ",1.5"))
-            [1 "bulkstring" 1.5]))])
+      (is (= (rr (xs->in+ "$7" "hello\r\n")) "hello\r\n") "Binary safe")
+      (is (= (rr (xs->in+ "$?" ";5" "hello" ";9" " world!\r\n" ";0")) "hello world!\r\n") "Streaming")])
+
+   (testing "Basic aggregates"
+     [(is (= (rr (xs->in+ "*3" ":1" ":2" "+3")) [1 2 "3"]))
+      (is (= (binding [core/*keywordize-maps?* true]  (rr (xs->in+ "%2" "+k1" "+v1" ":2" "+v2"))) {:k1  "v1", 2 "v2"}))
+      (is (= (binding [core/*keywordize-maps?* false] (rr (xs->in+ "%2" "+k1" "+v1" ":2" "+v2"))) {"k1" "v1", 2 "v2"}))
+
+      (is (= (rr (xs->in+ "*3" ":1" "$?" ";4" "bulk" ";6" "string" ";0" ",1.5")) [1 "bulkstring" 1.5]))
+
+      (is (=                             (rr (xs->in+ "*2" ":1" "$3" [\a \b \c])) [1 "abc"]) "Baseline...")
+      (is (let [[x y] (read-com/as-bytes (rr (xs->in+ "*2" ":1" "$3" [\a \b \c])))]
+            [(is (= x 1))
+             (is (= (bytes->str y) "abc"))])
+        "`as-bytes` penetrates aggregates")])
 
    (testing "Errors"
      [(testing "Simple errors"
-        [(let [r1 (read-reply (xs->in+ "-ERR Foo bar baz"))]
+        [(let [r1 (rr (xs->in+ "-ERR Foo bar baz"))]
            (is (resp-com/reply-error?
-                 {:eid :carmine.resp.read/error-reply
+                 {:eid :carmine.read/error-reply
                   :message "ERR Foo bar baz"
                   :code    "ERR"}
                  r1)))
 
-         (let [[r1 r2 r3 r4] (read-reply (xs->in+ "*4" ":1" "-CODE1 a" ":2" "-CODE2 b"))]
+         (let [[r1 r2 r3 r4] (rr (xs->in+ "*4" ":1" "-CODE1 a" ":2" "-CODE2 b"))]
            [(is (= r1 1))
             (is (= r3 2))
-            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a"} r2)
-            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b"} r4)])])
+            (resp-com/reply-error? {:eid :carmine.read/error-reply :code "CODE1" :message "CODE1 a"} r2)
+            (resp-com/reply-error? {:eid :carmine.read/error-reply :code "CODE2" :message "CODE2 b"} r4)])])
 
       (testing "Bulk errors"
-        [(let [r1 (read-reply (xs->in+ "!10" "CODE Foo\r\n"))]
+        [(let [r1 (rr (xs->in+ "!10" "CODE Foo\r\n"))]
            (is (resp-com/reply-error?
-                 {:eid :carmine.resp.read/error-reply
+                 {:eid :carmine.read/error-reply
                   :message "CODE Foo\r\n"
                   :code    "CODE"}
                  r1)
              "Binary safe"))
 
-         (let [[r1 r2 r3 r4] (read-reply (xs->in+ "*4" ":1" "!9" "CODE1 a\r\n" ":2" "!9" "CODE2 b\r\n"))]
+         (let [[r1 r2 r3 r4] (rr (xs->in+ "*4" ":1" "!9" "CODE1 a\r\n" ":2" "!9" "CODE2 b\r\n"))]
            [(is (= r1 1))
             (is (= r3 2))
-            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE1" :message "CODE1 a\r\n"} r2)
-            (resp-com/reply-error? {:eid :carmine.resp.read/error-reply :code "CODE2" :message "CODE2 b\r\n"} r4)])])])
+            (resp-com/reply-error? {:eid :carmine.read/error-reply :code "CODE1" :message "CODE1 a\r\n"} r2)
+            (resp-com/reply-error? {:eid :carmine.read/error-reply :code "CODE2" :message "CODE2 b\r\n"} r4)])])])
 
    (testing "Nested aggregates"
      [(is (= [[1 "2" 3] ["a" "b"] []]
-             (read-reply (xs->in+
+             (rr (xs->in+
                           "*3"
                           "*3" ":1" "+2" ":3"
                           "*2" "+a" "+b"
                           "*0"))))
 
       (is (= [#{1 3 "2"} {:k1 "v1", 2 "v2"} [["a" "b"] [] #{} {}]]
-             (read-reply
+             (rr
                (xs->in+
                  "*3"
                  "~3" ":1" "+2" ":3"
@@ -467,7 +491,7 @@
               {:k1 "v1"} {:k1 "v1", 2 2},
               #{"a" "b"} #{1 2}}
 
-            (read-reply
+            (rr
               (xs->in+
                 "%3"
                 "*3" ":1" "+2" ":3"            ; Array key
@@ -479,13 +503,13 @@
                 ))))])
 
    (testing "Misc types"
-     [(is (= (read-reply (xs->in+ "=11" "txt:hello\r\n")) [:carmine/verbatim-string "txt" "hello\r\n"])
+     [(is (= (rr (xs->in+ "=11" "txt:hello\r\n")) [:carmine/verbatim-string "txt" "hello\r\n"])
         "Verbatim string")
 
       (is (enc/submap?
             {:carmine/attributes {:key-popularity {:a 0.1923 :b 0.0012}}}
             (meta
-              (read-reply (xs->in+ "|1" "+key-popularity"
+              (rr (xs->in+ "|1" "+key-popularity"
                            "%2" "$1" "a" ",0.1923" "$1" "b" ",0.0012"
                            "*2" ":2039123" ":9543892"))))
         "Attributes")])
@@ -498,13 +522,85 @@
 
             reply
             (binding [*push-fn* pf]
-              (read-reply
+              (rr
                 (xs->in+
                   ">4" "+pubsub" "+message" "+channel" "+message content"
                   "$9" "get reply")))]
 
         [(is (= reply "get reply"))
          (is (= (deref p_ 0 nil) ["pubsub" "message" "channel" "message content"]))])])])
+
+(defn- parser-error?
+  ([            x] (parser-error? nil x))
+  ([ex-data-sub x]
+   (resp-com/reply-error?
+     (assoc ex-data-sub :eid :carmine.read/parser-error)
+     x)))
+
+(deftest ^:private _read-reply-with-parsing
+  [(testing "fn parsers"
+     [(testing "Against non-aggregates"
+        [(is (=                (rr (xs->in+  "+1")) "1"))
+         (is (=   (p/as-long   (rr (xs->in+  "+1"))) 1))
+         (is (=   (p/as-double (rr (xs->in+  "+1"))) 1.0))
+         (is (->> (p/as-long   (rr (xs->in+  "+s"))) parser-error?))
+         (is (=   (p/as-?long  (rr (xs->in+  "+s"))) nil))
+         (is (=                (rr (xs->in+ "+kw"))  "kw"))
+         (is (=   (p/as-kw     (rr (xs->in+ "+kw"))) :kw))
+
+         (is (=   (p/parse {} (fn [x] (str x "!")) (rr (xs->in+ "+1"))) "1!"))
+         (is (->> (p/parse {} throw!               (rr (xs->in+ "+1"))) parser-error?))
+
+         (testing "With parser opts"
+           [(testing ":parse-nulls?"
+              [(is (= (p/parse {}                   (fn [_] :parsed) (rr (xs->in+ "_"))) nil))
+               (is (= (p/parse {:parse-nulls? true} (fn [_] :parsed) (rr (xs->in+ "_"))) :parsed))])
+
+            (testing ":parse-errors?"
+              [(is (-> (p/parse {}                    (fn [_] :parsed) (rr (xs->in+ "-err"))) resp-com/reply-error?))
+               (is (=  (p/parse {:parse-errors? true} (fn [_] :parsed) (rr (xs->in+ "-err"))) :parsed))])
+
+            (testing ":read-mode"
+              [(is (= (p/parse {:read-mode :bytes} bytes->str                      (rr (xs->in+ "$5" "hello")))  "hello")  "Parser  read mode (:bytes)")
+               (is (= (p/parse {}                  bytes->str   (read-com/as-bytes (rr (xs->in+ "$5" "hello")))) "hello")  "Dynamic read mode (:bytes)")
+               (is (= (p/parse {:read-mode nil}    #(str % "!") (read-com/as-bytes (rr (xs->in+ "$5" "hello")))) "hello!") "Parser  read mode (nil)")])])])
+
+      (testing "Against aggregates"
+        [(is (=                      (rr (xs->in+ "*2" ":1" ":2"))              [1 2])    "Baseline...")
+         (is (=   (p/parse {} set    (rr (xs->in+ "*2" ":1" ":2")))            #{1 2})    "Acts as (f <aggr>)")
+         (is (=                      (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))   [[1 2] 3]) "Baseline...")
+         (is (=   (p/parse {} set    (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) #{[1 2] 3}) "No nesting")
+         (is (->> (p/parse {} throw! (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) parser-error?))])])
+
+   (testing "rf parsers"
+     [(testing "Against aggregates"
+        [(is (=                                                            (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))    [1 2 3 4])    "Baseline...")
+         (is (=   (p/parse-aggregates {} nil            (p/crf conj   #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  #{1 2 3 4})    "Parsed (without xform)")
+         (is (=   (p/parse-aggregates {} (filter even?) (p/crf conj   #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  #{  2   4})    "Parsed (with    xform)")
+         (is (->> (p/parse-aggregates {} (map throw!)   (p/crf conj   #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  parser-error?) "Trap xform errors")
+         (is (->> (p/parse-aggregates {} (map identity) (p/crf throw! #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  parser-error?) "Trap rf    errors")
+         (is (=   (p/parse-aggregates {} (map identity) (p/crf conj   #{}) (rr (xs->in+ "*4" ":1" "_"  ":2"  "_")))  #{nil 1 2})    "Nulls in aggregate")
+
+
+         (is (=                                                                      (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))   [1 2 3 4]) "Baseline...")
+         (is (= (p/parse-aggregates {} nil (p/crf conj! (transient #{}) persistent!) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))) #{1 2 3 4}) "Using transients")
+
+         (is (=                                                                                (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2")) {:k1  1, :k2  2})  "Baseline...")
+         (is (= (p/parse-aggregates {}             nil (p/crf (fn [m [k v]] (assoc m k v)) {}) (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2")) {"k1" 1, "k2" 2})) "Ignore *keywordize-maps?*")
+         (is (= (p/parse-aggregates {:kv-rf? true} nil (p/crf (fn [m  k v]  (assoc m k v)) {}) (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2")) {"k1" 1, "k2" 2})) "With kv-rf")
+
+         (is (= (p/parse-aggregates {}
+                  (filter (fn [[k v]] (even? v)))
+                  (p/crf (fn [m [k v]] (assoc m k v)) {})
+                  (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2"))) {"k2" 2}) "Aggregate map, with xform")
+
+         (is (=                                                        (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))   [[1 2] 3]) "Baseline...")
+         (is (= (p/parse-aggregates {} nil            (p/crf conj #{}) (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) #{[1 2] 3}) "No nesting (without xform)")
+         (is (= (p/parse-aggregates {} (map identity) (p/crf conj #{}) (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) #{[1 2] 3}) "No nesting (with    xform)")])
+
+      (testing "Against non-aggregates"
+        [(is (= (p/parse-aggregates {} (map throw!) throw! (rr (xs->in+ "_")))         nil)  "No effect")
+         (is (= (p/parse-aggregates {} (map throw!) throw! (rr (xs->in+ "+hello"))) "hello") "No effect")])])])
 
 ;;;;
 
@@ -528,7 +624,7 @@
                 ;; TODO read-mode, etc.
                 (let [reply (read-reply in)]
                   (enc/cond
-                    (identical? reply :carmine/skipped) acc
+                    (identical? reply :carmine/skipped-reply) acc
 
                     :if-let [reply-error (get-reply-error reply)]
                     (do

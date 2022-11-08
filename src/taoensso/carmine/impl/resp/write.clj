@@ -171,7 +171,7 @@
   (when (and (not (.isEmpty s)) (== ^int (.charAt s 0) 0))
     (throw
       (ex-info "[Carmine] String args can't begin with null (char 0)"
-        {:eid :carmine.resp.write/null-reserved
+        {:eid :carmine.write/null-reserved
          :arg s}))))
 
 (defn- write-bulk-str [^BufferedOutputStream out s]
@@ -186,8 +186,8 @@
          "$43\r\nಬಾ ಇಲ್ಲಿ ಸಂಭವಿಸ\r\n\r\n"))
 
    (testing "reserve-null!"
-     [(is (nil?                                                     (reserve-null! "")))
-      (is (throws? :common {:eid :carmine.resp.write/null-reserved} (reserve-null! "\u0000<")))])
+     [(is (nil?                                                (reserve-null! "")))
+      (is (throws? :common {:eid :carmine.write/null-reserved} (reserve-null! "\u0000<")))])
 
    (testing "Bulk num/str equivalence"
      [(is (=
@@ -217,7 +217,7 @@
        (ToBytes.     ba)
        (throw
          (ex-info "[Carmine] `to-bytes` expects a byte-array argument"
-           {:eid :carmine.resp.write/unsupported-arg-type
+           {:eid :carmine.write/unsupported-arg-type
             :arg {:type (type ba) :value ba}})))))
 
   ;; => Vector for destructuring (undocumented)
@@ -292,7 +292,7 @@
       (fn [arg]
         (throw
           (ex-info "[Carmine] Trying to send argument of non-native type to Redis while `*auto-serialize?` is false"
-            {:eid :carmine.resp.write/non-native-arg-type
+            {:eid :carmine.write/non-native-arg-type
              :arg {:type (type arg) :value arg}})))]
 
   (extend-protocol IRedisArg
@@ -381,7 +381,7 @@
 
       (testing "Auto serialization disabled"
         (binding [core/*auto-serialize?* false]
-          (let [pattern {:eid :carmine.resp.write/non-native-arg-type}]
+          (let [pattern {:eid :carmine.write/non-native-arg-type}]
            [(is (throws? :common pattern (with-out->str (write-requests out [[nil]]))) "nil arg => throw")
             (is (throws? :common pattern (with-out->str (write-requests out [[{}]])))  "clj arg => throw")
 

@@ -138,21 +138,16 @@
 
 ;; TODO Util for users to parse-?marked-ba -> [<kind> <payload>]
 
-;;;;
+;;;; Errors
 
 (defn throw! [x] (throw (ex-info "Simulated throw" {:arg {:value x :type (type x)}})))
 
-;; Wrapper to identify Carmine-generated reply errors for
-;; possible throwing or unwrapping
-(deftype  CarmineReplyError [ex-info])
-(defn     reply-error [x] (CarmineReplyError. x))
-(defn get-reply-error [x]
-  (when (instance? CarmineReplyError x)
-    (.-ex-info ^CarmineReplyError x)))
-
-(defn throw-?reply-error [x] (when-let [e (get-reply-error x)] (throw e)))
-(defn reply-error?
-  ([            x] (instance? CarmineReplyError x))
+(deftype      ReplyError [ex-info])
+(defn        reply-error [ex-info] (ReplyError.  ex-info))
+(defn    get-reply-error [x] (when (instance? ReplyError x)        (.-ex-info ^ReplyError x)))
+(defn throw-?reply-error [x] (when (instance? ReplyError x) (throw (.-ex-info ^ReplyError x))))
+(defn        reply-error?
+  ([            x] (instance? ReplyError x))
   ([ex-data-sub x]
    (when-let [e (get-reply-error x)]
      (enc/submap? (ex-data e) ex-data-sub))))
@@ -168,7 +163,7 @@
         true
         (throw
           (ex-info "[Carmine] Missing stream separator"
-            {:eid :carmine.resp.read/missing-stream-separator
+            {:eid :carmine.read/missing-stream-separator
              :read {:as-byte read-b :as-char (char read-b)}}))))))
 
 (comment :see-tests-below)
@@ -181,13 +176,10 @@
       true
       (throw
         (ex-info "[Carmine] Missing CRLF"
-          {:eid :carmine.resp.read/missing-crlf
+          {:eid :carmine.read/missing-crlf
            :read s})))))
 
 (deftest ^:private _utils
-  [(throws? :common {:eid :carmine.resp.read/missing-stream-separator}
-     (discard-stream-separator (xs->in+ "")))
-
+  [(is (->> (discard-stream-separator (xs->in+ "")) (throws? :common {:eid :carmine.read/missing-stream-separator})))
    (is (true? (discard-crlf (xs->in+ ""))))
-   (is (throws? :common {:eid :carmine.resp.read/missing-crlf}
-         (discard-crlf (xs->in+ "_"))))])
+   (is (->>   (discard-crlf (xs->in+ "_")) (throws? :common {:eid :carmine.read/missing-crlf})))])

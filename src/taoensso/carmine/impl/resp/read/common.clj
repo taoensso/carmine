@@ -13,7 +13,8 @@
   ^:dynamic taoensso.carmine-v4/*auto-deserialize?*
   ^:dynamic taoensso.carmine-v4/*keywordize-maps?*
   ^:dynamic taoensso.carmine.impl.resp.read.parsing/*parser*
-            taoensso.carmine.impl.resp.read.parsing/get-parser-opts)
+            taoensso.carmine.impl.resp.read.parsing/get-parser-opts
+            taoensso.carmine.impl.resp.read.parsing/describe-parser)
 
 (alias 'core    'taoensso.carmine-v4)
 (alias 'parsing 'taoensso.carmine.impl.resp.read.parsing)

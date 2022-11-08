@@ -10,11 +10,14 @@
     [protocol    :as legacy-protocol]
     [commands    :as legacy-cmds]]
 
-   [taoensso.carmine.impl.resp.common      :as resp-com]
-   [taoensso.carmine.impl.resp.read.common :as read-com]
-   [taoensso.carmine.impl.resp.read        :as resp-read]
-   [taoensso.carmine.impl.resp.write       :as resp-write]
-   [taoensso.carmine.impl.resp.read.blobs  :as resp-blobs]))
+   [taoensso.carmine.impl.resp.common       :as resp-com]
+   [taoensso.carmine.impl.resp.read.common  :as read-com]
+   [taoensso.carmine.impl.resp.read         :as read]
+   [taoensso.carmine.impl.resp.write        :as write]
+   [taoensso.carmine.impl.resp.read.blobs   :as blobs]
+   [taoensso.carmine.impl.resp.read.parsing :as parsing])
+
+  (:refer-clojure :exclude [parse-long parse-double]))
 
 (comment
   (remove-ns 'taoensso.carmine-v4)
@@ -25,19 +28,6 @@
 (enc/assert-min-encore-version [3 32 0])
 
 ;;;; TODO
-
-;; - Additional `read-reply` tests
-;;   - `read-reply` w/ fn parser against nil/empty/non-aggr/aggr: +/- opts, errs
-;;   - `read-reply` w/ rf parser against nil/empty/non-aggr/aggr: +/- opts, errs, xform
-;;     - Observe `:parse-errors?`
-;;     - Ignore `*keywordize-maps?*`
-;;     - No nesting!
-
-;; - v4: add `parse-long`, etc. with docstrings
-;; - v4: add `unparsed`, `parse`, `parse-aggregate` with docstrings
-;;   - Mention: no auto composition, doesn't apply w/in aggregates,
-;;     possible interaction with *read-mode*, etc.
-
 ;; - Update `read-replies` to take `com/Request` [<read-opts> <args>]
 ;; - v4 util wcar to create `com/Request`s, test
 ;;   - Issues with laziness / bindings re: new lazy arg->ba implementation?
@@ -65,6 +55,8 @@
 ;;   - `jedis.RedisInputStream`: readLineBytes, readIntCrLf, readLongCrLf
 ;;   - `jedis.RedisOutputStream`: writeCrLf, writeIntCrLf
 
+;; - High-level unsimulated (client<->server) tests in dedicated ns
+
 ;; - Check all errors: eids, messages, data
 ;; - Check all dynamic bindings and sys-vals, ensure accessible
 ;; - v4 wiki with changes, migration, new features, examples, etc.
@@ -79,8 +71,8 @@
 ;; - [new] Full RESP3 support, incl. streaming, etc.
 ;; - [new] *auto-serialize?*, *auto-deserialize?*
 ;; - [new] Greatly improved `skip-replies` performance
-;; - [mod] Simplified parsers API, support for stateful,
-;;         transducer-capable aggregate (rf) parsers (!!)
+;; - [mod] Simplified parsers API
+;; - [new] Aggregate  parsers, with xform support
 
 ;;;; Config
 
@@ -150,20 +142,18 @@
   (enc/defalias read-com/as-bytes)
   (enc/defalias read-com/as-thawed)
 
-  ;; TODO parser constructors with good documentation
-  ;; incl. re: fns, rfs (kv and in APIs), xforms, etc.
-  ;; mention options as advanced / for internal use
+  (enc/defalias parsing/unparsed)
+  (enc/defalias parsing/parse)
+  (enc/defalias parsing/parse-aggregates)
+  (enc/defalias parsing/completing-rf)
 
-  ;; (enc/defalias resp-blobs/as-long)
-  ;; (enc/defalias resp-blobs/as-?long)
-  ;; (enc/defalias resp-blobs/as-double)
-  ;; (enc/defalias resp-blobs/as-?double)
-  ;; (enc/defalias resp-blobs/as-kw)
-  ;; (enc/defalias resp-blobs/as-?kw)
+  (enc/defalias parsing/as-?long)
+  (enc/defalias parsing/as-?double)
+  (enc/defalias parsing/as-?kw)
 
-  ;; (enc/defalias resp-blobs/as-parsed-?bytes)
-  ;; (enc/defalias resp-blobs/as-parsed-?str)
-  )
+  (enc/defalias parsing/as-long)
+  (enc/defalias parsing/as-double)
+  (enc/defalias parsing/as-kw))
 
 ;;;; Scratch
 
@@ -180,8 +170,8 @@
   (let [{:keys [as-pipeline? conn]} opts
         {:keys [in out]} (or conn (nconn))]
 
-    (resp-write/write-requests out              reqs)
-    (resp-read/read-replies    in  as-pipeline? reqs)))
+    (write/write-requests out              reqs)
+    (read/read-replies    in  as-pipeline? reqs)))
 
 (comment
   (wcar {} [["PING"]])
@@ -193,24 +183,24 @@
   (def c (nconn))
 
   (let [c (nconn)]
-    (resp/write-requests (:out c) [["PING"]])
-    (resp/read-reply     (:in  c)))
+    (write/write-requests (:out c) [["PING"]])
+    (read/read-reply      (:in  c)))
 
   (let [c (nconn)]
-    (resp/write-requests (:out c) [["SET" "K1" 1] ["GET" "K1"]])
-    [(resp/read-reply    (:in  c))
-     (resp/read-reply    (:in  c))])
+    (write/write-requests (:out c) [["SET" "K1" 1] ["GET" "K1"]])
+    [(read/read-reply     (:in  c))
+     (read/read-reply     (:in  c))])
 
   (let [c (nconn)]
-    (resp/write-requests (:out c) [["HELLO" 3] ["SET" "K1" 1] ["GET" "K1"]])
-    [(resp/read-reply    (:in  c))
-     (resp/read-reply    (:in  c))
-     (resp/read-reply    (:in  c))])
+    (write/write-requests (:out c) [["HELLO" 3] ["SET" "K1" 1] ["GET" "K1"]])
+    [(read/read-reply     (:in  c))
+     (read/read-reply     (:in  c))
+     (read/read-reply     (:in  c))])
 
   (let [c (nconn)]
-    (resp/write-requests (:out c) [["SET" "K1" {:a :A}] ["GET" "K1"]])
-    [(resp/read-reply    (:in  c))
-     (resp/read-reply    (:in  c))])
+    (write/write-requests (:out c) [["SET" "K1" {:a :A}] ["GET" "K1"]])
+    [(read/read-reply     (:in  c))
+     (read/read-reply     (:in  c))])
 
   (let [c (nconn)] (.read (:in c))) ; Inherently blocking
 
@@ -227,56 +217,7 @@
           (legacy-cmds/enqueue-request 1 ["ECHO" "FOO"])))
 
       (do
-        (resp-write/write-requests (:out c2) [["ECHO" "FOO"]])
-        (resp-read/read-reply      (:in  c2))
+        (write/write-requests (:out c2) [["ECHO" "FOO"]])
+        (read/read-reply      (:in  c2))
         ))) ; [286.97 224.95]
   )
-
-#_ ; TODO Convert to parser tests
-(deftest ^:private _*bxf*
-  [(testing "Basics"
-     [(is (=            (read-blob true (xs->in+ 1 8)) "8"))
-      (is (= (as-long   (read-blob true (xs->in+ 1 8))) 8))
-      (is (= (as-double (read-blob true (xs->in+ 1 8))) 8.0))
-
-      (is (=                       (read-blob true (xs->in+ 5 "hello"))   "hello"))
-      (is (=             (as-kw    (read-blob true (xs->in+ 5 "hello")))  :hello))
-      (is (= (bytes->str (as-bytes (read-blob true (xs->in+ 5 "hello")))) "hello"))
-      (is (=
-            (as-parsed-?str str/upper-case
-              (read-blob true (xs->in+ 5 "hello"))) "HELLO"))
-
-      (is (= (bytes->str           (read-blob true (xs->in+ "5" (com/xs->ba com/ba-bin [\a \b \c]))))  "abc"))
-      (is (= (bytes->str (as-bytes (read-blob true (xs->in+ "5" (com/xs->ba com/ba-bin [\a \b \c]))))) "abc")
-        "Mark ba still removed from returned bytes, even with `as-bytes`.")])
-
-   (testing "Null/empty blobs"
-     [(is (= (read-blob true (xs->in+ -1)) nil) "as-default vs nil")
-      (is (= (read-blob true (xs->in+  0))  "") "as-default vs empty")
-
-      (is (= (as-thawed {} (read-blob true (xs->in+ -1))) nil) "as-thawed vs nil")
-      (is (= (as-thawed {} (read-blob true (xs->in+  0))) nil) "as-thawed vs empty")
-
-      (is (= (vec (as-bytes {} (read-blob true (xs->in+ -1)))) []) "as-bytes vs nil")
-      (is (= (vec (as-bytes {} (read-blob true (xs->in+  0)))) []) "as-bytes vs empty")
-
-      (is (= (as-?long (read-blob true (xs->in+ -1))) nil) "as-?long vs nil")
-      (is (= (as-?long (read-blob true (xs->in+  0))) nil) "as-?long vs empty")
-
-      (let [pattern {:eid :carmine.resp.read.blob/parse-fn-error}]
-        [(is (com/crex-match? (as-long (read-blob true (xs->in+ -1))) pattern) "as-?long vs nil")
-         (is (com/crex-match? (as-long (read-blob true (xs->in+  0))) pattern) "as-?long vs empty")])
-
-      (let [str-fn #(when % (str/upper-case %))]
-        [(is (= (as-parsed-?str str-fn (read-blob true (xs->in+ -1))) nil) "as-parsed-?str vs nil")
-         (is (= (as-parsed-?str str-fn (read-blob true (xs->in+  0))) nil) "as-parsed-?str vs empty")])
-
-      (let [ba-fn #(when % (str/upper-case (bytes->str %)))]
-        [(is (= (as-parsed-?bytes ba-fn (read-blob true (xs->in+ -1))) nil) "as-parsed-?bytes vs nil")
-         (is (= (as-parsed-?bytes ba-fn (read-blob true (xs->in+  0))) nil) "as-parsed-?bytes vs empty")])
-
-      (is (= (vec (read-blob true (xs->in+ 2 (com/xs->ba com/ba-bin [])))) []) "Marked ba-bin vs empty bytes")
-
-      (is (com/crex-match? (read-blob true (xs->in+ 2 (com/xs->ba com/ba-npy [])))
-            {:eid :carmine.resp.read.blob/nippy-thaw-error})
-        "Marked ba-npy vs empty bytes")])])
