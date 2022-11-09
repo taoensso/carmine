@@ -1,6 +1,5 @@
 (ns taoensso.carmine.impl.resp.read
-  "Read-side implementation of the Redis RESP3 protocol,
-  Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md."
+  "Read-side of RESP3 protocol."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
    [clojure.test    :as test :refer [deftest testing is]]
@@ -16,7 +15,8 @@
   (:import
    [java.nio.charset StandardCharsets]
    [java.io DataInputStream]
-   [taoensso.carmine.impl.resp.read.common ReadOpts Request]
+   [java.util LinkedList]
+   [taoensso.carmine.impl.resp.read.common ReadOpts]
    [taoensso.carmine.impl.resp.read.parsing Parser]))
 
 (comment
@@ -269,9 +269,42 @@
 
 (let [sentinel-end-of-aggregate-stream read-com/sentinel-end-of-aggregate-stream
       sentinel-null-reply              read-com/sentinel-null-reply]
+  (defn complete-reply [^ReadOpts read-opts reply]
+    (let [skip? (identical? (.-read-mode read-opts) :skip)]
+      (enc/cond
+
+        skip?
+        (if (identical? reply sentinel-end-of-aggregate-stream)
+          reply ; Always pass through
+          read-com/sentinel-skipped-reply)
+
+        :if-let [^Parser p (parsing/when-fn-parser (.-parser read-opts))]
+        (enc/cond
+
+          (resp-com/reply-error? reply)
+          (if (get (.-opts p) :parse-error-replies?)
+            ((.-f p) reply)
+            (do      reply))
+
+          (identical? reply sentinel-null-reply)
+          (if (get (.-opts p) :parse-null-replies?)
+            ((.-f p) nil)
+            (do      nil))
+
+          :default
+          ((.-f p) reply))
+
+        :default
+        (if (identical? reply sentinel-null-reply)
+          nil
+          reply)))))
+
+(let [sentinel-end-of-aggregate-stream read-com/sentinel-end-of-aggregate-stream
+      sentinel-null-reply              read-com/sentinel-null-reply]
 
   (defn read-reply
-    "Blocks to read reply from given DataInputStream."
+    "Blocks to read reply from given DataInputStream.
+    Returns completed reply."
 
     ;; For REPL/testing
     ([in] (read-reply (read-com/new-read-opts) in))
@@ -287,7 +320,7 @@
            (try
              (enc/case-eval kind-b
                ;; --- RESP2 ⊂ RESP3 -------------------------------------------------------
-               (byte \+) (.readLine in)  ; Simple string ✓
+               (byte \+) (.readLine in) ; Simple string ✓
                (byte \:) ; Simple long ✓
                (let [s (.readLine in)]
                  (when-not skip?
@@ -393,33 +426,7 @@
                     :kind {:as-byte kind-b :as-char (char kind-b)}}
                    t))))]
 
-       (enc/cond
-
-         skip?
-         (if (identical? reply sentinel-end-of-aggregate-stream)
-           reply ; Always pass through
-           read-com/sentinel-skipped-reply)
-
-         :if-let [^Parser p (parsing/when-fn-parser (.-parser read-opts))]
-         (enc/cond
-
-           (resp-com/reply-error? reply)
-           (if (get (.-opts p) :parse-error-replies?)
-             ((.-f p) reply)
-             (do      reply))
-
-           (identical? reply sentinel-null-reply)
-           (if (get (.-opts p) :parse-null-replies?)
-             ((.-f p) nil)
-             (do      nil))
-
-           :default
-           ((.-f p) reply))
-
-         :default
-         (if (identical? reply sentinel-null-reply)
-           nil
-           reply))))))
+       (complete-reply read-opts reply)))))
 
 (enc/defalias ^:private rr read-reply)
 
@@ -609,46 +616,3 @@
       (testing "Against non-aggregates"
         [(is (= (p/parse-aggregates {} (map throw!) throw! (rr (xs->in+ "_")))         nil)  "No effect")
          (is (= (p/parse-aggregates {} (map throw!) throw! (rr (xs->in+ "+hello"))) "hello") "No effect")])])])
-
-;;;;
-
-(let [read-reply             read-reply
-      get-reply-error        resp-com/get-reply-error
-      sentinel-skipped-reply read-com/sentinel-skipped-reply]
-
-  (defn read-replies
-    ;; TODO Update
-    ;; TODO Support dummy (local?) replies
-    [in as-pipeline? reqs]
-    (let [n-reqs   (count reqs)
-          big-n?   (> n-reqs 10)
-          complete (if big-n? persistent! identity)
-          conj*    (if big-n? conj!       conj)
-          error_   (volatile! nil)
-
-          replies
-          (complete
-            (reduce
-              (fn [acc req]
-                ;; TODO read-mode, etc.
-                (let [reply (read-reply in)]
-                  (enc/cond
-                    (identical? reply sentinel-skipped-reply) acc
-
-                    :if-let [reply-error (get-reply-error reply)]
-                    (do
-                      (vreset! error_ reply-error)
-                      (conj*   acc    reply-error))
-
-                    :else (conj* acc reply))))
-
-              (if big-n? (transient []) [])
-              reqs))]
-
-      (if (or as-pipeline? (> (count replies) 1))
-        replies ; Return replies as vector
-
-        ;; Return single value, throw if reply error
-        (if-let [error @error_]
-          (throw error)
-          (nth replies 0))))))

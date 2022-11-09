@@ -66,7 +66,6 @@
 
 ;;;; ReadOpts, etc.
 
-(deftype Request  [read-opts req-args])
 (deftype ReadOpts [read-mode parser auto-deserialize? keywordize-maps?])
 
 (def     nil-read-opts (ReadOpts. nil nil  nil  nil))
@@ -111,7 +110,7 @@
        (let [{:keys [read-mode parser auto-deserialize? keywordize-maps?]} opts]
          (ReadOpts.  read-mode parser auto-deserialize? keywordize-maps?))))))
 
-(comment (enc/qb 1e6 (new-read-opts))) ; 40.46
+(comment (enc/qb 1e6 (new-read-opts))) ; 85.92
 
 (defn describe-read-opts
   "For error messages, etc."

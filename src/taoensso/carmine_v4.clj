@@ -15,26 +15,27 @@
    [taoensso.carmine.impl.resp.read         :as read]
    [taoensso.carmine.impl.resp.write        :as write]
    [taoensso.carmine.impl.resp.read.blobs   :as blobs]
-   [taoensso.carmine.impl.resp.read.parsing :as parsing])
+   [taoensso.carmine.impl.resp.read.parsing :as parsing]
+   [taoensso.carmine.impl.resp              :as resp])
 
   (:refer-clojure :exclude [parse-long parse-double]))
 
 (comment
-  (remove-ns 'taoensso.carmine-v4)
+  (remove-ns      'taoensso.carmine-v4)
+  (test/run-tests 'taoensso.carmine-v4)
+  (run-all-carmine-tests))
+
+(defn run-all-carmine-tests []
   (merge-with (fn [l r] (if (keyword? r) r (+ l r)))
     (test/run-all-tests #"taoensso\.carmine\.impl\..*")
-    (test/run-tests      'taoensso.carmine-v4)))
+    (test/run-tests      'taoensso.carmine-v4)
+    (test/run-tests      'taoensso.carmine.tests.v4)))
 
 (enc/assert-min-encore-version [3 32 0])
 
 ;;;; TODO
-;; 
 
-
-;; - Update `read-replies` to take `com/Request` [<read-opts> <args>]
-;; - v4 util wcar to create `com/Request`s, test
-;;   - Issues with laziness / bindings re: new lazy arg->ba implementation?
-;;     - Realise lazy seqs?
+;; - Don't send simple nums to Redis
 
 ;; - Add common and v4 util to parse-?marked-ba -> [<kind> <payload>]
 ;; - Add dummy (local?) replies
@@ -156,71 +157,62 @@
 
   (enc/defalias parsing/as-long)
   (enc/defalias parsing/as-double)
-  (enc/defalias parsing/as-kw))
+  (enc/defalias parsing/as-kw)
+
+  (enc/defalias        resp/local-echo)
+  (enc/defalias return resp/local-echo))
 
 ;;;; Scratch
 
 (defn nconn [] (legacy-conns/make-new-connection {:host "127.0.0.1" :port 6379}))
 (comment (keys (nconn))) ; (:socket :spec :in :out)
 
-(comment
-  (legacy-protocol/with-context (nconn)
-    (legacy-protocol/with-replies
-      (legacy-cmds/enqueue-request 1 ["SET" "KX" "VY"])
-      (legacy-cmds/enqueue-request 1 ["GET" "KX"]))))
-
-(defn wcar [opts reqs]
-  (let [{:keys [as-pipeline? conn]} opts
+(defn with-carmine
+  "Low-level util, prefer `wcar` instead."
+  [opts as-vec? body-fn]
+  (let [{:keys [conn]} opts
         {:keys [in out]} (or conn (nconn))]
+    (resp/with-replies in out as-vec?
+      body-fn)))
 
-    (write/write-requests out              reqs)
-    (read/read-replies    in  as-pipeline? reqs)))
+(defmacro wcar
+  "TODO Docstring"
+  {:arglists '([opts & body] [opts :as-vec & body])}
+  [opts & body]
+  (let [[as-vec? body] (resp/parse-body body)]
+    `(with-carmine ~opts ~as-vec?
+       (fn [] ~@body))))
+
+(comment :see-tests)
+
+(defmacro with-replies
+  "TODO Docstring"
+  {:arglists '([& body] [:as-vec & body])}
+  [& body]
+  (let [[as-vec? body] (resp/parse-body body)]
+    `(resp/with-replies ~as-vec?
+       (fn [] ~@body))))
+
+(comment :see-tests)
 
 (comment
-  (wcar {} [["PING"]])
-  (wcar {} [["PING"] ["ECHO" "FOO"]]))
+  (wcar {} (resp/redis-request ["SET" "k1" "3"]))
+  (wcar {} (resp/redis-request ["GET" "k1"]))
+  (wcar {}         (resp/ping))
+  (wcar {} :as-vec (resp/ping))
+
+  ;; 234.77
+  (let [opts {:conn (nconn)}]
+    (enc/qb 1e4 (wcar opts (resp/ping)))))
 
 ;;;;
 
 (comment
-  (def c (nconn))
-
-  (let [c (nconn)]
-    (write/write-requests (:out c) [["PING"]])
-    (read/read-reply      (:in  c)))
-
-  (let [c (nconn)]
-    (write/write-requests (:out c) [["SET" "K1" 1] ["GET" "K1"]])
-    [(read/read-reply     (:in  c))
-     (read/read-reply     (:in  c))])
-
-  (let [c (nconn)]
-    (write/write-requests (:out c) [["HELLO" 3] ["SET" "K1" 1] ["GET" "K1"]])
-    [(read/read-reply     (:in  c))
-     (read/read-reply     (:in  c))
-     (read/read-reply     (:in  c))])
-
-  (let [c (nconn)]
-    (write/write-requests (:out c) [["SET" "K1" {:a :A}] ["GET" "K1"]])
-    [(read/read-reply     (:in  c))
-     (read/read-reply     (:in  c))])
+  (legacy-protocol/with-context (nconn)
+    (legacy-protocol/with-replies
+      (legacy-cmds/enqueue-request 1 ["SET" "KX" "VY"])
+      (legacy-cmds/enqueue-request 1 ["GET" "KX"])))
 
   (let [c (nconn)] (.read (:in c))) ; Inherently blocking
-
-  (let [c (nconn)] (conns/close-conn c) (.read (:in c))) ; Closed
-  )
-
-(comment
-  (let [c1 (nconn)
-        c2 (nconn)]
-
-    (enc/qb 1e4
-      (legacy-protocol/with-context c1
-        (legacy-protocol/with-replies
-          (legacy-cmds/enqueue-request 1 ["ECHO" "FOO"])))
-
-      (do
-        (write/write-requests (:out c2) [["ECHO" "FOO"]])
-        (read/read-reply      (:in  c2))
-        ))) ; [286.97 224.95]
+  (let [c (nconn)] (legacy-conns/close-conn c) (.read (:in c))) ; Closed
   )

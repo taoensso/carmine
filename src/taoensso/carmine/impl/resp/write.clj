@@ -1,6 +1,5 @@
 (ns taoensso.carmine.impl.resp.write
-  "Write-side implementation of the Redis RESP3 protocol,
-  Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md."
+  "Write-side of RESP3 protocol."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
    [clojure.test    :as test :refer [deftest testing is]]
@@ -50,7 +49,7 @@
             (let [n-as-ba (long->bytes n)]
               (com/xs->ba \* n-as-ba "\r\n"))))]
 
-    (defn- write-array-len
+    (defn write-array-len
       [^BufferedOutputStream out n]
       (let [n (long n)]
         (if-let [^bytes cached-ba (.get cache n)]
@@ -337,7 +336,7 @@
 
 ;;;;
 
-(defn write-requests
+(defn- write-requests ; Used only for REPL/testing
   "Sends pipelined requests to Redis server using its byte string protocol:
       *<num of args> crlf
         [$<size of arg> crlf

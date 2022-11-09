@@ -143,8 +143,9 @@
 (defn throw! [x] (throw (ex-info "Simulated throw" {:arg {:value x :type (type x)}})))
 
 (deftype      ReplyError [ex-info])
-(defn        reply-error [ex-info] (ReplyError.  ex-info))
+(defn        reply-error [ex-info] (ReplyError. ex-info))
 (defn    get-reply-error [x] (when (instance? ReplyError x)        (.-ex-info ^ReplyError x)))
+(defn unwrap-reply-error [x] (if   (instance? ReplyError x)        (.-ex-info ^ReplyError x) x))
 (defn throw-?reply-error [x] (when (instance? ReplyError x) (throw (.-ex-info ^ReplyError x))))
 (defn        reply-error?
   ([            x] (instance? ReplyError x))
