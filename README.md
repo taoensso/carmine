@@ -137,7 +137,7 @@ You can force automatic de/serialization for an argument of any type by wrapping
 
 ### Documentation and command coverage
 
-Like [labs-redis-clojure], Carmine uses the [official Redis command reference] to generate its own command API. Which means that not only is Carmine's command coverage *always complete*, but it's also **fully documented**:
+Like [labs-redis-clojure], Carmine uses the [official Redis command reference] to generate its own command API. Which means that not only is Carmine's command coverage complete with the Redis version at the time of build, but it's also **fully documented**:
 
 ```clojure
 (use 'clojure.repl)
