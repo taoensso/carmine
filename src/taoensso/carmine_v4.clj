@@ -35,8 +35,6 @@
 
 ;;;; TODO
 
-;; - Don't send simple nums to Redis
-
 ;; - Add common and v4 util to parse-?marked-ba -> [<kind> <payload>]
 ;; - Add dummy (local?) replies
 ;; - Move *push-fn* to v4, finish implementation, document
@@ -196,7 +194,7 @@
 (comment :see-tests)
 
 (comment
-  (wcar {} (resp/redis-request ["SET" "k1" "3"]))
+  (wcar {} (resp/redis-request ["SET" "k1" 3]))
   (wcar {} (resp/redis-request ["GET" "k1"]))
   (wcar {}         (resp/ping))
   (wcar {} :as-vec (resp/ping))

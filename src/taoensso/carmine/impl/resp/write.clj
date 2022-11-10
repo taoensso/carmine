@@ -99,6 +99,35 @@
             (.write out n-as-ba 0 len)
             (.write out ba-crlf 0 2))))))
 
+  (let [;; {<n> $<len><CRLF><n><CRLF} for common longs
+        ^java.util.concurrent.ConcurrentHashMap cache
+        (create-cache long min-num-to-cache (inc max-num-to-cache)
+          (fn [n]
+            (let [^bytes       n-as-ba (long->bytes n)
+                  len (alength n-as-ba)
+
+                  ^bytes len-as-ba (long->bytes len)]
+
+              (com/xs->ba \$ len-as-ba "\r\n" n-as-ba "\r\n"))))]
+
+    (defn- write-bulk-long
+      [^BufferedOutputStream out n]
+      (let [n (long n)]
+        (if-let [^bytes cached-ba (.get cache n)]
+          (.write out cached-ba 0 (alength cached-ba))
+
+          (let [^bytes       n-as-ba (long->bytes n)
+                len (alength n-as-ba)
+
+                ^bytes len-as-ba (long->bytes len)]
+
+            (.write out b$)
+            (.write out len-as-ba 0 (alength len-as-ba))
+            (.write out ba-crlf   0 2)
+
+            (.write out n-as-ba   0 len)
+            (.write out ba-crlf   0 2))))))
+
   (let [double->bytes (fn [n] (.getBytes (Double/toString n) StandardCharsets/UTF_8))
 
         ;; {<n> $<len><CRLF><n><CRLF} for common whole doubles
@@ -140,7 +169,10 @@
    (is (= (with-out->str (write-simple-long out           12))    ":12\r\n"))
    (is (= (with-out->str (write-simple-long out uncached-num)) ":32768\r\n"))
 
-   (is (= (with-out->str (write-bulk-double out           12))    "$4\r\n12.0\r\n"))
+   (is (= (with-out->str (write-bulk-long   out           12)) "$2\r\n12\r\n"))
+   (is (= (with-out->str (write-bulk-long   out uncached-num)) "$5\r\n32768\r\n"))
+
+   (is (= (with-out->str (write-bulk-double out           12)) "$4\r\n12.0\r\n"))
    (is (= (with-out->str (write-bulk-double out uncached-num)) "$7\r\n32768.0\r\n"))])
 
 (let [write-bulk-len write-bulk-len
@@ -300,10 +332,12 @@
     Character            (write-bulk-arg [c  out] (write-bulk-str out (.toString c)))
     clojure.lang.Keyword (write-bulk-arg [kw out] (write-bulk-str out (kw->str   kw)))
 
-    Long    (write-bulk-arg [n out] (write-simple-long out       n))
-    Integer (write-bulk-arg [n out] (write-simple-long out       n))
-    Short   (write-bulk-arg [n out] (write-simple-long out       n))
-    Byte    (write-bulk-arg [n out] (write-simple-long out       n))
+    ;; Redis doesn't currently seem to accept write-simple-long (at least
+    ;; without RESP3 mode?) though this seems an unnecessary limitation?
+    Long    (write-bulk-arg [n out] (write-bulk-long   out       n))
+    Integer (write-bulk-arg [n out] (write-bulk-long   out       n))
+    Short   (write-bulk-arg [n out] (write-bulk-long   out       n))
+    Byte    (write-bulk-arg [n out] (write-bulk-long   out       n))
     Double  (write-bulk-arg [n out] (write-bulk-double out       n))
     Float   (write-bulk-arg [n out] (write-bulk-double out       n))
     ToBytes (write-bulk-arg [x out] (write-bulk-ba     out (.-ba x)))
@@ -366,7 +400,8 @@
         "Multiple reqs, with multiple args each")
 
       (is (= (with-out->str (write-requests out [["str" 1 2 3 4.0 :kw \x]]))
-            "*7\r\n$3\r\nstr\r\n:1\r\n:2\r\n:3\r\n$3\r\n4.0\r\n$2\r\nkw\r\n$1\r\nx\r\n"))])
+            #_"*7\r\n$3\r\nstr\r\n:1\r\n:2\r\n:3\r\n$3\r\n4.0\r\n$2\r\nkw\r\n$1\r\nx\r\n" ; Simple nums
+            "*7\r\n$3\r\nstr\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$3\r\n4.0\r\n$2\r\nkw\r\n$1\r\nx\r\n"))])
 
    (testing "Blob markers"
      [(testing "Auto serialization enabled"
