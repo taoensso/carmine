@@ -68,6 +68,19 @@
    [114.58  34.58  35.6]
    [836.49 221.18 205.2]])
 
+(defn- consume-list!
+  ;; Note: we don't actually always NEED to consume (remove) items
+  ;; while iterating, but benching shows that doing so is almost
+  ;; as fast as non-consuming iteration - so we'll just always
+  ;; consume to keep things simple and safe.
+  ([f init ^LinkedList ll] (consume-list! f init ll (.size ll)))
+  ([f init ^LinkedList ll n]
+   (when (> ^int n 0)
+     (enc/reduce-n ; Fastest way to iterate
+       (fn [acc _] (f acc (.removeFirst ll)))
+       init
+       n))))
+
 (let [sentinel-skipped-reply read-com/sentinel-skipped-reply]
   (defn flush-pending-requests [^Ctx ctx]
     "Given a Ctx with pending-reqs* and pending-replies*:
@@ -90,32 +103,26 @@
 
           ;; Consume all pending requests, writing to Redis server
           ;; without awaiting any replies (=> use pipelining).
-          ;;
-          ;; Note: don't NEED to CONSUME from pending-reqs* unless in
-          ;; a nested ctx, but always doing so is almost as fast as not.
           (let [out (.-out ctx)]
-            (enc/reduce-n
-              (fn [_ _]
-                (let [req (.removeFirst pending-reqs*)]
-                  (.add consumed-reqs* req) ; Move to consumed list
-                  (enc/cond!
-                    (instance? Request req) ; Common case
-                    (let [args (.-req-args ^Request req)]
-                      (write/write-array-len out (count args))
-                      (enc/run! (fn [arg] (write/write-bulk-arg arg out)) args))
+            (consume-list!
+              (fn [_ req]
+                (.add consumed-reqs* req) ; Move to consumed list
+                (enc/cond!
+                  (instance? Request req) ; Common case
+                  (let [args (.-req-args ^Request req)]
+                    (write/write-array-len out (count args))
+                    (enc/run! (fn [arg] (write/write-bulk-arg arg out)) args))
 
-                    ;; Noop, don't actually send anything to Redis
-                    (instance? LocalEchoRequest req) nil)))
-              nil
-              n-pending-reqs)
+                  ;; Noop, don't actually send anything to Redis
+                  (instance? LocalEchoRequest req) nil))
+              nil pending-reqs* n-pending-reqs)
             (.flush ^java.io.BufferedOutputStream out))
 
           ;; Now re-consume all requests to read replies from Redis server
           (let [in (.-in ctx)]
-            (enc/reduce-n
-              (fn [_ _]
-                (let [req (.removeFirst consumed-reqs*)
-                      completed-reply
+            (consume-list!
+              (fn [_ req]
+                (let [completed-reply
                       (enc/cond!
                         (instance? Request req) ; Common case
                         (let [read-opts (.-read-opts ^Request req)]
@@ -129,8 +136,7 @@
                   (if (identical? completed-reply sentinel-skipped-reply)
                     nil ; Noop
                     (.add pending-replies* completed-reply))))
-              nil
-              n-pending-reqs))
+              nil consumed-reqs* n-pending-reqs))
 
           n-pending-reqs)))))
 
@@ -191,17 +197,11 @@
 
         (> n-replies 10)
         (persistent!
-          (enc/reduce-n
-            (fn [acc _]
-              (let [reply (.removeFirst pending-replies*)]
-                (conj! acc (unwrap-reply-error reply))))
-            (transient [])
-            n-replies))
+          (consume-list!
+            (fn [acc reply] (conj! acc (unwrap-reply-error reply)))
+            (transient []) pending-replies* n-replies))
 
         (> n-replies 0)
-        (enc/reduce-n
-          (fn [acc _]
-            (let [reply (.removeFirst pending-replies*)]
-              (conj acc (unwrap-reply-error reply))))
-          []
-          n-replies)))))
+        (consume-list!
+          (fn [acc reply] (conj acc (unwrap-reply-error reply)))
+          [] pending-replies* n-replies)))))
