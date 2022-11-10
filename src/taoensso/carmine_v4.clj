@@ -62,6 +62,7 @@
 ;; - Check all errors: eids, messages, data
 ;; - Check all dynamic bindings and sys-vals, ensure accessible
 ;; - v4 wiki with changes, migration, new features, examples, etc.
+;;   - Mention `redis-call`, esp. re: modules and new API stuff
 ;; - First alpha release
 
 ;; - Could add `to-streaming-freeze` that uses the RESP3 API streaming bulk
@@ -75,6 +76,7 @@
 ;; - [new] Greatly improved `skip-replies` performance
 ;; - [mod] Simplified parsers API
 ;; - [new] Aggregate  parsers, with xform support
+;; - [new] New, improved documentation - incl. docstrings & wiki
 
 ;;;; Config
 
@@ -139,8 +141,8 @@
 ;;;; Aliases
 
 (do
-  (enc/defalias read-com/skip-replies)
   (enc/defalias read-com/normal-replies)
+  (enc/defalias read-com/skip-replies)
   (enc/defalias read-com/as-bytes)
   (enc/defalias read-com/as-thawed)
 
@@ -157,10 +159,16 @@
   (enc/defalias parsing/as-double)
   (enc/defalias parsing/as-kw)
 
+  (enc/defalias resp/redis-call)
   (enc/defalias        resp/local-echo)
   (enc/defalias return resp/local-echo))
 
 ;;;; Scratch
+
+;; TODO For commands
+;; As with all Carmine Redis command fns: expects to be called within a `wcar`
+;; body, and returns nil. The server's reply to this command will be included
+;; in the replies returned by the enclosing `wcar`.
 
 (defn nconn [] (legacy-conns/make-new-connection {:host "127.0.0.1" :port 6379}))
 (comment (keys (nconn))) ; (:socket :spec :in :out)
@@ -184,7 +192,8 @@
 (comment :see-tests)
 
 (defmacro with-replies
-  "TODO Docstring"
+  "TODO Docstring
+  Expects to be called within the body of a `wcar`."
   {:arglists '([& body] [:as-vec & body])}
   [& body]
   (let [[as-vec? body] (resp/parse-body body)]
@@ -194,14 +203,14 @@
 (comment :see-tests)
 
 (comment
-  (wcar {} (resp/redis-request ["SET" "k1" 3]))
-  (wcar {} (resp/redis-request ["GET" "k1"]))
+  (wcar {} (resp/redis-call "set" "k1" 3))
+  (wcar {} (resp/redis-call "get" "k1"))
   (wcar {}         (resp/ping))
   (wcar {} :as-vec (resp/ping))
 
   ;; 234.77
   (let [opts {:conn (nconn)}]
-    (enc/qb 1e4 (wcar opts (resp/ping)))))
+    (enc/qb 1e4 (wcar opts (resp/redis-call "ping")))))
 
 ;;;;
 

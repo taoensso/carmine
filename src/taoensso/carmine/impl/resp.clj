@@ -1,6 +1,6 @@
 (ns taoensso.carmine.impl.resp
   "Implementation of the Redis RESP3 protocol,
-  Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md."
+  Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md"
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
    [clojure.test     :as test :refer [deftest testing is]]
@@ -19,37 +19,58 @@
 
 ;;;;
 
-(defmacro debug [& body] `(when false #_true (println (format ~@body))))
-
 (def ^:dynamic *ctx* "?<Ctx>" nil)
 (deftype Ctx [#_conn in out pending-reqs* pending-replies*])
 
-(deftype Request          [read-opts req-args])
+(deftype Request          [read-opts args])
 (deftype LocalEchoRequest [read-opts reply])
 
-(defn redis-request [req-args]
+(defn redis-call*
+  "Vector-args version of `redis-call`."
+  [args]
+  ;; Could alternatively write immediately (i.e. forgo pending-reqs*).
+  ;; Awaiting Sentinel & Cluster to decide.
   (when-let [^Ctx ctx *ctx*]
     (.addLast ^LinkedList (.-pending-reqs* ctx)
-      (Request. (read-com/new-read-opts) req-args))
+      (Request. (read-com/new-read-opts) args)))
+  nil)
 
-    (debug "Added pending req: %s, now pending: %s"
-      req-args (.size ^LinkedList (.-pending-reqs* ctx)))))
+(defn redis-call
+  "Low-level generic Redis command util.
+  Sends given arguments to Redis server as a single arbitrary command call:
+    (redis-call \"ping\")
+    (redis-call \"set\" \"my-key\" \"my-val\")
+
+  As with all Carmine Redis command fns: expects to be called within a `wcar`
+  body, and returns nil. The server's reply to this command will be included
+  in the replies returned by the enclosing `wcar`.
+
+  `redis-call` is useful for DSLs, and to call commands (including Redis module
+  commands) that might not yet have a native Clojure fn provided by Carmine."
+  [& args] (redis-call* args))
 
 (defn local-echo
-  "TODO Docstring, effected by parsers and read-mode"
+  "Acts exactly like the Redis `echo` command, except entirely local: no data
+  is actually sent to/from Redis server.
+
+  As with all Carmine Redis command fns: expects to be called within a `wcar`
+  body, and returns nil. The server's reply to this command will be included
+  in the replies returned by the enclosing `wcar`.
+
+  `local-echo` is useful for DSLs and other advanced applications.
+  Can be combined with `with-replies` or nested `wcar` calls to achieve some
+  very powerful effects."
   [reply]
   (when-let [^Ctx ctx *ctx*]
     (.addLast ^LinkedList (.-pending-reqs* ctx)
-      (LocalEchoRequest. (read-com/new-read-opts) reply))
-
-    (debug "Added pending req: %s, now pending: %s"
-      ["LOCAL-ECHO" reply] (.size ^LinkedList (.-pending-reqs* ctx)))))
+      (LocalEchoRequest. (read-com/new-read-opts) reply)))
+  nil)
 
 (do ; Basic commands for testing
-  (defn ping []    (redis-request ["PING"]))
-  (defn echo [x]   (redis-request ["ECHO" x]))
-  (defn rset [k v] (redis-request ["SET" k v]))
-  (defn rget [k]   (redis-request ["GET" k])))
+  (defn ping []    (redis-call "ping"))
+  (defn echo [x]   (redis-call "echo" x))
+  (defn rset [k v] (redis-call "set" k v))
+  (defn rget [k]   (redis-call "get" k)))
 
 (defn- ll ^LinkedList [n] (let [ll (LinkedList.)] (dotimes [n n] (.add ll n)) ll))
 (comment (ll 10))
@@ -73,7 +94,7 @@
   ;; while iterating, but benching shows that doing so is almost
   ;; as fast as non-consuming iteration - so we'll just always
   ;; consume to keep things simple and safe.
-  ([f init ^LinkedList ll] (consume-list! f init ll (.size ll)))
+  ([f init ^LinkedList ll  ] (consume-list! f init ll (.size ll)))
   ([f init ^LinkedList ll n]
    (when (> ^int n 0)
      (enc/reduce-n ; Fastest way to iterate
@@ -93,10 +114,6 @@
     (let [^LinkedList pending-reqs* (.-pending-reqs* ctx)
           n-pending-reqs (.size pending-reqs*)]
 
-      (debug "Will flush %s requests, pending replies: %s"
-        (.size ^LinkedList (.-pending-reqs*    ctx))
-        (.size ^LinkedList (.-pending-replies* ctx)))
-
       (when (> n-pending-reqs 0)
         (let [^LinkedList pending-replies* (.-pending-replies* ctx)
               ^LinkedList consumed-reqs*   (LinkedList.)]
@@ -109,7 +126,7 @@
                 (.add consumed-reqs* req) ; Move to consumed list
                 (enc/cond!
                   (instance? Request req) ; Common case
-                  (let [args (.-req-args ^Request req)]
+                  (let [args (.-args ^Request req)]
                     (write/write-array-len out (count args))
                     (enc/run! (fn [arg] (write/write-bulk-arg arg out)) args))
 
@@ -145,30 +162,26 @@
 (defn with-replies
   "Establishes (possibly-nested) Ctx, flushing requests in body,
   and returns completed replies."
-  ([in out as-vec? body-fn] ; Used by `with-carmine`, etc.
-   (debug "With replies: %s" (if *ctx* "nested" "unnested"))
-
+  ([in out as-vec? body-fn] ; Used by `wcar`, etc.
    (when-let [^Ctx parent-ctx *ctx*]
      (flush-pending-requests parent-ctx))
 
    (let [new-ctx (Ctx. in out (LinkedList.) (LinkedList.))]
-     (binding [*ctx* new-ctx]
-       (body-fn)
-       (flush-pending-requests   new-ctx)
-       (complete-replies as-vec? new-ctx))))
+     (binding [*ctx* new-ctx] (body-fn))
+     (flush-pending-requests   new-ctx)
+     (complete-replies as-vec? new-ctx)))
 
-  ([as-vec? body-fn]
-   (debug "With replies: %s" (if *ctx* "nested" "unnested"))
+  ([as-vec? body-fn] ; Used by public `with-replies` macro
    (when-let [^Ctx parent-ctx *ctx*]
      (flush-pending-requests parent-ctx)
 
-     (let [new-ctx (Ctx. (.-in parent-ctx) (.-out parent-ctx)
-                     (LinkedList.) (LinkedList.))]
+     (let [new-ctx
+           (Ctx. (.-in parent-ctx) (.-out parent-ctx)
+             (LinkedList.) (LinkedList.))]
 
-       (binding [*ctx* new-ctx]
-         (body-fn)
-         (flush-pending-requests   new-ctx)
-         (complete-replies as-vec? new-ctx))))))
+       (binding [*ctx* new-ctx] (body-fn))
+       (flush-pending-requests   new-ctx)
+       (complete-replies as-vec? new-ctx)))))
 
 (defn parse-body
   "Returns [<as-vec?> <body>] for use by \"& body\" macros
@@ -185,10 +198,10 @@
 
   (defn- complete-replies
     [as-vec? ^Ctx ctx]
-    (let [^LinkedList pending-replies* (.-pending-replies* ctx)]
-      (enc/cond
-        :let [n-replies (.size pending-replies*)]
+    (let [^LinkedList pending-replies* (.-pending-replies* ctx)
+          n-replies (.size pending-replies*)]
 
+      (enc/cond
         (== n-replies 1)
         (let [reply (.removeFirst pending-replies*)]
           (if-let [reply-error (get-reply-error reply)]
