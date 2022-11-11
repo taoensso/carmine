@@ -23,19 +23,21 @@
 
 (enc/declare-remote
   ^:dynamic taoensso.carmine-v4/*keywordize-maps?*
-            taoensso.carmine-v4/wcar
+            taoensso.carmine-v4/with-carmine
             taoensso.carmine-v4/redis-call)
 
 (alias 'core 'taoensso.carmine-v4)
 
 ;;;; TODO
-;; x Initial sketch
-;; - Proper errors
-;; - Proper opts
-;; - How to test locally? Simulated?
-;; - How to test on GitHub?
-;;   - sentinel1.conf (port 26379), sentinel2.conf (port 26380)
+;; - Conn req timeouts
+;; - Re-check Sentinel client docs
+;; - Sketch API for plugging into wcar
 ;; - API for interactions with Pub/Sub and connection pools?
+
+;; - Proper opts
+;; - Testing env (local + GitHub)
+;;   - `redis-sentinel sentinel1.conf` (port 26379)
+;;   - `redis-sentinel sentinel2.conf` (port 26380)
 
 ;;;; Sentinel spec maps
 ;; {<master-name> [[<sentinel-ip> <sentinel-port> ...]]}
@@ -75,6 +77,14 @@
         (transduce (comp (map address-pair) (remove old-addr?))
           conj old-addrs addrs)))))
 
+(defn- clean-sentinel-spec [spec-map]
+  (reduce-kv
+    (fn [m master-name addrs]
+      (assoc m (enc/as-qname master-name)
+        (transduce (comp (map address-pair) (distinct))
+          conj [] addrs)))
+    {} spec-map))
+
 (deftest ^:private _spec-map-utils
   [(= (-> {}
         (add-sentinels->back :m1 [["ip1" 1] ["ip2" "2"] ["ip3" 3]])
@@ -84,7 +94,10 @@
         (remove-sentinel     :m2 ["ip4" 4]))
 
      {"m1" [["ip2" 2] ["ip1" 1] ["ip3" 3] ["ip6" 6]],
-      "m2" [["ip5" 5]]})])
+      "m2" [["ip5" 5]]})
+
+   (is (= (clean-sentinel-spec {:m1 [["ip1" 1] ["ip1" "1"] ["ip2" "2"]]})
+         {"m1" [["ip1" 1] ["ip2" 2]]}))])
 
 ;;;; Sentinel Specs
 ;; Simple stateful agent wrapper around a sentinel spec map
@@ -95,19 +108,20 @@
   (add-sentinels->back! [sentinel-spec master-name addrs] "Adds given [[ip port] ...] Sentinel server addresses to the back of `master-name`'s addresses in SentinelSpec.")
   (update-sentinels!    [spec f] "Sets SentinelSpec's state map to (f current-state-map), for given update function `f`."))
 
-(deftype SentinelSpec [agent__]
-  clojure.lang.IDeref (deref [_] @@agent__)
+(deftype SentinelSpec [spec-map_]
+  ;; Using delays to minimize contention during updates
+  clojure.lang.IDeref (deref [_] (force @spec-map_))
   clojure.lang.IRef
-  (addWatch     [_ k f] (add-watch      @agent__ k f))
-  (removeWatch  [_ k  ] (remove-watch   @agent__ k))
-  (getValidator [_    ] (get-validator  @agent__))
-  (setValidator [_   f] (set-validator! @agent__ f))
+  (addWatch     [_ k f] (add-watch      spec-map_ k f))
+  (removeWatch  [_ k  ] (remove-watch   spec-map_ k))
+  (getValidator [_    ] (get-validator  spec-map_))
+  (setValidator [_   f] (set-validator! spec-map_ f))
 
   ISentinelSpec
-  (remove-sentinel!     [_ master-name addr]  (send @agent__ remove-sentinel     master-name addr))
-  (add-sentinel->front! [_ master-name addr]  (send @agent__ add-sentinel->front master-name addr))
-  (add-sentinels->back! [_ master-name addrs] (send @agent__ add-sentinels->back master-name addrs))
-  (update-sentinels!    [_ f]                 (send @agent__ f)))
+  (remove-sentinel!     [spec master-name addr]  (swap! spec-map_ (fn [old_] (delay (remove-sentinel     (force old_) master-name addr))))  spec)
+  (add-sentinel->front! [spec master-name addr]  (swap! spec-map_ (fn [old_] (delay (add-sentinel->front (force old_) master-name addr))))  spec)
+  (add-sentinels->back! [spec master-name addrs] (swap! spec-map_ (fn [old_] (delay (add-sentinels->back (force old_) master-name addrs)))) spec)
+  (update-sentinels!    [spec f]                 (swap! spec-map_ (fn [old_] (delay (f                   (force old_)))))                   spec))
 
 (defn sentinel-spec
   "Given a Redis Sentinel server spec map of form
@@ -115,21 +129,34 @@
   returns a stateful SentinelSpec wrapper that supports
   deref, watching, validation, and the ISentinelSpec utils.
 
-  Uses an agent for state management, consider calling
-  (shutdown-agents) as part of your application shutdown."
+    (def my-sentinel-spec
+      \"Stateful Redis Sentinel server spec. Will be kept
+       automatically updated by Carmine.\"
+      (sentinel-spec
+        {:caching       [[\"192.158.1.38\" 26379] ...]
+         :message-queue [[\"192.158.1.38\" 26379] ...]}))
+      => stateful SentinelSpec
+
+     (add-watch my-sentinel-spec :my-watch
+       (fn [_ _ old new]
+         (when (not= old new)
+           (println \"Sentinel spec changed!\" [old new]))))"
   [spec-map]
-  (let [spec-map
-        (reduce-kv
-          (fn [m master-name addrs]
-            (assoc m (enc/as-qname master-name)
-              (transduce (comp (map address-pair) (distinct))
-                conj [] addrs)))
-          {} spec-map)]
+  (SentinelSpec. (atom (clean-sentinel-spec spec-map))))
 
-    (SentinelSpec.
-      (delay (agent spec-map :error-mode :continue)))))
+(deftest ^:private _spec-protocol
+  [(is (= @(sentinel-spec {:m1 [["ip1" "1"] ["ip1" "1"] ["ip2" "2"]]})
+         {"m1" [["ip1" 1] ["ip2" 2]]}))
 
-(comment @(sentinel-spec {:m1 [["ip1" "1"] ["ip1" "1"] ["ip2" "2"]]}))
+   (is (=
+         (->
+           {:m1 [["ip1" "1"] ["ip1" "1"] ["ip2" "2"]]}
+           (sentinel-spec)
+           (add-sentinel->front! :m1 ["ip3" "3"])
+           (add-sentinels->back! :m1 [["ip4" "4"] ["ip5" "5"]])
+           (remove-sentinel!     :m1 ["ip5" "5"])
+           (deref))
+         {"m1" [["ip3" 3] ["ip1" 1] ["ip2" 2] ["ip4" 4]]}))])
 
 (defn- kvs->map [x] (if (map? x) x (into {} (comp (partition-all 2)) x)))
 (comment [(kvs->map {"a" "A" "b" "B"}) (kvs->map ["a" "A" "b" "B"])])
@@ -142,20 +169,44 @@
   Follows procedure as per Sentinel spec,
   Ref. https://redis.io/docs/reference/sentinel-clients/"
   [opts sentinel-spec master-name]
-  (let [master-name (enc/as-qname                      master-name)
-        sentinels   (get (enc/force-ref sentinel-spec) master-name)]
+  (let [spec-map    (enc/force-ref sentinel-spec)
+        master-name (enc/as-qname master-name)
+        sentinels   (get spec-map master-name)]
 
     (if (empty? sentinels)
       (throw
-        (ex-info "TODO" {}))
+        (ex-info "[Carmine] [Sentinel] No Sentinel servers configured for requested master"
+          {:eid :carmine.sentinel/no-sentinels
+           :master-name  master-name
+           :current-spec spec-map}))
 
       (let [t0 (System/currentTimeMillis)
+            n-attempts* (java.util.concurrent.atomic.AtomicLong. 0)
+
             {:keys [add-missing-sentinels?]
              :or   {add-missing-sentinels? true}} opts
 
-            n-attempts* (java.util.concurrent.atomic.AtomicLong. 0)
             mutable-spec? (instance? SentinelSpec sentinel-spec)
             add-missing-sentinels? (and mutable-spec? add-missing-sentinels?)
+
+            attempt-log_  (volatile! []) ; [[<sentinel> <kind>] ...]
+            error-counts_ (volatile! {}) ; {<sentinel> {:keys [unreachable ignorant misidentified]}}
+            error!
+            (fn [sentinel t0-attempt error-kind ?data]
+              (let [attempt-msecs (- (System/currentTimeMillis) t0-attempt)]
+                (vswap! attempt-log_ conj
+                  (assoc
+                    (conj
+                      {:attempt (.get n-attempts*)
+                       :sentinel      sentinel
+                       :error         error-kind}
+                      ?data)
+                    :attempt-msecs attempt-msecs)))
+
+              (vswap! error-counts_
+                (fn [m]
+                  (enc/update-in m [sentinel error-kind]
+                    (fn [?n] (inc ^long (or ?n 0)))))))
 
             ;; All sentinels reported during resolution process
             reported-sentinels_ (volatile! #{}) ; #{[ip port]}
@@ -174,27 +225,26 @@
         (loop [n-loops 1]
 
           (enc/cond
-            :let [unreachable_ (volatile! #{}) ; #{[ip port]}
-                  ignorant_    (volatile! #{}) ; ''
-
-                  ?master ; Declared ?[ip port]
+            :let [t0-attempt (System/currentTimeMillis)
+                  [?sentinel ?master] ; ?[<addr> <addr>]
                   (reduce
                     ;; Try each known sentinel, sequentially
                     (fn [acc sentinel]
                       (.incrementAndGet n-attempts*)
-                      (let [[ip port] sentinel
+                      (let [[ip port] (address-pair sentinel)
                             [?master ?sentinels-info]
                             (try
                               ;; TODO Opts, auth, etc. ~100 msecs timeout, no pool (?)
-                              (core/wcar {:host ip :port port} :as-vec
-                                ;; Does this sentinel know the master?
-                                (core/redis-call "SENTINEL" "get-master-addr-by-name"
-                                  master-name)
+                              (core/with-carmine {:host ip :port port} :as-vec
+                                (fn []
+                                  ;; Does this sentinel know the master?
+                                  (core/redis-call "SENTINEL" "get-master-addr-by-name"
+                                    master-name)
 
-                                (when add-missing-sentinels?
-                                  ;; Ask sentinel to report on other known sentinels
-                                  (binding [core/*keywordize-maps?* false]
-                                    (core/redis-call "SENTINEL" "sentinels" master-name))))
+                                  (when add-missing-sentinels?
+                                    ;; Ask sentinel to report on other known sentinels
+                                    (binding [core/*keywordize-maps?* false]
+                                      (core/redis-call "SENTINEL" "sentinels" master-name)))))
 
                               (catch Throwable _
                                 [::unreachable nil]))]
@@ -209,31 +259,42 @@
                             sentinels-info))
 
                         (enc/cond
-                          (vector?    ?master)               (reduced ?master) ; [ip port]
-                          (nil?       ?master)               (do (vswap! ignorant_    conj sentinel) acc)
-                          (identical? ?master ::unreachable) (do (vswap! unreachable_ conj sentinel) acc))))
+                          (vector?    ?master)               (reduced [sentinel ?master])
+                          (nil?       ?master)               (do (error! sentinel t0-attempt :ignorant    nil) acc)
+                          (identical? ?master ::unreachable) (do (error! sentinel t0-attempt :unreachable nil) acc))))
 
-                    nil sentinels)]
+                    nil sentinels)
+
+                  error-data_
+                  (delay
+                    {:master-name     master-name
+                     :current-spec    spec-map
+                     :n-loops         n-loops
+                     :n-attempts      (.get n-attempts*)
+                     :msecs-elapsed   (- (System/currentTimeMillis) t0)
+                     :sentinel-errors @error-counts_
+                     :attempt-log     @attempt-log_})]
 
             (nil? ?master)
             (complete! nil
-              (ex-info "TODO"
-                {:n-attempts    (.get n-attempts*)
-                 :msecs-elapsed (- (System/currentTimeMillis) t0)
-                 :sentinel-servers
-                 {:unreachable  (let [s @unreachable_] {:count (count s) :addresses s})
-                  :ignorant     (let [s @ignorant_]    {:count (count s) :addresses s})}}))
+              (ex-info "[Carmine] [Sentinel] Failed to resolve requested master"
+                (assoc @error-data_ :eid :carmine.sentinel/resolve-failure)))
 
             :if-let [master ?master]
-            (let [[ip port] master
+            (let [sentinel ?sentinel
+                  master (address-pair master)
+                  [ip port] master
                   reply
                   (try
                     ;; Opts, auth, etc., ~250msecs timeout, no pool (?)
-                    (core/wcar {:host ip :port port} (core/redis-call "ROLE"))
-                    (catch Throwable _ nil))]
+                    (core/with-carmine {:host ip :port port} false
+                      (fn [] (core/redis-call "ROLE")))
+                    (catch Throwable _ nil))
+
+                  ?role (when (vector? reply) (get reply 0))]
 
               ;; Confirm that master designated by sentinel actually identifies itself as master
-              (if (= reply "master")
+              (if (= ?role "masterNO")
                 (complete! master nil)
 
                 (let [{:keys [timeout-msecs retry-delay-msecs]
@@ -241,23 +302,40 @@
                               retry-delay-msecs 250}}
                       opts
 
-                      tnow (System/currentTimeMillis)]
+                      elapsed-msecs  (- (System/currentTimeMillis) t0)
+                      retry-at-msecs (+ elapsed-msecs retry-delay-msecs)]
 
-                  (if (> (- (+ tnow retry-delay-msecs) t0) timeout-msecs)
-                    (complete! nil
-                      (ex-info "TODO timeout" {}))
+                  (error! sentinel t0-attempt :misidentified
+                    {:identified master :actual-role ?role})
+
+                  (if (> retry-at-msecs timeout-msecs)
                     (do
+                      (vswap! attempt-log_ conj
+                        [:timeout
+                         (str
+                           "(" elapsed-msecs " elapsed + " retry-delay-msecs " delay = " retry-at-msecs
+                           ") > " timeout-msecs " timeout")])
+
+                      (complete! nil
+                        (ex-info "[Carmine] [Sentinel] Timed out while trying to resolve requested master"
+                          (assoc @error-data_ :eid :carmine.sentinel/resolve-timeout))))
+                    (do
+                      (vswap! attempt-log_ conj [:sleep retry-delay-msecs])
                       (Thread/sleep retry-delay-msecs)
                       (recur (inc n-loops)))))))))))))
 
 (comment
   (resolve-master {}
+    #_(sentinel-spec {"mymaster" [["127.0.0.1" 26379]]})
     {"mymaster" [["127.0.0.1" 26379]]}
     "mymaster"))
 
 ;;;;;
 
 (comment
+  (core/wcar {:host "127.0.0.1" :port "6379"}
+    (core/redis-call "ROLE"))
+
   (core/wcar {:port 26379}
     (core/redis-call "SENTINEL" "get-master-addr-by-name" "mymaster"))
 

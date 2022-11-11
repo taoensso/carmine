@@ -16,7 +16,9 @@
    [taoensso.carmine.impl.resp.write        :as write]
    [taoensso.carmine.impl.resp.read.blobs   :as blobs]
    [taoensso.carmine.impl.resp.read.parsing :as parsing]
-   [taoensso.carmine.impl.resp              :as resp])
+   [taoensso.carmine.impl.resp              :as resp]
+
+   [taoensso.carmine.impl.sentinel :as sentinel])
 
   (:refer-clojure :exclude [parse-long parse-double]))
 
@@ -161,7 +163,9 @@
 
   (enc/defalias resp/redis-call)
   (enc/defalias        resp/local-echo)
-  (enc/defalias return resp/local-echo))
+  (enc/defalias return resp/local-echo)
+
+  (enc/defalias sentinel/sentinel-spec))
 
 ;;;; Scratch
 
