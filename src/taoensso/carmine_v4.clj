@@ -170,14 +170,25 @@
 ;; body, and returns nil. The server's reply to this command will be included
 ;; in the replies returned by the enclosing `wcar`.
 
-(defn nconn [] (legacy-conns/make-new-connection {:host "127.0.0.1" :port 6379}))
+(defn nconn
+  ([    ] (nconn {}))
+  ([opts]
+   (let [{:keys [host port]
+          :or   {host "127.0.0.1"
+                 port 6379}} opts]
+
+     (legacy-conns/make-new-connection
+       {:host host :port port}))))
+
 (comment (keys (nconn))) ; (:socket :spec :in :out)
 
 (defn with-carmine
   "Low-level util, prefer `wcar` instead."
   [opts as-vec? body-fn]
   (let [{:keys [conn]} opts
-        {:keys [in out]} (or conn (nconn))]
+        {:keys [in out]}
+        (or conn
+          (nconn opts))]
     (resp/with-replies in out as-vec?
       body-fn)))
 
