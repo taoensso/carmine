@@ -188,6 +188,8 @@
 
 (defn with-carmine
   "Low-level util, prefer `wcar` instead."
+
+  ;; TODO :sentinel {:spec <spec> :master <master-name> ... <opts>}
   [opts as-vec? body-fn]
   (let [{:keys [conn]} opts
         {:keys [in out]}
