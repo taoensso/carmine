@@ -1,25 +1,26 @@
-(ns taoensso.carmine.impl.resp.write
-  "Write-side of RESP3 protocol."
+(ns taoensso.carmine-v4.resp.write
+  "Private ns, implementation detail."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
    [clojure.test    :as test :refer [deftest testing is]]
    [taoensso.encore :as enc  :refer [throws?]]
    [taoensso.nippy  :as nippy]
-   [taoensso.carmine.impl.resp.common :as com
+   [taoensso.carmine-v4.resp.common :as com
     :refer [str->bytes bytes->str with-out with-out->str]])
 
   (:import
    [java.nio.charset StandardCharsets]
    [java.io BufferedOutputStream]))
 
-(comment
-  (remove-ns      'taoensso.carmine.impl.resp.write)
-  (test/run-tests 'taoensso.carmine.impl.resp.write))
-
 (enc/declare-remote
-  ^:dynamic taoensso.carmine-v4/*auto-serialize?*)
+  ^:dynamic taoensso.carmine-v4/*auto-serialize?*
+  ^:dynamic taoensso.carmine-v4/*freeze-opts*)
 
 (alias 'core 'taoensso.carmine-v4)
+
+(comment
+  (remove-ns      'taoensso.carmine-v4.resp.write)
+  (test/run-tests 'taoensso.carmine-v4.resp.write))
 
 ;;;; Bulk byte strings
 
@@ -238,7 +239,7 @@
 ;; could fail (e.g. Nippy freeze).
 
 (deftype ToBytes [ba])
-(defn to-bytes
+(defn ^:public to-bytes
   "Wraps given bytes to ensure that they'll be written to Redis
   without any modifications (serialization, blob markers, etc.)."
   (^ToBytes [ba]
@@ -254,13 +255,12 @@
   ;; => Vector for destructuring (undocumented)
   ([ba & more] (mapv to-bytes (cons ba more))))
 
-;;; TODO Docstrings
-(def ^:dynamic *freeze-opts* nil)
 (deftype ToFrozen [arg freeze-opts ?frozen-ba])
-(defn to-frozen
+(defn ^:public to-frozen
+  ;; TODO Docstring
   ;; We do eager freezing here since we can, and we'd prefer to
   ;; catch freezing errors early (rather than while writing to out).
-  (^ToFrozen [            x] (to-frozen *freeze-opts* x))
+  (^ToFrozen [            x] (to-frozen core/*freeze-opts* x))
   (^ToFrozen [freeze-opts x]
    (if (instance? ToFrozen x)
      (let [^ToFrozen x x]
@@ -279,7 +279,7 @@
    (let [freeze-opts
          (enc/have [:or nil? map?]
            (if (identical? freeze-opts :dynamic)
-             *freeze-opts*
+             core/*freeze-opts*
              freeze-opts))]
 
      (mapv #(to-frozen freeze-opts %) (cons x more)))))
@@ -288,7 +288,7 @@
   [(is (= (bytes->str (.-ba (to-bytes (to-bytes (com/xs->ba [\a \b \c]))))) "abc"))
    (is (= (.-freeze-opts (to-frozen {:a :A} (to-frozen {:b :B} "x"))) {:a :A}))
 
-   (is (= (binding [*freeze-opts* {:o :O}]
+   (is (= (binding [core/*freeze-opts* {:o :O}]
             (let [[c1 c2 c3] (to-frozen :dynamic "x" "y" "z")]
               (mapv #(.-freeze-opts ^ToFrozen %) [c1 c2 c3])))
          [{:o :O} {:o :O} {:o :O}])
@@ -296,7 +296,8 @@
 
 ;;;; IRedisArg
 
-(defprotocol IRedisArg
+(defprotocol ^:private IRedisArg
+  "Internal protocol, not for public use or extension."
   (write-bulk-arg [x ^BufferedOutputStream out]
     "Writes given arbitrary Clojure argument to `out` as a Redis byte string."))
 
@@ -401,7 +402,12 @@
 
       (is (= (with-out->str (write-requests out [["str" 1 2 3 4.0 :kw \x]]))
             #_"*7\r\n$3\r\nstr\r\n:1\r\n:2\r\n:3\r\n$3\r\n4.0\r\n$2\r\nkw\r\n$1\r\nx\r\n" ; Simple nums
-            "*7\r\n$3\r\nstr\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$3\r\n4.0\r\n$2\r\nkw\r\n$1\r\nx\r\n"))])
+            "*7\r\n$3\r\nstr\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3\r\n$3\r\n4.0\r\n$2\r\nkw\r\n$1\r\nx\r\n"))
+
+      (is (=
+            (with-out->str (write-requests out [["-1" "0" "1" (str (- min-num-to-cache 1)) (str (+ max-num-to-cache 1))]]))
+            (with-out->str (write-requests out [[ -1   0   1       (- min-num-to-cache 1)       (+ max-num-to-cache 1)]])))
+        "Simple longs produce same output as longs or strings")])
 
    (testing "Blob markers"
      [(testing "Auto serialization enabled"

@@ -1,31 +1,26 @@
-(ns taoensso.carmine.tests.v4
+(ns taoensso.carmine-v4.tests.main
   "High-level Carmine tests.
   These need an active Redis server."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.test     :as test :refer [deftest testing is]]
-   [taoensso.encore  :as enc  :refer [throws?]]
-
-   [taoensso.carmine.impl.resp.common       :as resp-com]
-   [taoensso.carmine.impl.resp.read.common  :as read-com]
-   [taoensso.carmine.impl.resp.read         :as read]
-   [taoensso.carmine.impl.resp.write        :as write]
-   [taoensso.carmine.impl.resp              :as resp]
-   [taoensso.carmine-v4                     :as core
-    :refer [wcar with-replies]]))
+   [clojure.test        :as test :refer [deftest testing is]]
+   [taoensso.encore     :as enc  :refer [throws?]]
+   [taoensso.carmine-v4 :as car  :refer [wcar with-replies]]
+   [taoensso.carmine-v4.resp :as resp]))
 
 (comment
-  (remove-ns      'taoensso.carmine.tests.v4)
-  (test/run-tests 'taoensso.carmine.tests.v4)
+  (remove-ns      'taoensso.carmine-v4.tests.main)
+  (test/run-tests 'taoensso.carmine-v4.tests.main)
   (core/run-all-carmine-tests))
 
 ;;;; TODO
+;; - Re-enable tests, using new ns structure
 ;; - Isolated test db/keys
 ;; - Interactions between systems (read-opts, parsers, etc.)
 
 (deftest ^:private _wcar-basics
-  [(is (= (wcar {}         (resp/ping))  "PONG"))
-   (is (= (wcar {} :as-vec (resp/ping)) ["PONG"]))
+  [(is (= (wcar {}              (resp/ping))  "PONG"))
+   (is (= (wcar {:as-vec? true} (resp/ping)) ["PONG"]))
 
    (is (= (wcar {} (resp/local-echo "hello")) "hello") "Local echo")
 
@@ -61,15 +56,15 @@
             (resp/rset "k1" "v1")
             (resp/echo
               (with-replies
-                (read-com/skip-replies (resp/rset "k1" "v2"))
+                (car/skip-replies (resp/rset "k1" "v2"))
                 (resp/echo
                   (with-replies (resp/rget "k1"))))))))
 
    (is (=
          (wcar {}
            (resp/ping)
-           (resp/echo       (first (with-replies :as-vec (resp/ping))))
-           (resp/local-echo (first (with-replies :as-vec (resp/ping)))))
+           (resp/echo       (first (with-replies {:as-vec? true} (resp/ping))))
+           (resp/local-echo (first (with-replies {:as-vec? true} (resp/ping)))))
 
          ["PONG" "PONG" "PONG"])
 

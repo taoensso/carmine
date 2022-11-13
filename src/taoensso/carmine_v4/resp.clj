@@ -1,76 +1,92 @@
-(ns taoensso.carmine.impl.resp
-  "Implementation of the Redis RESP3 protocol,
+(ns taoensso.carmine-v4.resp
+  "Private ns, implementation detail.
+  Implementation of the Redis RESP3 protocol,
   Ref. https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md"
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.test     :as test :refer [deftest testing is]]
-   [taoensso.encore  :as enc  :refer [throws?]]
-   [taoensso.carmine.impl.resp.common       :as resp-com]
-   [taoensso.carmine.impl.resp.read.common  :as read-com]
-   [taoensso.carmine.impl.resp.read         :as read]
-   [taoensso.carmine.impl.resp.write        :as write]
-   [taoensso.carmine.impl.resp.read.parsing :as parsing])
+   [clojure.test    :as test :refer [deftest testing is]]
+   [taoensso.encore :as enc  :refer [throws?]]
+
+   [taoensso.carmine-v4.resp.common :as com]
+   [taoensso.carmine-v4.resp.read   :as read]
+   [taoensso.carmine-v4.resp.write  :as write])
 
   (:import [java.util LinkedList]))
 
 (comment
-  (remove-ns      'taoensso.carmine.impl.resp)
-  (test/run-tests 'taoensso.carmine.impl.resp))
+  (remove-ns      'taoensso.carmine-v4.resp)
+  (test/run-tests 'taoensso.carmine-v4.resp))
+
+;;;; Aliases
+
+(enc/defalias com/reply-error)
+(enc/defalias com/reply-error?)
 
 ;;;;
 
-(def ^:dynamic *ctx* "?<Ctx>" nil)
-(deftype Ctx [#_conn in out pending-reqs* pending-replies*])
+(def ^:dynamic *ctx* "?<Ctx> context for requests and replies" nil)
+(deftype Ctx [#_conn in out natural-reads? pending-reqs* pending-replies*])
 
 (deftype Request          [read-opts args])
 (deftype LocalEchoRequest [read-opts reply])
 
-(defn redis-call*
-  "Vector-args version of `redis-call`."
-  [args]
-  ;; Could alternatively write immediately (i.e. forgo pending-reqs*).
-  ;; Awaiting Sentinel & Cluster to decide.
-  (when-let [^Ctx ctx *ctx*]
-    (.addLast ^LinkedList (.-pending-reqs* ctx)
-      (Request. (read-com/new-read-opts) args)))
-  nil)
+(let [read-opts-natural com/read-opts-natural]
+  (defn- get-read-opts [^Ctx ctx]
+    (if (.-natural-reads? ctx)
+      read-opts-natural
+      (com/get-read-opts))))
 
-(defn redis-call
-  "Low-level generic Redis command util.
-  Sends given arguments to Redis server as a single arbitrary command call:
-    (redis-call \"ping\")
-    (redis-call \"set\" \"my-key\" \"my-val\")
+(let [get-read-opts get-read-opts]
+  (defn ^:public redis-call*
+    "Vector-args version of `redis-call`."
+    [args]
+    ;; Could alternatively write immediately (i.e. forgo pending-reqs*).
+    ;; Awaiting Sentinel & Cluster to decide.
+    (when-let [^Ctx ctx *ctx*]
+      (.addLast ^LinkedList (.-pending-reqs* ctx)
+        (Request. (get-read-opts ctx) args)))
+    nil))
 
-  As with all Carmine Redis command fns: expects to be called within a `wcar`
-  body, and returns nil. The server's reply to this command will be included
-  in the replies returned by the enclosing `wcar`.
+(let [redis-call* redis-call*]
+  (defn ^:public redis-call
+    "Low-level generic Redis command util.
+    Sends given arguments to Redis server as a single arbitrary command call:
+      (redis-call \"ping\")
+      (redis-call \"set\" \"my-key\" \"my-val\")
 
-  `redis-call` is useful for DSLs, and to call commands (including Redis module
-  commands) that might not yet have a native Clojure fn provided by Carmine."
-  [& args] (redis-call* args))
+    As with all Carmine Redis command fns: expects to be called within a `wcar`
+    body, and returns nil. The server's reply to this command will be included
+    in the replies returned by the enclosing `wcar`.
 
-(defn local-echo
-  "Acts exactly like the Redis `echo` command, except entirely local: no data
-  is actually sent to/from Redis server.
+    `redis-call` is useful for DSLs, and to call commands (including Redis module
+    commands) that might not yet have a native Clojure fn provided by Carmine."
+    [& args] (redis-call* args)))
 
-  As with all Carmine Redis command fns: expects to be called within a `wcar`
-  body, and returns nil. The server's reply to this command will be included
-  in the replies returned by the enclosing `wcar`.
+(let [get-read-opts get-read-opts]
+  (defn ^:public local-echo
+    "Acts exactly like the Redis `echo` command, except entirely local: no data
+    is actually sent to/from Redis server.
 
-  `local-echo` is useful for DSLs and other advanced applications.
-  Can be combined with `with-replies` or nested `wcar` calls to achieve some
-  very powerful effects."
-  [reply]
-  (when-let [^Ctx ctx *ctx*]
-    (.addLast ^LinkedList (.-pending-reqs* ctx)
-      (LocalEchoRequest. (read-com/new-read-opts) reply)))
-  nil)
+    As with all Carmine Redis command fns: expects to be called within a `wcar`
+    body, and returns nil. The server's reply to this command will be included
+    in the replies returned by the enclosing `wcar`.
+
+    `local-echo` is useful for DSLs and other advanced applications.
+    Can be combined with `with-replies` or nested `wcar` calls to achieve some
+    very powerful effects."
+    [reply]
+    (when-let [^Ctx ctx *ctx*]
+      (.addLast ^LinkedList (.-pending-reqs* ctx)
+        (LocalEchoRequest. (get-read-opts ctx) reply)))
+    nil))
 
 (do ; Basic commands for testing
-  (defn ping []    (redis-call "ping"))
-  (defn echo [x]   (redis-call "echo" x))
-  (defn rset [k v] (redis-call "set" k v))
-  (defn rget [k]   (redis-call "get" k)))
+  (defn ping []    (redis-call "PING"))
+  (defn echo [x]   (redis-call "ECHO" x))
+  (defn rset [k v] (redis-call "SET" k v))
+  (defn rget [k]   (redis-call "GET" k)))
+
+;;;;
 
 (defn- ll ^LinkedList [n] (let [ll (LinkedList.)] (dotimes [n n] (.add ll n)) ll))
 (comment (ll 10))
@@ -97,12 +113,12 @@
   ([f init ^LinkedList ll  ] (consume-list! f init ll (.size ll)))
   ([f init ^LinkedList ll n]
    (when (> ^int n 0)
-     (enc/reduce-n ; Fastest way to iterate
+     (enc/reduce-n                      ; Fastest way to iterate
        (fn [acc _] (f acc (.removeFirst ll)))
        init
        n))))
 
-(let [sentinel-skipped-reply read-com/sentinel-skipped-reply]
+(let [sentinel-skipped-reply com/sentinel-skipped-reply]
   (defn flush-pending-requests [^Ctx ctx]
     "Given a Ctx with pending-reqs* and pending-replies*:
       - Consumes (mutates) all pending-reqs*
@@ -162,39 +178,28 @@
 (defn with-replies
   "Establishes (possibly-nested) Ctx, flushing requests in body,
   and returns completed replies."
-  ([in out as-vec? body-fn] ; Used by `wcar`, etc.
+  ([in out natural-reads? as-vec? body-fn] ; Used by `with-carmine`, etc.
    (when-let [^Ctx parent-ctx *ctx*]
      (flush-pending-requests parent-ctx))
 
-   (let [new-ctx (Ctx. in out (LinkedList.) (LinkedList.))]
+   (let [new-ctx (Ctx. in out natural-reads? (LinkedList.) (LinkedList.))]
      (binding [*ctx* new-ctx] (body-fn))
      (flush-pending-requests   new-ctx)
      (complete-replies as-vec? new-ctx)))
 
-  ([as-vec? body-fn] ; Used by public `with-replies` macro
+  ([natural-reads? as-vec? body-fn] ; Used by public `with-replies` macro
    (when-let [^Ctx parent-ctx *ctx*]
      (flush-pending-requests parent-ctx)
 
      (let [new-ctx
-           (Ctx. (.-in parent-ctx) (.-out parent-ctx)
+           (Ctx. (.-in parent-ctx) (.-out parent-ctx) natural-reads?
              (LinkedList.) (LinkedList.))]
 
        (binding [*ctx* new-ctx] (body-fn))
        (flush-pending-requests   new-ctx)
        (complete-replies as-vec? new-ctx)))))
 
-(defn parse-body
-  "Returns [<as-vec?> <body>] for use by \"& body\" macros
-  that want to support :as-vec prefix."
-  ;; {:arglists '([& body] [:as-vec & body])}
-  [body]
-  (let [[b1 & bn] body]
-    (if (or (= b1 :as-vec) (= b1 :as-pipeline))
-      [true  bn]
-      [false body])))
-
-(let [get-reply-error    resp-com/get-reply-error
-      unwrap-reply-error resp-com/unwrap-reply-error]
+(let [reply-error? com/reply-error?]
 
   (defn- complete-replies
     [as-vec? ^Ctx ctx]
@@ -204,17 +209,32 @@
       (enc/cond
         (== n-replies 1)
         (let [reply (.removeFirst pending-replies*)]
-          (if-let [reply-error (get-reply-error reply)]
-            (if as-vec? [reply-error] (throw reply-error))
-            (if as-vec? [reply]              reply)))
+          (if as-vec?
+            [reply]
+            (if (reply-error? reply)
+              (throw reply)
+              (do    reply))))
 
         (> n-replies 10)
         (persistent!
-          (consume-list!
-            (fn [acc reply] (conj! acc (unwrap-reply-error reply)))
-            (transient []) pending-replies* n-replies))
+          (consume-list! conj! (transient [])
+            pending-replies* n-replies))
 
         (> n-replies 0)
-        (consume-list!
-          (fn [acc reply] (conj acc (unwrap-reply-error reply)))
-          [] pending-replies* n-replies)))))
+        (consume-list! conj []
+          pending-replies* n-replies)))))
+
+;;;;
+
+(let [read-opts-natural com/read-opts-natural
+      ba-command        (com/str->bytes "*1\r\n$4\r\nPING\r\n")
+      ba-len            (alength ba-command)]
+
+  (defn basic-ping!
+    "Low-level util.
+    Sends a minimally expensive single PING command directly to Redis,
+    and reads reply. Forgoes Ctx, read mode, parsing, etc."
+    [in ^java.io.BufferedOutputStream out]
+    (.write out ba-command 0 ba-len)
+    (.flush out)
+    (read/read-reply read-opts-natural in)))
