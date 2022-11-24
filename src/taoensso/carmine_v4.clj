@@ -31,72 +31,28 @@
 
 ;;;; TODO
 
-;; - mgr-master-changed! method
-
-;; - finish `PooledConnManager/mgr-borrow!` impln
-;; - retire `try-borrow-conn!`? How+where to wrap pool errors?
-;;
-;; - No issue with caching vs opts with metadata?
-;;
-;; - Think through, confirm: :mgr support should just work correctly
-;;   within sentinel-opts/conn-opts, right?
-;;
-;; - Document and alias `pooled-conn-manager` + provide default?
-;;
-;; - Integrate `conns/get-conn` into `with-carmine`, etc.
-;; - Low-level API combo: `get-conn` + `with-conn` + `resp/with-replies`, etc.
-
-;;; flow
-;; 1. User creates pool: (pooled-conn-manager <mgr-opts>)
-;; 2. `wcar` calls: (with-conn <conn-opts> f), with :mgr in opts
-;; 3. `with-conn` calls: (mgr-borrow! <mgr> <conn-opts-minus-mgr>)
-;;     - or maybe add :skip-mgr? true
-;; 4. `mgr-borrow!` produces <kop-key>, calls: (.borrowObject <kop-key>)
-;; 5. `borrowObject` calls: (makeObject <kop-key>)
-;; 6. `makeObject` calls: (new-conn (kop->opts <kop-key>))
-
-#_
-(defn- with-managed-conn
-  "Calls (f <borrowed-Conn> <in> <out>) and returns/removes Conn after use.
-  Throws if a Conn cannot be borrowed."
-  [conn-mgr_ conn-opts f]
-  (let [conn-mgr   (force conn-mgr_)
-        conn (mgr-borrow! conn-mgr conn-opts)]
-    (try
-      (let [result (f conn (.-in conn) (.-out conn))]
-        (mgr-return! conn-mgr conn)
-        result)
-
-      (catch Throwable t
-        (mgr-remove! conn-mgr conn {:via 'with-managed-conn :cause t})
-        (throw t)))))
-#_
-(defn- init-managed-conn [^Conn conn conn-opts]
-  (when-let [so (not-empty (get conn-opts :socket-opts))]
-    (when (contains? so :connect-timeout-ms)
-      (.setSoTimeout ^Socket (.-socket conn)
-        (int (or (get so :connect-timeout-ms) 0))))
-    (when (contains? so :read-timeout-ms)
-      (.setSoTimeout ^Socket (.-socket conn)
-        (int (or (get so :read-timeout-ms) 0))))))
-
 ;; - Connections
-;;   - Complete 1st draft, incl. managers
-;;   - Any special cbs for `PooledConnManager`? Likely skip.
-;;   - Decide on ^:public conns API. Plausible to extend IConnManager?
+;;   - Finish `conns/update-kop-state!`
+;;   - Finish `conns/mgr-borrow!`
+;;
+;;   - Confirm pool manager flow, closing data, etc.
+;;   - Wrap pool errors? How + where? Keep/retire `try-borrow-conn!`?
+;;   - No issue with caching vs opts with metadata?
+;;
+;;   - Confirm: :mgr support should just work correctly within
+;;     sentinel-opts/conn-opts, right?
+;;
+;;   - Integrate `conns/get-conn` into `with-carmine`, etc.
+;;   - Low-level API combo: `get-conn` + `with-conn` + `resp/with-replies`, etc.
 ;;   - Re-check Sentinel client docs
 
-;; - Consider pseudo Redis commands:
-;;   - set-socket-timeout!
-;;   - close-socket!
-
 ;; - Core: new Pub/Sub API
-;; - Sentinel: integrate with Pub/Sub - mgr-master-change!
+;; - Sentinel: integrate with Pub/Sub - mgr-master-addr-change!
 ;; - Common & core util to parse-?marked-ba -> [<kind> <payload>]
 
 ;; - Test `resp/basic-ping!`
 ;; - High-level tests -> `taoensso.carmine-v4.tests.main`
-;;   - Test conn & mgrs
+;;   - Test conn, mgrs, sentinel, resolve changes
 ;;     - Ability to interrupt long-blocking reqs (grep "v3 conn closing" in this ns)
 ;;     - Hard & soft shutdown
 
@@ -146,6 +102,12 @@
 ;;         and clear error messages for problems
 ;; - [new] Pool efficiency improvements, incl. better sub-pool keying
 ;; - [new] Greatly improved instrumentation options for conns and pools
+;; - [new] Pools and conns can now be dereffed for various info, incl.
+;;         detailed pool stats
+;; - [new] SentinelSpec stats
+;; - [new] Improved config: more options, more ways to set options,
+;;         better documentation, better validation, etc.
+;; - [new] Improved transparency (stats, cbs, timings for profiling, etc.).
 
 ;;;; Config
 
@@ -219,7 +181,7 @@
            :res  "taoensso.carmine.default-conn-opts.edn"
            :default opts/default-conn-opts})]
 
-    (conns/valid-conn-opts false config)))
+    (opts/parse-conn-opts false config)))
 
 (def ^:dynamic *default-sentinel-opts*
   "TODO Docstring, describe sentinel-opts, edn-config"
@@ -229,7 +191,7 @@
            :res  "taoensso.carmine.default-sentinel-opts.edn"
            :default opts/default-sentinel-opts})]
 
-    (sentinel/valid-sentinel-opts config)))
+    (opts/parse-sentinel-opts false nil config)))
 
 (def default-pool-opts
   "TODO Docstring, describe edn-config
@@ -281,22 +243,30 @@
     (enc/defalias resp/local-echo))
 
   (do ; Connections
-    
     (enc/defalias conns/conn?)
     (enc/defalias conns/conn-manager?)
 
-    (enc/defalias conns/close-conn)
-    (enc/defalias conns/unpooled-conn-manager)
+    (enc/defalias conns/conn-ready?)
+    (enc/defalias conns/conn-close!)
+
+    (enc/defalias conns/conn-manager-unpooled) ; TODO Docstring
+    (enc/defalias conns/conn-manager-pooled)   ; TODO Docstring
 
     (enc/defalias sentinel/sentinel-spec)
     (enc/defalias sentinel/sentinel-spec?)
 
-    (enc/defalias mgr-init!)
-    (enc/defalias mgr-ready?)
-    (enc/defalias mgr-close!)
+    (enc/defalias conn-mgr-init!                conns/mgr-init!)
+    (enc/defalias conn-mgr-ready?               conns/mgr-ready?)
+    (enc/defalias conn-mgr-close!               conns/mgr-close!)
+    (enc/defalias conn-mgr-master-addr-changed! conns/mgr-master-addr-changed!)))
 
-    ;; TODO
-    ))
+;;;; Connections
+
+(enc/defonce default-conn-manager-pooled_
+  "TODO Docstring"
+  (delay (conn-manager-pooled {:pool-opts default-pool-opts})))
+
+;; TODO `with-car`, `wcar` API, etc.
 
 ;;;; Push API ; TODO
 
@@ -376,7 +346,7 @@
   ;; todo mention *default-conn-opts*
   ;; todo alias as with-car
 
-  ;; TODO :sentinel {:spec <spec> :master <master-name> ... <opts>}
+  ;; TODO :sentinel {:spec <spec> :master-name <name> ... <opts>}
   [opts body-fn]
   (let [{:keys [conn natural-reads? as-vec?]} opts
         {:keys [in out]} (or conn (nconn opts))]

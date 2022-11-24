@@ -105,8 +105,6 @@
 
 ;;;;
 
-(defn get-at "Optimized `get-in`" [m k1 k2] (when m (when-let [m (get m k1)] (get m k2))))
-
 (defn dissoc-k [m in-k dissoc-k]
   (if-let [in-v (get m in-k)]
     (if (map? in-v)
@@ -124,3 +122,23 @@
 (deftest ^:private _dissoc-utils
   [(is (= (dissoc-k  {:a {:b :B :c :C :d :D}} :a  :b)     {:a {:c :C, :d :D}}))
    (is (= (dissoc-ks {:a {:b :B :c :C :d :D}} :a [:b :d]) {:a {:c :C}}))])
+
+(defn get-at "Optimized `get-in`"
+  ([m k1      ] (when m               (get m k1)))
+  ([m k1 k2   ] (when m (when-let [m2 (get m k1)]               (get m2 k2))))
+  ([m k1 k2 k3] (when m (when-let [m2 (get m k1)] (when-let [m3 (get m2 k2)] (get m3 k3))))))
+
+(defmacro get-first-contained [m & ks]
+  (when ks
+    `(if (contains?         ~m ~(first ks))
+       (get                 ~m ~(first ks))
+       (get-first-contained ~m ~@(next ks)))))
+
+(deftest ^:private _get-first-contained
+  [(is (= (let [m {:a :A    :b :B}] (get-first-contained m :q :r :a :b)) :A))
+   (is (= (let [m {:a false :b :B}] (get-first-contained m :q :r :a :b)) false))])
+
+(comment
+  (clojure.walk/macroexpand-all
+    '(get-first-contained {:a :A :b :B}
+       :q :r)))

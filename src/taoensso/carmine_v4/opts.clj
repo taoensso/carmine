@@ -41,7 +41,8 @@
   ^:dynamic taoensso.carmine-v4/*default-sentinel-opts*
             taoensso.carmine-v4/default-pool-opts
             taoensso.carmine-v4.conns/conn-manager?
-            taoensso.carmine-v4.sentinel/sentinel-spec?)
+            taoensso.carmine-v4.sentinel/sentinel-spec?
+            taoensso.carmine-v4/default-conn-manager-pooled_)
 
 (do
   (alias 'core     'taoensso.carmine-v4)
@@ -58,14 +59,14 @@
 (def ^:private ref-servers
   [[    "127.0.0.1"       "6379"]
    {:ip "127.0.0.1" :port "6379"}
-   {:master        "master-name"
+   {:master-name  "my-master"
     :sentinel-spec dummy-var
     :sentinel-opts {}}])
 
 (def ^:private ref-conn-opts
   {:mgr         nil ; var
    :server      ["127.0.0.1" "6379"]
-   :cbs         {:on-close nil :on-error nil} ; vars
+   :cbs         {:on-conn-close nil :on-conn-error nil} ; vars
    :buffer-opts {:init-size-in 8192 :init-size-out 8192}
    :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000}
    :init
@@ -79,7 +80,7 @@
 (def ^:private ref-sentinel-conn-opts
   {:mgr         nil ; var
    #_:server ; [ip port] of Sentinel server will be auto added by resolver
-   :cbs         {:on-close nil :on-error nil} ; vars
+   :cbs         {:on-conn-close nil :on-conn-error nil} ; vars
    :buffer-opts {:init-size-in 1024 :init-size-out 512}
    :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000}
    :init
@@ -92,10 +93,10 @@
 (def ^:private ref-sentinel-opts
   {:conn-opts ref-sentinel-conn-opts
    :cbs
-   {:on-error            nil
-    :on-success          nil
-    :on-sentinels-change nil
-    :on-master-change    nil} ; vars
+   {:on-resolve-success  nil
+    :on-resolve-error    nil
+    :on-resolve-change   nil
+    :on-sentinels-change nil} ; vars
 
    :add-missing-sentinels? true
    :retry-delay-ms         250
@@ -105,8 +106,9 @@
 
 (def default-conn-opts
   "Used by `core/*default-conn-opts*`"
-  {:server      ["127.0.0.1" 6379]
-   :cbs         {:on-close nil, :on-error nil}
+  {:mgr         #'core/default-conn-manager-pooled_
+   :server      ["127.0.0.1" 6379]
+   :cbs         {:on-conn-close nil, :on-conn-error nil}
    :buffer-opts {:init-size-in 8192, :init-size-out 8192}
    :socket-opts {:ssl false, :connect-timeout-ms 400, :read-timeout-ms nil}
    :init
@@ -116,17 +118,17 @@
     :resp3?      true}})
 
 (def ^:private default-sentinel-conn-opts
-  {:cbs         {:on-close nil, :on-error nil}
+  {:cbs         {:on-conn-close nil, :on-conn-error nil}
    :buffer-opts {:init-size-in 512, :init-size-out 256}
    :socket-opts {:ssl false, :connect-timeout-ms 200, :read-timeout-ms 200}})
 
 (def default-sentinel-opts
   "Used by `core/*default-sentinel-opts*`"
   {:cbs
-   {:on-error            nil
-    :on-success          nil
-    :on-sentinels-change nil
-    :on-master-change    nil}
+   {:on-resolve-success  nil
+    :on-resolve-error    nil
+    :on-resolve-change   nil
+    :on-sentinels-change nil}
 
    :add-missing-sentinels? true
    :retry-delay-ms         250
@@ -197,6 +199,10 @@
            :init   {:auth {:username "redistogo", :password "pass"}
                     :select-db 0}}))])
 
+(defn get-sentinel-server [conn-opts]
+  (let [{:keys [server]} conn-opts]
+    (when (map? server) server)))
+
 (declare ^:private -parse-sentinel-opts)
 
 (defn- parse-server->opts [server]
@@ -210,15 +216,15 @@
         (let [{:keys [ip port]} server]
           {:server (parse-sock-addr ip port (meta server))})
 
-        (#{:master :sentinel-spec}
-         #{:master :sentinel-spec :sentinel-opts})
+        (#{:master-name :sentinel-spec}
+         #{:master-name :sentinel-spec :sentinel-opts})
 
-        (let [{:keys [master sentinel-spec sentinel-opts]} server]
-          (have? [:or string? enc/named?] master)
+        (let [{:keys [master-name sentinel-spec sentinel-opts]} server]
+          (have? [:or string? enc/named?] master-name)
           (have? var?                                      sentinel-spec)
           (have? [:or sentinel/sentinel-spec? dummy-val?] @sentinel-spec)
           (have? [:or nil? map?]                           sentinel-opts)
-          (let [server (assoc server :master (enc/as-qname master))
+          (let [server (assoc server :master-name (enc/as-qname master-name))
                 server
                 (if sentinel-opts
                   (assoc server :sentinel-opts (-parse-sentinel-opts sentinel-opts))
@@ -234,14 +240,14 @@
           {:eid :carmine.conn-opts/invalid-server
            :server   {:value server :type (type server)}
            :expected '(or uri-string [ip port] {:keys [ip port]}
-                        {:keys [master sentinel-spec sentinel-opts]})}
+                        {:keys [master-name sentinel-spec sentinel-opts]})}
           t)))))
 
 (deftest ^:private _parse-server->opts
   [(is (= (parse-server->opts ["127.0.0.1" "80"])           {:server ["127.0.0.1" 80]}))
    (is (= (parse-server->opts {:ip "127.0.0.1" :port "80"}) {:server ["127.0.0.1" 80]}))
-   (is (= (parse-server->opts {:sentinel-spec #'dummy-var, :master :foo/bar})
-          {:server            {:sentinel-spec #'dummy-var, :master "foo/bar"}}))
+   (is (= (parse-server->opts {:sentinel-spec #'dummy-var, :master-name :foo/bar})
+          {:server            {:sentinel-spec #'dummy-var, :master-name "foo/bar"}}))
 
    (is (->> (parse-server->opts {:ip "127.0.0.1" :port "80" :invalid true})
             (enc/throws? :any {:eid :carmine.conn-opts/invalid-server})))
@@ -267,23 +273,25 @@
     (enc/run-kv!
       (fn [k v]
         (case k
-          (:ssl :connect-timeout-ms) nil ; Carmine options, noop and pass through
+          ;; (:ssl :connect-timeout-ms) nil ; Carmine options, noop and pass through
+          :ssl nil
+          :connect-timeout-ms (have? [:or nil? int?] v)
 
           (:setKeepAlive    :keep-alive?)    nil
           (:setOOBInline    :oob-inline?)    nil
           (:setTcpNoDelay   :tcp-no-delay?)  nil
           (:setReuseAddress :reuse-address?) nil
 
-          (:setReceiveBufferSize :receive-buffer-size) nil
-          (:setSendBufferSize    :send-buffer-size)    nil
-          (:setSoTimeout         :read-timeout-ms)     nil
+          (:setReceiveBufferSize     :receive-buffer-size) (have?           int?  v)
+          (:setSendBufferSize        :send-buffer-size)    (have?           int?  v)
+          (:setSoTimeout :so-timeout :read-timeout-ms)     (have? [:or nil? int?] v)
 
           ;; (:setSocketImplFactory :socket-impl-factory) nil
           (:setTrafficClass         :traffic-class)       nil
 
           (:setSoLinger :so-linger) nil
 
-          (:setPerformancePreferences :performance-preferences) nil
+          (:setPerformancePreferences :performance-preferences) (have? vector? v)
           (throw! k v socket-opts)))
        socket-opts)
     nil)
@@ -300,19 +308,19 @@
           (:setTcpNoDelay   :tcp-no-delay?)  (.setTcpNoDelay   s (boolean v))
           (:setReuseAddress :reuse-address?) (.setReuseAddress s (boolean v))
 
-          (:setReceiveBufferSize :receive-buffer-size) (.setReceiveBufferSize s (int     v))
-          (:setSendBufferSize    :send-buffer-size)    (.setSendBufferSize    s (int     v))
-          (:setSoTimeout         :read-timeout-ms)     (.setSoTimeout         s (int (or v 0)))
+          (:setReceiveBufferSize     :receive-buffer-size) (.setReceiveBufferSize s (int     v))
+          (:setSendBufferSize        :send-buffer-size)    (.setSendBufferSize    s (int     v))
+          (:setSoTimeout :so-timeout :read-timeout-ms)     (.setSoTimeout         s (int (or v 0)))
 
           ;; (:setSocketImplFactory :socket-impl-factory) (.setSocketImplFactory s v)
           (:setTrafficClass         :traffic-class)       (.setTrafficClass      s v)
 
           (:setSoLinger :so-linger)
-          (let [[on? linger] v]
+          (let [[on? linger] (have vector? v)]
             (.setSoLinger s (boolean on?) (int linger)))
 
           (:setPerformancePreferences :performance-preferences)
-          (let [[conn-time latency bandwidth] v]
+          (let [[conn-time latency bandwidth] (have vector? v)]
             (.setPerformancePreferences s (int conn-time) (int latency) (int bandwidth)))
 
           (throw! k v socket-opts)))
@@ -320,7 +328,8 @@
     s))
 
 ;; kop-opts
-(let [neg-duration (java.time.Duration/ofSeconds -1)
+(let [duration? (fn [x] (instance? java.time.Duration x))
+      neg-duration (java.time.Duration/ofSeconds -1)
       throw!
       (fn [k v opts]
         (throw
@@ -335,25 +344,28 @@
       (fn [k v]
         (case k
           ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
-          (:setMinIdlePerKey  :min-idle-per-key)  nil
-          (:setMaxIdlePerKey  :max-idle-per-key)  nil
-          (:setMaxTotalPerKey :max-total-per-key) nil
+          (:setMinIdlePerKey  :min-idle-per-key)  (have [:or nil? int?] v)
+          (:setMaxIdlePerKey  :max-idle-per-key)  (have [:or nil? int?] v)
+          (:setMaxTotalPerKey :max-total-per-key) (have [:or nil? int?] v)
 
           ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
           (:setBlockWhenExhausted :block-when-exhausted?) nil
           (:setLifo               :lifo?)                 nil
 
-          (:setMaxTotal      :max-total)   nil
-          (:setMaxWaitMillis :max-wait-ms) nil
-          (:setMaxWait       :max-wait)    nil
+          (:setMaxTotal      :max-total)   (have [:or nil? int?]      v)
+          (:setMaxWaitMillis :max-wait-ms) (have [:or nil? int?]      v)
+          (:setMaxWait       :max-wait)    (have [:or nil? duration?] v)
 
-          (:setMinEvictableIdleTimeMillis     :min-evictable-idle-time-ms)      nil
-          (:setMinEvictableIdle               :min-evictable-idle)              nil
-          (:setSoftMinEvictableIdleTimeMillis :soft-min-evictable-idle-time-ms) nil
-          (:setSoftMinEvictableIdle           :soft-min-evictable-idle)         nil
-          (:setNumTestsPerEvictionRun         :num-tests-per-eviction-run)      nil
-          (:setTimeBetweenEvictionRunsMillis  :time-between-eviction-runs-ms)   nil
-          (:setTimeBetweenEvictionRuns        :time-between-eviction-runs)      nil
+          (:setMinEvictableIdleTimeMillis     :min-evictable-idle-time-ms)      (have [:or nil? int?]      v)
+          (:setMinEvictableIdle               :min-evictable-idle)              (have [:or nil? duration?] v)
+          (:setSoftMinEvictableIdleTimeMillis :soft-min-evictable-idle-time-ms) (have [:or nil? int?]      v)
+          (:setSoftMinEvictableIdle           :soft-min-evictable-idle)         (have [:or nil? duration?] v)
+          (:setNumTestsPerEvictionRun         :num-tests-per-eviction-run)      (have [:or nil? int?]      v)
+          (:setTimeBetweenEvictionRunsMillis  :time-between-eviction-runs-ms)   (have [:or nil? int?]      v)
+          (:setTimeBetweenEvictionRuns        :time-between-eviction-runs)      (have [:or nil? duration?] v)
+
+          (:setEvictorShutdownTimeoutMillis :evictor-shutdown-timeout-ms) (have [:or nil? int?]      v)
+          (:setEvictorShutdownTimeout       :evictor-shutdown-timeout)    (have [:or nil? duration?] v)
 
           (:setTestOnCreate  :test-on-create?)  nil
           (:setTestWhileIdle :test-while-idle?) nil
@@ -370,12 +382,12 @@
     (enc/run-kv!
       (fn [k v]
         (case k
-           ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
+          ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
           (:setMinIdlePerKey  :min-idle-per-key)  (.setMinIdlePerKey  kop (int (or v -1)))
           (:setMaxIdlePerKey  :max-idle-per-key)  (.setMaxIdlePerKey  kop (int (or v -1)))
           (:setMaxTotalPerKey :max-total-per-key) (.setMaxTotalPerKey kop (int (or v -1)))
 
-           ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
+          ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
           (:setBlockWhenExhausted :block-when-exhausted?) (.setBlockWhenExhausted kop (boolean v))
           (:setLifo               :lifo?)                 (.setLifo               kop (boolean v))
 
@@ -390,6 +402,9 @@
           (:setNumTestsPerEvictionRun         :num-tests-per-eviction-run)      (.setNumTestsPerEvictionRun         kop (int  (or v 0)))
           (:setTimeBetweenEvictionRunsMillis  :time-between-eviction-runs-ms)   (.setTimeBetweenEvictionRunsMillis  kop (long (or v -1)))
           (:setTimeBetweenEvictionRuns        :time-between-eviction-runs)      (.setTimeBetweenEvictionRuns        kop       (or v neg-duration))
+
+          (:setEvictorShutdownTimeoutMillis :evictor-shutdown-timeout-ms) (.setEvictorShutdownTimeoutMillis kop (long v))
+          (:setEvictorShutdownTimeout       :evictor-shutdown-timeout)    (.setEvictorShutdownTimeout       kop       v)
 
           (:setTestOnCreate  :test-on-create?)  (.setTestOnCreate  kop (boolean v))
           (:setTestWhileIdle :test-while-idle?) (.setTestWhileIdle kop (boolean v))
@@ -424,8 +439,8 @@
           ;; (have? [:or conns/conn-manager? dummy-val?] (force @mgr)) ; Don't realise
           (have?    [:or conns/conn-manager? dummy-val? delay?] @mgr))
 
-        (have? [:ks<= #{:on-close :on-error}] cbs)
-        (have? [:or var? nil?] :in      (vals cbs))
+        (have? [:ks<= #{:on-conn-close :on-conn-error}] cbs)
+        (have? [:or var? nil?] :in                (vals cbs))
 
         (when socket-opts (socket-opts-dry-run! socket-opts))
 
@@ -507,8 +522,8 @@
                       :retry-delay-ms :resolve-timeout-ms}] opts)
 
       (let [{:keys [cbs]} opts]
-        (have? [:ks<= #{:on-error :on-success :on-master-change :on-sentinels-change}] cbs)
-        (have? [:or nil? var?] :in                                               (vals cbs)))
+        (have? [:ks<= #{:on-resolve-success :on-resolve-error :on-resolve-change :on-sentinels-change}] cbs)
+        (have? [:or nil? var?] :in                                                                (vals cbs)))
 
       (if-let [conn-opts (not-empty (get opts :conn-opts))]
         (assoc opts :conn-opts (-parse-conn-opts :in-sentinel-opts conn-opts))

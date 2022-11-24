@@ -5,14 +5,14 @@
   Ref. https://redis.io/docs/reference/sentinel-clients/
 
   A set of Sentinel servers (usu. >= 3) basically provides a
-  quorum mechanism to resolve the current master Redis server
+  quorum mechanism to resolve the current master Redis server address
   for a given \"master name\" (service name):
 
-    (fn resolve-redis-master
+    (fn resolve-redis-master-addr
       [master-name stateful-sentinel-addresses]) -> <redis-master-address>
 
   Requests to the service then go through an indirection step:
-    request -> resolve-redis-master -> redis-master"
+    request -> resolve -> master"
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
@@ -21,7 +21,10 @@
    [taoensso.carmine-v4.utils :as utils]
    [taoensso.carmine-v4.conns :as conns]
    [taoensso.carmine-v4.resp  :as resp]
-   [taoensso.carmine-v4.opts  :as opts]))
+   [taoensso.carmine-v4.opts  :as opts])
+
+  (:import
+   [java.util.concurrent.atomic AtomicLong]))
 
 (comment
   (remove-ns      'taoensso.carmine-v4.sentinel)
@@ -62,21 +65,21 @@ sentinel down-after-milliseconds %3$s 60000"
 
 (comment (spit-sentinel-test-config {}))
 
-;;;; Sentinel spec maps
+;;;; Sentinel addrs maps
 ;; {<master-name> [[<sentinel-server-ip> <sentinel-server-port>] ...]}
 
-(defn- remove-sentinel [old-addrs addr]
+(defn- remove-sentinel-addr [old-addrs addr]
   (let [addr (opts/parse-sock-addr addr)]
     (transduce (remove #(= % addr)) conj [] old-addrs)))
 
-(defn- add-sentinel->front [old-addrs addr]
+(defn- add-sentinel-addr->front [old-addrs addr]
   (let [addr (opts/parse-sock-addr addr)]
     (if (= (get old-addrs 0) addr)
       old-addrs
       (transduce (remove #(= % addr))
         conj [addr] old-addrs))))
 
-(defn- add-sentinels->back [old-addrs addrs]
+(defn- add-sentinel-addrs->back [old-addrs addrs]
   (if (empty? addrs)
     old-addrs
     (let [old-addrs   (or  old-addrs [])
@@ -84,106 +87,366 @@ sentinel down-after-milliseconds %3$s 60000"
       (transduce (comp (map opts/parse-sock-addr) (remove old-addr?))
         conj old-addrs addrs))))
 
-(defn- clean-sentinel-spec [spec-map]
+(defn- clean-sentinel-addrs-map [addrs-map]
   (reduce-kv
     (fn [m master-name addrs]
       (assoc m (enc/as-qname master-name)
         (transduce (comp (map opts/parse-sock-addr) (distinct))
           conj [] addrs)))
-    {} spec-map))
+    {} addrs-map))
 
-(deftest ^:private _spec-map-utils
-  [(let [sm (add-sentinels->back nil [["ip1" 1] ["ip2" "2"] ^{:server-name "server3"} ["ip3" 3]])
-         sm (add-sentinel->front sm  ["ip2" 2])
-         sm (add-sentinels->back sm [["ip3" 3] ["ip6" 6]])]
+(deftest ^:private _addr-utils
+  [(let [sm (add-sentinel-addrs->back nil [["ip1" 1] ["ip2" "2"] ^{:server-name "server3"} ["ip3" 3]])
+         sm (add-sentinel-addr->front sm  ["ip2" 2])
+         sm (add-sentinel-addrs->back sm [["ip3" 3] ["ip6" 6]])]
 
      [(is (= sm [["ip2" 2] ["ip1" 1] ["ip3" 3] ["ip6" 6]]))
       (is (= (mapv opts/descr-sock-addr sm)
             [["ip2" 2] ["ip1" 1] ["ip3" 3 {:server-name "server3"}] ["ip6" 6]]))])
 
-   (let [sm (add-sentinels->back nil [["ip4" 4] ["ip5" "5"]])
-         sm (remove-sentinel     sm  ["ip4" 4])]
+   (let [sm (add-sentinel-addrs->back nil [["ip4" 4] ["ip5" "5"]])
+         sm (remove-sentinel-addr     sm   ["ip4" 4])]
      [(is (= sm [["ip5" 5]]))])
 
-   (let [sm (clean-sentinel-spec {:m1 [^:my-meta ["ip1" 1] ["ip1" "1"] ["ip2" "2"]]})]
+   (let [sm (clean-sentinel-addrs-map {:m1 [^:my-meta ["ip1" 1] ["ip1" "1"] ["ip2" "2"]]})]
      [(is (= sm {"m1" [["ip1" 1] ["ip2" 2]]}))
       (is (= (mapv opts/descr-sock-addr (get sm "m1"))
             [["ip1" 1 {:my-meta true}] ["ip2" 2]]))])])
 
-;;;; Sentinel Specs
-;; Simple stateful agent wrapper around a sentinel spec map
+;;;; SentinelSpec
 
 (defprotocol ^:private ISentinelSpec
   "Internal protocol, not for public use or extension."
-  (^:private get-sentinels        [spec     master-name])
-  (^:private update-sentinels!    [spec cbs master-name f])
-  (^:private add-sentinels->back! [spec cbs master-name addrs])
-  (^:private add-sentinel->front! [spec cbs master-name addr])
-  (^:private remove-sentinel!     [spec cbs master-name addr])
-  (^:private reset-master!        [spec cbs master-name addr]))
+  (^:private    get-sentinel-addrs     [spec     master-name] [spec])
+  (^:private update-sentinel-addrs!    [spec cbs master-name f])
+  (^:private remove-sentinel-addr!     [spec cbs master-name addr])
+
+  (^:private add-sentinel-addrs->back! [spec cbs master-name addrs])
+  (^:private add-sentinel-addr->front! [spec cbs master-name addr])
+
+  (^:private reset-master-addr!        [spec cbs master-name addr])
+
+  (    get-master-addr [spec master-name] "Returns currently resolved master address, or nil.")
+  (resolve-master-addr [spec master-name sentinel-opts]
+    "Given a Redis master server name, returns [<master-ip> <master-port>]
+    as reported by current Sentinel cluster consensus, or throws.
+
+    Follows resolution procedure as per Sentinel spec,
+    Ref. https://redis.io/docs/reference/sentinel-clients/
+
+    Options will be the nested merge of the following in descending order:
+      - `sentinel-opts` provided here.
+      - `sentinel-opts` provided when creating `sentinel-spec`.
+      - `*default-sentinel-opts*`.
+
+    For options docs, see `*default-sentinel-opts*` docstring."))
+
+(def ^:dynamic *cbs*
+  "Private, implementation detail.
+  Mechanism to allow ConnManagers to easily request cbs from
+  a resolution that they've requested."
+  nil)
+
+(defn- inc-stat! [stats_ k1 k2]
+  (swap! stats_
+    (fn [m]
+      (enc/update-in m [k1 k2]
+        (fn [?n] (inc (or ?n 0)))))))
+
+(comment (inc-stat! (atom {}) "foo" :k1))
+
+(defn- sentinel-addrs-count [sentinel-addrs-map]
+  (count (into #{} cat (vals sentinel-addrs-map))))
+
+(comment (enc/qb 1e6 (sentinel-addrs-count {:a [[1] [2] [3]] :b [[1] [3] [4]]})))
+
+(defn- kvs->map [x] (if (map? x) x (into {} (comp (partition-all 2)) x)))
+(comment [(kvs->map {"a" "A" "b" "B"}) (kvs->map ["a" "A" "b" "B"])])
 
 (deftype SentinelSpec
-  [sentinel-opts
-   spec-map_ ; {<master-name> [[<sentinel-ip> <sentinel-port>] ...]} delay
-   resolved_ ; {<master-name> [<redis-ip> <redis-port>]}
+  [base-sentinel-opts
+   sentinel-addrs-map_ ; {<master-name> [[<sentinel-ip> <sentinel-port>] ...]} delay
+   resolved-addrs-map_ ; {<master-name> [<redis-ip> <redis-port>]}
+
+   resolve-stats_      ; {<master-name>   {:keys [n-requests n-attempts n-successes n-errors n-changes]}}
+   sentinel-stats_     ; {<sentinel-addr> {:keys [           n-attempts n-successes n-errors n-ignorant n-unreachable n-misidentified]}
    ]
 
-  Object (toString [this] (str "SentinelSpec[" (binding [*print-readably* false] (pr-str @this)) "]"))
+  Object
+  (toString [this] ; "SentinelSpec[3 masters, 6 sentinels]"
+    (str "SentinelSpec["
+      (do                   (count @resolved-addrs-map_)) " masters, "
+      (sentinel-addrs-count (force @sentinel-addrs-map_)) " sentinels]"))
+
   clojure.lang.IDeref
   (deref [this]
-    {:sentinel-opts sentinel-opts
-     :spec-map (force @spec-map_)
-     :resolved @resolved_})
+    (let [sentinel-addrs-map (force @sentinel-addrs-map_)
+          resolved-addrs-map        @resolved-addrs-map_]
+
+      {:sentinel-opts      base-sentinel-opts
+       :sentinel-addrs-map sentinel-addrs-map
+       :resolved-addrs-map resolved-addrs-map
+       :stats
+       {:n-masters      (count                resolved-addrs-map)
+        :n-sentinels    (sentinel-addrs-count sentinel-addrs-map)
+        :resolve-stats  @resolve-stats_
+        :sentinel-stats @sentinel-stats_}}))
 
   ISentinelSpec
-  (get-sentinels     [_        master-name  ] (get (force @spec-map_) (enc/as-qname master-name)))
-  (update-sentinels! [this cbs master-name f]
+  (get-sentinel-addrs     [_                     ]      (force @sentinel-addrs-map_))
+  (get-sentinel-addrs     [_        master-name  ] (get (force @sentinel-addrs-map_) (enc/as-qname master-name)))
+  (update-sentinel-addrs! [this cbs master-name f]
     (let [master-name (enc/as-qname master-name)
-          [old-sm_ new-sm_]
-          (swap-vals! spec-map_
-            (fn [sm_]
+          [old-addrs-map_ new-addrs-map_]
+          (swap-vals! sentinel-addrs-map_
+            (fn [old-addrs-map_]
               (delay ; To minimize contention during expensive updates
-                (let [sm        (force sm_)
-                      old-addrs (get   sm master-name)
-                      new-addrs (f old-addrs)]
-                  (assoc sm master-name new-addrs)))))
+                (let [old-addrs-map (force old-addrs-map_)
+                      old-addrs     (get   old-addrs-map master-name)
+                      new-addrs     (f     old-addrs)]
+                  (assoc old-addrs-map master-name new-addrs)))))
 
-          old (get (force old-sm_) master-name)
-          new (get (deref new-sm_) master-name)]
+          old (get (force old-addrs-map_) master-name)
+          new (get (deref new-addrs-map_) master-name)]
 
       (if (= old new)
         false
         (do
           (utils/cb-notify!
-            (get-in cbs [:private :on-sentinels-change])
-            (get-in cbs [:user    :on-sentinels-change])
+            (get *cbs* :on-sentinels-change)
+            (get  cbs  :on-sentinels-change)
             (delay
-              {:cbid :sentinels-changed
-               :master-name master-name
-               :sentinels   {:old old, :new new}
-               :spec-state  @this}))
+              {:cbid :on-sentinels-change
+               :master-name    master-name
+               :sentinel-spec  this
+               :sentinel-opts  base-sentinel-opts
+               :sentinel-addrs {:old old, :new new}}))
           true))))
 
-  (add-sentinels->back! [this cbs master-name addrs] (update-sentinels! this cbs master-name #(add-sentinels->back % addrs)))
-  (add-sentinel->front! [this cbs master-name addr]  (update-sentinels! this cbs master-name #(add-sentinel->front % addr)))
-  (remove-sentinel!     [this cbs master-name addr]  (update-sentinels! this cbs master-name #(remove-sentinel     % addr)))
-  (reset-master!        [this cbs master-name addr]
+  (add-sentinel-addrs->back! [this cbs master-name addrs] (update-sentinel-addrs! this cbs master-name #(add-sentinel-addrs->back % addrs)))
+  (add-sentinel-addr->front! [this cbs master-name addr]  (update-sentinel-addrs! this cbs master-name #(add-sentinel-addr->front % addr)))
+  (remove-sentinel-addr!     [this cbs master-name addr]  (update-sentinel-addrs! this cbs master-name #(remove-sentinel-addr     % addr)))
+
+  (  get-master-addr         [this     master-name] (get @resolved-addrs-map_ (enc/as-qname master-name)))
+  (reset-master-addr!        [this cbs master-name addr]
     (let [master-name (enc/as-qname master-name)
           new-addr    (opts/parse-sock-addr addr)
-          old-addr    (enc/reset-val! resolved_ master-name new-addr)]
+          old-addr    (enc/reset-val! resolved-addrs-map_ master-name new-addr)]
 
       (if (= new-addr old-addr)
         false
         (do
+          (inc-stat! resolve-stats_ master-name :n-changes)
           (utils/cb-notify!
-            (get-in cbs [:private :on-master-change])
-            (get-in cbs [:user    :on-master-change])
+            (get *cbs* :on-resolve-change)
+            (get  cbs  :on-resolve-change)
             (delay
-              {:cbid :master-changed
-               :master-name master-name
-               :master-addr {:old old-addr :new new-addr}
-               :spec-state  @this}))
-          true)))))
+              {:cbid :on-resolve-change
+               :master-name   master-name
+               :master-addr   {:old old-addr :new new-addr}
+               :sentinel-spec this
+               :sentinel-opts base-sentinel-opts}))
+          true))))
+
+  (resolve-master-addr [this master-name sentinel-opts]
+    (let [t0 (System/currentTimeMillis)
+
+          master-name    (enc/as-qname master-name)
+          sentinel-addrs (get @sentinel-addrs-map_ master-name)
+
+          sentinel-opts
+          (opts/parse-sentinel-opts :with-dynamic-default
+            base-sentinel-opts sentinel-opts)
+
+          {:keys [conn-opts cbs add-missing-sentinels?]}
+          sentinel-opts]
+
+      (if (empty? sentinel-addrs)
+        (do
+          (inc-stat! resolve-stats_ master-name :n-errors)
+          (utils/cb-notify-and-throw! :on-resolve-error
+            (get *cbs* :on-resolve-error)
+            (get  cbs  :on-resolve-error)
+            (ex-info "[Carmine] [Sentinel] No Sentinel server addresses configured for requested master"
+              {:eid :carmine.sentinel/no-sentinel-addrs-in-spec
+               :master-name   master-name
+               :sentinel-spec this
+               :sentinel-opts sentinel-opts}
+              (Exception. "No Sentinel server addresses in spec"))))
+
+        (let [n-attempts* (java.util.concurrent.atomic.AtomicLong. 0)
+
+              attempt-log_  (volatile! []) ; [<debug-entry> ...]
+              error-counts_ (volatile! {}) ; {<sentinel-addr> {:keys [unreachable ignorant misidentified]}}
+              record-error!
+              (fn [sentinel-addr t0-attempt error-kind ?data]
+
+                (inc-stat! sentinel-stats_ sentinel-addr :n-errors)
+                (inc-stat! sentinel-stats_ sentinel-addr
+                  (case error-kind
+                    :ignorant      :n-ignorant
+                    :unreachable   :n-unreachable
+                    :misidentified :n-misidentified
+                                   :n-other-errors))
+
+                ;; Add entry to attempt log
+                (let [attempt-ms (- (System/currentTimeMillis) t0-attempt)]
+                  (vswap! attempt-log_ conj
+                    (assoc
+                      (conj
+                        {:attempt       (.get n-attempts*)
+                         :sentinel-addr sentinel-addr
+                         :error         error-kind}
+                        ?data)
+                      :attempt-ms attempt-ms)))
+
+                ;; Increment counter for error kind
+                (vswap! error-counts_
+                  (fn [m]
+                    (enc/update-in m [sentinel-addr error-kind]
+                      (fn [?n] (inc ^long (or ?n 0)))))))
+
+              ;; All sentinel addrs reported during resolution process
+              reported-sentinel-addrs_ (volatile! #{}) ; #{[ip port]}
+              complete!
+              (fn [?sentinel-addr ?master-addr ?error]
+                (update-sentinel-addrs! this cbs master-name
+                  (fn [addrs]
+                    (cond-> addrs
+                      ?master-addr           (add-sentinel-addr->front ?master-addr)
+                      add-missing-sentinels? (add-sentinel-addrs->back @reported-sentinel-addrs_))))
+
+                (if-let [error ?error]
+                  (do
+                    (inc-stat! resolve-stats_ master-name :n-errors)
+                    (utils/cb-notify-and-throw! :on-resolve-error
+                      (get *cbs* :on-resolve-error)
+                      (get  cbs  :on-resolve-error)
+                      error))
+
+                  (let [sentinel-addr (opts/parse-sock-addr ?sentinel-addr)
+                        master-addr   (opts/parse-sock-addr ?master-addr)]
+                    (inc-stat! sentinel-stats_ sentinel-addr :n-successes)
+                    (inc-stat! resolve-stats_  master-name   :n-successes)
+                    (utils/cb-notify!
+                      (get *cbs* :on-resolve-success)
+                      (get  cbs  :on-resolve-success)
+                      (delay
+                        {:cbid :on-resolve-success
+                         :master-name   master-name
+                         :master-addr   master-addr
+                         :sentinel-spec this
+                         :sentinel-opts sentinel-opts
+                         :ms-elapsed (- (System/currentTimeMillis) t0)}))
+
+                    (reset-master-addr! this cbs master-name master-addr)
+                    (do                                      master-addr))))]
+
+          (loop [n-retries 0]
+
+            (let [t0-attempt (System/currentTimeMillis)
+                  [?sentinel-addr ?master-addr] ; ?[<addr> <addr>]
+                  (reduce
+                    ;; Try each known sentinel addr, sequentially
+                    (fn [acc sentinel-addr]
+                      (.incrementAndGet n-attempts*)
+                      (inc-stat! resolve-stats_  master-name   :n-attempts)
+                      (inc-stat! sentinel-stats_ sentinel-addr :n-attempts)
+                      (let [[ip port] sentinel-addr
+                            [?master-addr ?sentinels-info]
+                            (case ip
+                              "unreachable"   [::unreachable                 nil]
+                              "misidentified" [["simulated-misidentified" 0] nil]
+                              "ignorant"      nil
+                              (try
+                                (conns/with-conn
+                                  ;; (conns/new-conn ip port conn-opts)
+                                  (conns/get-conn (assoc conn-opts :server [ip port]) false true)
+                                  (fn [_ in out]
+                                    (resp/with-replies in out :natural-reads :as-vec
+                                      (fn []
+
+                                        ;; Does this sentinel know the master?
+                                        (resp/redis-call "SENTINEL" "get-master-addr-by-name"
+                                          master-name)
+
+                                        (when add-missing-sentinels?
+                                          ;; Ask sentinel to report on other known sentinels
+                                          (resp/redis-call "SENTINEL" "sentinels" master-name))))))
+
+                                (catch Throwable _
+                                  [::unreachable nil])))]
+
+                        (when-let [sentinels-info ?sentinels-info] ; [<sentinel1-info> ...]
+                          (enc/run!
+                            (fn [info] ; Info may be map (RESP3) or kvseq (RESP2)
+                              (let [info (kvs->map info)]
+                                (enc/when-let [ip   (get info "ip")
+                                               port (get info "port")]
+                                  (vswap! reported-sentinel-addrs_ conj [ip port]))))
+                            sentinels-info))
+
+                        (enc/cond
+                          (vector?    ?master-addr)                        (reduced [sentinel-addr (opts/parse-sock-addr ?master-addr)])
+                          (nil?       ?master-addr)               (do (record-error! sentinel-addr t0-attempt :ignorant    nil) acc)
+                          (identical? ?master-addr ::unreachable) (do (record-error! sentinel-addr t0-attempt :unreachable nil) acc))))
+
+                    nil sentinel-addrs)]
+
+              (if-let [[sentinel-addr master-addr]
+                       (enc/when-let [sentinel-addr ?sentinel-addr
+                                      master-addr   ?master-addr]
+                         (let [role
+                               (let [[ip port] master-addr
+                                     reply
+                                     (try
+                                       (conns/with-conn
+                                         ;; (conns/new-conn ip port conn-opts)
+                                         (conns/get-conn (assoc conn-opts :server [ip port]) false true)
+                                         (fn [_ in out]
+                                           (resp/with-replies in out :natural-reads :as-vec
+                                             (fn [] (resp/redis-call "ROLE")))))
+                                       (catch Throwable _ nil))]
+
+                                 (when (vector? reply) (get reply 0)))]
+
+                           ;; Confirm that master designated by sentinel actually identifies itself as master
+                           (if (= role "master")
+                             [sentinel-addr master-addr]
+                             (do
+                               (record-error! sentinel-addr t0-attempt :misidentified
+                                 {:resolved-to master-addr :actual-role role})
+                               false))))]
+
+                (complete! sentinel-addr master-addr nil)
+
+                (let [{:keys [timeout-ms retry-delay-ms]} sentinel-opts
+                      elapsed-ms  (- (System/currentTimeMillis) t0)
+                      retry-at-ms (+ elapsed-ms retry-delay-ms)]
+
+                  (if (> retry-at-ms timeout-ms)
+                    (do
+                      (vswap! attempt-log_ conj
+                        [:timeout
+                         (str
+                           "(" elapsed-ms " elapsed + " retry-delay-ms " delay = " retry-at-ms
+                           ") > " timeout-ms " timeout")])
+
+                      (complete! nil nil
+                        (ex-info "[Carmine] [Sentinel] Timed out while trying to resolve requested master"
+                          {:eid :carmine.sentinel/resolve-timeout
+                           :master-name     master-name
+                           :sentinel-spec   this
+                           :sentinel-opts   sentinel-opts
+                           :sentinel-errors @error-counts_
+                           :n-attempts      (.get n-attempts*)
+                           :n-retries       n-retries
+                           :ms-elapsed      (- (System/currentTimeMillis) t0)
+                           :attempt-log     @attempt-log_})))
+                    (do
+                      (vswap! attempt-log_ conj [:retry-after-sleep retry-delay-ms])
+                      (Thread/sleep retry-delay-ms)
+                      (recur (inc n-retries)))))))))))))
 
 (let [ns *ns*] (defmethod print-method SentinelSpec [^SentinelSpec spec ^java.io.Writer w] (.write w (str "#" ns "." spec))))
 
@@ -192,248 +455,43 @@ sentinel down-after-milliseconds %3$s 60000"
   [x] (instance? SentinelSpec x))
 
 (defn ^:public sentinel-spec
-  "Given a Redis Sentinel server spec map of form
+  "Given a Redis Sentinel server addresses map of form
     {<master-name> [[<sentinel-server-ip> <sentinel-server-port>] ...]},
   returns a new stateful SentinelSpec for use in `conn-opts`.
-
-  [ip port] address vecs can have metadata (useful for storing server
-  names, etc.). Metadata will be included in relevant error messages.
 
     (def my-sentinel-spec
       \"Stateful Redis Sentinel server spec. Will be kept
        automatically updated by Carmine.\"
       (sentinel-spec
-        {:caching       [^{:server-name \"sentinel1\"} [\"192.158.1.38\" 26379] ...]
-         :message-queue [^{:server-name \"sentinel1\"} [\"192.158.1.38\" 26379] ...]}))
+        {:caching       [[\"192.158.1.38\" 26379] ...]
+         :message-queue [[\"192.158.1.38\" 26379] ...]}))
       => stateful SentinelSpec
 
-  For options docs, see `carmine/*default-sentinel-opts*` docstring."
+  For options docs, see `*default-sentinel-opts*` docstring."
 
-  ([spec-map              ] (sentinel-spec spec-map nil))
-  ([spec-map sentinel-opts]
+  ([sentinel-addrs-map              ] (sentinel-spec sentinel-addrs-map nil))
+  ([sentinel-addrs-map sentinel-opts]
    (SentinelSpec.
      (have [:or nil? map?] sentinel-opts)
-     (atom (clean-sentinel-spec (have map? spec-map)))
+     (atom (clean-sentinel-addrs-map (have map? sentinel-addrs-map)))
+     (atom {})
+     (atom {})
      (atom {}))))
 
 (deftest ^:private _spec-protocol
-  [(is (enc/submap? @(sentinel-spec {:m1 [["ip1" "1"] ["ip1" "1"] ["ip2" "2"]]})
-         {:spec-map {"m1" [["ip1" 1] ["ip2" 2]]}}))
+  [(is (enc/submap? @(sentinel-spec {:m1  [["ip1" "1"] ["ip1" "1"] ["ip2" "2"]]})
+         {:sentinel-addrs-map       {"m1" [["ip1"  1]              ["ip2"  2]]}}))
 
    (let [sp (sentinel-spec {:m1 [["ip1" "1"] ["ip1" "1"] ["ip2" "2"]]})]
-     (add-sentinel->front! sp nil :m1 ["ip3" "3"])
-     (add-sentinels->back! sp nil :m1 [["ip4" "4"] ["ip5" "5"]])
-     (remove-sentinel!     sp nil :m1 ["ip5" "5"])
-     (is (enc/submap?     @sp
-           {:spec-map {"m1" [["ip3" 3] ["ip1" 1] ["ip2" 2] ["ip4" 4]]}})))])
-
-(defn- kvs->map [x] (if (map? x) x (into {} (comp (partition-all 2)) x)))
-(comment [(kvs->map {"a" "A" "b" "B"}) (kvs->map ["a" "A" "b" "B"])])
-
-(defn resolve-master
-  "Given a SentinelSpec and requested master name, returns
-  [<master-ip> <master-port>] as reported by Sentinel consensus, or throws.
-
-  Follows resolution procedure as per Sentinel spec,
-  Ref. https://redis.io/docs/reference/sentinel-clients/
-
-  Options will be the nested merge of the following in descending order:
-    - `sentinel-opts` provided here.
-    - `sentinel-opts` provided when creating `sentinel-sepc`.
-    - `carmine/*default-sentinel-opts*`.
-
-  For options docs, see `carmine/*default-sentinel-opts*` docstring."
-  [master-name sentinel-spec sentinel-opts]
-
-  (let [t0 (System/currentTimeMillis)
-
-        ^SentinelSpec    sentinel-spec (have sentinel-spec? sentinel-spec)
-        init-spec-state @sentinel-spec ; {:keys [spec-map sentinel-opts]}
-
-        {:keys [private-cbs]} sentinel-opts
-        sentinel-opts
-        (opts/parse-sentinel-opts :with-dynamic-default
-          (get init-spec-state :sentinel-opts)
-          (dissoc sentinel-opts :private-cbs))
-
-        ;; private-cbs for internal use (e.g. by connection manager),
-        ;; vals need not be vars!
-        cbs {:private private-cbs :user (get sentinel-opts :cbs)}
-
-        master-name (enc/as-qname master-name)
-        sentinels   (utils/get-at init-spec-state :spec-map master-name)]
-
-    (if (empty? sentinels)
-
-      (utils/cb-notify-and-throw! :resolve-error
-        (utils/get-at cbs :private :on-error)
-        (utils/get-at cbs :user    :on-error)
-        (ex-info "[Carmine] [Sentinel] No Sentinel servers configured for requested master"
-          {:eid :carmine.sentinel/no-sentinels-in-spec
-           :master-name   master-name
-           :spec-state    init-spec-state
-           :sentinel-opts sentinel-opts}
-          (Exception. "No sentinel servers in spec")))
-
-      (let [n-attempts* (java.util.concurrent.atomic.AtomicLong. 0)
-            {:keys [conn-opts add-missing-sentinels?]} sentinel-opts
-
-            attempt-log_  (volatile! []) ; [<debug-entry> ...]
-            error-counts_ (volatile! {}) ; {<sentinel> {:keys [unreachable ignorant misidentified]}}
-            record-error!
-            (fn [sentinel t0-attempt error-kind ?data]
-
-              ;; Add entry to attempt log
-              (let [attempt-ms (- (System/currentTimeMillis) t0-attempt)]
-                (vswap! attempt-log_ conj
-                  (assoc
-                    (conj
-                      {:attempt  (.get n-attempts*)
-                       :sentinel (opts/descr-sock-addr sentinel)
-                       :error    error-kind}
-                      ?data)
-                    :attempt-ms attempt-ms)))
-
-              ;; Increment counter for error kind
-              (vswap! error-counts_
-                (fn [m]
-                  (enc/update-in m [sentinel error-kind]
-                    (fn [?n] (inc ^long (or ?n 0)))))))
-
-            ;; All sentinels reported during resolution process
-            reported-sentinels_ (volatile! #{}) ; #{[ip port]}
-            complete!
-            (fn [?master ?error]
-              (update-sentinels! sentinel-spec cbs master-name
-                (fn [addrs]
-                  (cond-> addrs
-                    ?master                (add-sentinel->front ?master)
-                    add-missing-sentinels? (add-sentinels->back @reported-sentinels_))))
-
-              (if-let [error ?error]
-                (utils/cb-notify-and-throw! :resolve-error
-                  (utils/get-at cbs :private :on-error)
-                  (utils/get-at cbs :user    :on-error)
-                  error)
-                (do
-                  (utils/cb-notify!
-                    (utils/get-at cbs :private :on-success)
-                    (utils/get-at cbs :user    :on-success)
-                    (delay
-                      {:cbid :resolve-success
-                       :master-name   master-name
-                       :spec-state    init-spec-state
-                       :sentinel-opts sentinel-opts
-                       :resolved-addr ?master
-                       :ms-elapsed (- (System/currentTimeMillis) t0)}))
-
-                  (reset-master! sentinel-spec cbs master-name ?master)
-                  (do                                          ?master))))]
-
-        (loop [n-retries 0]
-
-          (let [t0-attempt (System/currentTimeMillis)
-                [?sentinel ?master] ; ?[<addr> <addr>]
-                (reduce
-                  ;; Try each known sentinel, sequentially
-                  (fn [acc sentinel]
-                    (.incrementAndGet n-attempts*)
-                    (let [[ip port] (opts/descr-sock-addr sentinel)
-                          [?master ?sentinels-info]
-                          (case ip
-                            "unreachable"   [::unreachable                 nil]
-                            "misidentified" [["simulated-misidentified" 0] nil]
-                            "ignorant"      nil
-                            (try
-                              (conns/with-new-conn ip port conn-opts
-                                (fn [_ in out]
-                                  (resp/with-replies in out :natural-reads :as-vec
-                                    (fn []
-
-                                      ;; Does this sentinel know the master?
-                                      (resp/redis-call "SENTINEL" "get-master-addr-by-name"
-                                        master-name)
-
-                                      (when add-missing-sentinels?
-                                        ;; Ask sentinel to report on other known sentinels
-                                        (resp/redis-call "SENTINEL" "sentinels" master-name))))))
-
-                              (catch Throwable _
-                                [::unreachable nil])))]
-
-                      (when-let [sentinels-info ?sentinels-info] ; [<sentinel1-info> ...]
-                        (enc/run!
-                          (fn [info] ; Info may be map (RESP3) or kvseq (RESP2)
-                            (let [info (kvs->map info)]
-                              (enc/when-let [ip   (get info "ip")
-                                             port (get info "port")]
-                                (vswap! reported-sentinels_ conj [ip port]))))
-                          sentinels-info))
-
-                      (enc/cond
-                        (vector?    ?master)               (reduced [sentinel (opts/parse-sock-addr ?master)])
-                        (nil?       ?master)               (do (record-error! sentinel t0-attempt :ignorant    nil) acc)
-                        (identical? ?master ::unreachable) (do (record-error! sentinel t0-attempt :unreachable nil) acc))))
-
-                  nil sentinels)
-
-                ?resolved-master
-                (enc/when-let [sentinel ?sentinel
-                               master   ?master]
-                  (let [role
-                        (let [[ip port] master
-                              reply
-                              (try
-                                (conns/with-new-conn ip port conn-opts
-                                  (fn [_ in out]
-                                    (resp/with-replies in out :natural-reads :as-vec
-                                      (fn [] (resp/redis-call "ROLE")))))
-                                (catch Throwable _ nil))]
-
-                          (when (vector? reply) (get reply 0)))]
-
-                    ;; Confirm that master designated by sentinel actually identifies itself as master
-                    (if (= role "master")
-                      master
-                      (do
-                        (record-error! sentinel t0-attempt :misidentified
-                          {:identified master :actual-role role})
-                        false))))]
-
-            (if-let [resolved-master ?resolved-master]
-              (complete! resolved-master nil)
-
-              (let [{:keys [timeout-ms retry-delay-ms]} sentinel-opts
-                    elapsed-ms  (- (System/currentTimeMillis) t0)
-                    retry-at-ms (+ elapsed-ms retry-delay-ms)]
-
-                (if (> retry-at-ms timeout-ms)
-                  (do
-                    (vswap! attempt-log_ conj
-                      [:timeout
-                       (str
-                         "(" elapsed-ms " elapsed + " retry-delay-ms " delay = " retry-at-ms
-                         ") > " timeout-ms " timeout")])
-
-                    (complete! nil
-                      (ex-info "[Carmine] [Sentinel] Timed out while trying to resolve requested master"
-                        {:eid :carmine.sentinel/resolve-timeout
-                         :master-name     master-name
-                         :spec-state      init-spec-state
-                         :sentinel-opts   sentinel-opts
-                         :n-attempts      (.get n-attempts*)
-                         :n-retries       n-retries
-                         :ms-elapsed      (- (System/currentTimeMillis) t0)
-                         :sentinel-errors @error-counts_
-                         :attempt-log     @attempt-log_})))
-                  (do
-                    (vswap! attempt-log_ conj [:retry-after-sleep retry-delay-ms])
-                    (Thread/sleep retry-delay-ms)
-                    (recur (inc n-retries))))))))))))
+     (add-sentinel-addr->front! sp nil :m1 ["ip3" "3"])
+     (add-sentinel-addrs->back! sp nil :m1 [["ip4" "4"] ["ip5" "5"]])
+     (remove-sentinel-addr!     sp nil :m1 ["ip5" "5"])
+     (is (enc/submap?          @sp
+           {:sentinel-addrs-map {"m1" [["ip3" 3] ["ip1" 1] ["ip2" 2] ["ip4" 4]]}})))])
 
 (comment
   ;; Use ip e/o #{"unreachable" "ignorant" "misidentified"} to simulate errors
-  (resolve-master {}
+  (resolve-master-addr {}
     {"my-master" [^:my-meta ["ignorant" #_"misidentified" #_"127.0.0.1" 26379]]}
     "my-master")
 
