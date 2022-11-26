@@ -30,21 +30,20 @@
   (run-all-carmine-tests))
 
 ;;;; TODO
+;; - Finish `conns/mgr-borrow!`
+;; - Integrate `conns/get-conn` into `with-carmine`, etc.
+;; - Low-level API combo: `get-conn` + `with-conn` + `resp/with-replies`, etc.
 
-;; - Connections
-;;   - Finish `conns/update-kop-state!`
-;;   - Finish `conns/mgr-borrow!`
+;; - Re-check Sentinel client docs
 ;;
-;;   - Confirm pool manager flow, closing data, etc.
-;;   - Wrap pool errors? How + where? Keep/retire `try-borrow-conn!`?
-;;   - No issue with caching vs opts with metadata?
+;; - Confirm pool manager flow, closing data, etc.
+;; - Wrap pool errors? How + where? Keep or retire `try-borrow-conn!`?
+;; - No issue with caching vs opts with metadata?
 ;;
-;;   - Confirm: :mgr support should just work correctly within
-;;     sentinel-opts/conn-opts, right?
-;;
-;;   - Integrate `conns/get-conn` into `with-carmine`, etc.
-;;   - Low-level API combo: `get-conn` + `with-conn` + `resp/with-replies`, etc.
-;;   - Re-check Sentinel client docs
+;; - Confirm: :mgr support should just work correctly within
+;;   sentinel-opts/conn-opts, right?
+
+;; - Investigate Cluster
 
 ;; - Core: new Pub/Sub API
 ;; - Sentinel: integrate with Pub/Sub - mgr-master-addr-change!
@@ -55,8 +54,6 @@
 ;;   - Test conn, mgrs, sentinel, resolve changes
 ;;     - Ability to interrupt long-blocking reqs (grep "v3 conn closing" in this ns)
 ;;     - Hard & soft shutdown
-
-;; - Investigate Cluster
 
 ;; - Polish
 ;;   - Check ns layout + hierarchy, incl. conns, replies, types, tests
@@ -107,7 +104,7 @@
 ;; - [new] SentinelSpec stats
 ;; - [new] Improved config: more options, more ways to set options,
 ;;         better documentation, better validation, etc.
-;; - [new] Improved transparency (stats, cbs, timings for profiling, etc.).
+;; - [new] Improved transparency (derefs, stats, cbs, timings for profiling, etc.).
 
 ;;;; Config
 
@@ -173,6 +170,23 @@
   "TODO Docstring"
   nil)
 
+(def default-pool-opts
+  "TODO Docstring, describe edn-config
+
+  Ref. https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/GenericKeyedObjectPool.html,
+       https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/BaseGenericObjectPool.html"
+
+  (let [{:keys [config]}
+        (enc/load-edn-config
+          {:prop "taoensso.carmine.default-pool-opts.edn"
+           :res  "taoensso.carmine.default-pool-opts.edn"
+           :default opts/default-pool-opts})]
+    config))
+
+(enc/defonce default-conn-manager-pooled_
+  "TODO Docstring"
+  (delay (conns/conn-manager-pooled {:pool-opts default-pool-opts})))
+
 (def ^:dynamic *default-conn-opts*
   "TODO Docstring, describe conn-opts, edn-config"
   (let [{:keys [config]}
@@ -193,18 +207,18 @@
 
     (opts/parse-sentinel-opts false nil config)))
 
-(def default-pool-opts
-  "TODO Docstring, describe edn-config
+(def ^:dynamic *conn-cbs*
+  "Map of any additional callback fns, as in `conn-opts` or `sentinel-opts`.
+  Useful for REPL/debugging/tests/etc.
 
-  Ref. https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/GenericKeyedObjectPool.html,
-       https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/BaseGenericObjectPool.html"
+  Possible keys:
+    :on-conn-close :on-conn-error
+    :on-resolve-success :on-resolve-error :on-resolve-change
+    :on-sentinels-change
 
-  (let [{:keys [config]}
-        (enc/load-edn-config
-          {:prop "taoensso.carmine.default-pool-opts.edn"
-           :res  "taoensso.carmine.default-pool-opts.edn"
-           :default opts/default-pool-opts})]
-    config))
+  All callbacks should be unary fns of a single data map."
+
+  nil)
 
 ;;;; Aliases
 
@@ -255,16 +269,12 @@
     (enc/defalias sentinel/sentinel-spec)
     (enc/defalias sentinel/sentinel-spec?)
 
-    (enc/defalias conn-mgr-init!                conns/mgr-init!)
-    (enc/defalias conn-mgr-ready?               conns/mgr-ready?)
-    (enc/defalias conn-mgr-close!               conns/mgr-close!)
-    (enc/defalias conn-mgr-master-addr-changed! conns/mgr-master-addr-changed!)))
+    (enc/defalias conn-mgr-init!                   conns/mgr-init!)
+    (enc/defalias conn-mgr-ready?                  conns/mgr-ready?)
+    (enc/defalias conn-mgr-close!                  conns/mgr-close!)
+    (enc/defalias conn-mgr-master-resolve-changed! conns/mgr-resolve-changed!)))
 
 ;;;; Connections
-
-(enc/defonce default-conn-manager-pooled_
-  "TODO Docstring"
-  (delay (conn-manager-pooled {:pool-opts default-pool-opts})))
 
 ;; TODO `with-car`, `wcar` API, etc.
 

@@ -22,10 +22,11 @@
   (test/run-tests 'taoensso.carmine-v4.conns))
 
 (enc/declare-remote
-  taoensso.carmine-v4/default-pool-opts
             taoensso.carmine-v4.sentinel/get-master-addr
             taoensso.carmine-v4.sentinel/resolve-master-addr
-  ^:dynamic taoensso.carmine-v4.sentinel/*cbs*)
+  ^:dynamic taoensso.carmine-v4.sentinel/*mgr-cbs*
+  ^:dynamic taoensso.carmine-v4/*conn-cbs*
+            taoensso.carmine-v4/default-pool-opts)
 
 (alias 'core     'taoensso.carmine-v4)
 (alias 'sentinel 'taoensso.carmine-v4.sentinel)
@@ -171,19 +172,19 @@
               closed? (try (.close socket) true (catch Exception _ nil))
               elapsed-ms (- (System/currentTimeMillis) t0)]
 
-          (when-let [cb (utils/get-at conn-opts :cbs :on-conn-close)]
-            (let [mgr-var (get conn-opts :mgr)]
-              (utils/safely
-                (cb
-                  {:cbid       :on-conn-close
-                   :addr       [ip port]
-                   :conn       this
-                   :conn-opts  conn-opts
-                   :data       data
-                   :clean?     clean?
-                   :force?     force?
-                   :elapsed-ms elapsed-ms
-                   :closed?    closed?}))))
+          (utils/cb-notify!
+            (get core/*conn-cbs*         :on-conn-close)
+            (utils/get-at conn-opts :cbs :on-conn-close)
+            (delay
+              {:cbid       :on-conn-close
+               :addr       [ip port]
+               :conn       this
+               :conn-opts  conn-opts
+               :data       data
+               :clean?     clean?
+               :force?     force?
+               :elapsed-ms elapsed-ms
+               :closed?    closed?}))
 
           closed?))))
 
@@ -200,41 +201,51 @@
                   (vreset! error_ (ex-info "Conn incorrectly resolved"))
                   false))
 
-              (if-let [reply
-                       (try
-                         ;; Nb assume any necessary auth/init already done, otherwise
-                         ;; will correctly identify connection as unready
-                         (resp/basic-ping! in out)
-                         (catch Throwable  t
-                           (vreset! error_ t)
-                           nil))]
+              (let [current-timeout-ms (.getSoTimeout socket)
+                    ready-timeout-ms
+                    (or (utils/get-at conn-opts
+                          :socket-opts :ready-timeout-ms) 0)]
 
-                ;; Ref. https://github.com/redis/redis/issues/420
-                (if (or (= reply "PONG") (= reply ["ping" ""]))
-                  true
-                  (do
-                    (vreset! error_
-                      (ex-info "Unexpected PING reply"
-                        {:reply {:value reply :type (type reply)}}))
-                    false))
-                false))
+                (.setSoTimeout socket (int ready-timeout-ms))
+
+                (if-let [reply
+                         (try
+                           ;; Nb assume any necessary auth/init already done, otherwise
+                           ;; will correctly identify connection as unready
+                           (resp/basic-ping! in out)
+                           (catch Throwable  t
+                             (vreset! error_ t)
+                             nil)
+
+                           (finally
+                             (.setSoTimeout socket current-timeout-ms)))]
+
+                  ;; Ref. https://github.com/redis/redis/issues/420
+                  (if (or (= reply "PONG") (= reply ["ping" ""]))
+                    true
+                    (do
+                      (vreset! error_
+                        (ex-info "Unexpected PING reply"
+                          {:reply {:value reply :type (type reply)}}))
+                      false))
+                  false)))
 
             elapsed-ms (- (System/currentTimeMillis) t0)]
 
         (if pass?
           true
           (do
-            (when-let [cb (utils/get-at conn-opts :cbs :on-conn-error)]
-              (utils/safely
-                (cb
-                  {:cbid       :on-conn-error
-                   :addr       [ip port]
-                   :conn       this
-                   :conn-opts  conn-opts
-                   :via        'conn-ready?
-                   :cause      @error_
-                   :elapsed-ms elapsed-ms})))
-
+            (utils/cb-notify!
+              (get core/*conn-cbs*         :on-conn-error)
+              (utils/get-at conn-opts :cbs :on-conn-error)
+              (delay
+                {:cbid       :on-conn-error
+                 :addr       [ip port]
+                 :conn       this
+                 :conn-opts  conn-opts
+                 :via        'conn-ready?
+                 :cause      @error_
+                 :elapsed-ms elapsed-ms}))
             false)))))
 
   (conn-init! [this]
@@ -302,6 +313,7 @@
                       [] reqs replies))]
 
               (utils/cb-notify-and-throw!    :on-conn-error
+                (get core/*conn-cbs*         :on-conn-error)
                 (utils/get-at conn-opts :cbs :on-conn-error)
                 (ex-info "[Carmine] Error initializing connection"
                   {:eid :carmine.conns/conn-init-error
@@ -399,6 +411,7 @@
 
       (catch Throwable t
         (utils/cb-notify-and-throw!    :on-conn-error
+          (get core/*conn-cbs*         :on-conn-error)
           (utils/get-at conn-opts :cbs :on-conn-error)
           (ex-info "[Carmine] Error creating new connection"
             {:eid :carmine.conns/new-conn-error
@@ -570,13 +583,11 @@
           (let [conn-opts (opts/parse-conn-opts false conn-opts)
                 kop-key
                 (enc/select-nested-keys conn-opts
-                  [:socket-opts
-                   {:server [:ip :port :master-name]
-                    :init   [:commands :resp3? :auth :client-name]}])
+                  [:socket-opts :init {:server [:master-name]}])
 
                 kop-key
                 (utils/dissoc-ks kop-key :socket-opts
-                  [:setSoTimeout :so-timeout :read-timeout-ms])]
+                  [:read-timeout-ms :so-timeout :setSoTimeout :ready-timeout-ms])]
 
             (with-meta kop-key
               {:__conn-opts conn-opts}))))]
@@ -587,7 +598,10 @@
     determined by key equality.
 
     We'll use a simplified submap of `conn-opts` as our kop-keys, with the
-    full `conn-opts` map as metadata."
+    full `conn-opts` map as metadata.
+
+    Any opts not present in kop-key, should be (re)initialized by ConnManager
+    after borrowing."
     [conn-opts]
     (if-let [kop-key (get (meta conn-opts) :__kop-key)]
       kop-key
@@ -624,19 +638,28 @@
    :kop-keys-by-master-name_     (atom  {}) ; {<master-name> #{<kop-key>}} for idle .clear
    })
 
+(defn- swap-set-in! [atom_ action k v]
+  (enc/swap-val! atom_ k
+    (fn [old]
+      (let [new (action (or old #{}) v)]
+        (if (empty? new) :swap/dissoc new)))))
+
 (defn- update-kop-state!
-  [kop-state conn kop-key update-kind]
+  [kop-state update-kind conn kop-key]
+  (let [{:keys [active-conns_ active-conns-by-kop-key_ kop-keys_]} kop-state
+        action (case update-kind :active conj :inactive disj)]
 
-  ;; TODO Continue from here
-  ;; TODO :active, :inactive
+    (swap!        active-conns_            action conn)
+    (swap!        kop-keys_                action kop-key)
+    (swap-set-in! active-conns-by-kop-key_ action kop-key conn)
 
-  (if-let [{:keys [master-name]}
-           (opts/get-sentinel-server
-             (.-conn-opts ^Conn conn))]
-    :TODO
-    :TODO
+    (when-let [{:keys [master-name]} (opts/get-sentinel-server (.-conn-opts ^Conn conn))]
+      (let [{:keys [active-conns-by-master-name_ kop-keys-by-master-name_]} kop-state]
 
-    ))
+        (swap-set-in! active-conns-by-master-name_ action master-name conn)
+        (swap-set-in!     kop-keys-by-master-name_ action master-name kop-key))))
+
+  nil)
 
 (deftype ConnManagerPooled
   [mgr-opts ^GenericKeyedObjectPool kop kop-state ^:volatile-mutable closed?]
@@ -655,7 +678,7 @@
   (mgr-ready?  [_] (and (not closed?) (not (.isClosed kop))))
   (mgr-return! [_ conn]
     (let [kk (conn-opts->kop-key (.-conn-opts ^Conn conn))]
-      (update-kop-state! kop-state conn kk :inactive)
+      (update-kop-state! kop-state :inactive conn kk)
 
       ;; If pool has TestOnBorrow, this check is redundant but inexpensive (cached)
       (if (conn-resolved-correctly? conn :use-cache)
@@ -666,7 +689,7 @@
 
   (mgr-remove! [_ conn data]
     (let [kk (conn-opts->kop-key (.-conn-opts ^Conn conn))]
-      (update-kop-state! kop-state conn kk :inactive)
+      (update-kop-state! kop-state :inactive conn kk)
 
       (if data
         (binding [*mgr-remove-data* data] (.invalidateObject kop kk conn))
@@ -713,20 +736,25 @@
                    (fn [{:keys [master-name master-addr]}]
                      (-mgr-resolve-changed! this master-name))}]
 
-              (binding [sentinel/*cbs* cbs] (.borrowObject kop kk)))
-            (do                             (.borrowObject kop kk)))]
+              (binding [sentinel/*mgr-cbs* cbs] (.borrowObject kop kk)))
+            (do                                 (.borrowObject kop kk)))]
 
-      (update-kop-state! kop-state conn kk :active)
+      (update-kop-state! kop-state :active conn kk)
 
-      ;; TODO init conn
-      ;;   - (re)set socket-timeout-ms
-      ;;   - (re)set client-name, db
-      ;;     - Use lazy commands with skip-replies
+      ;; Ensure borrowed connection is correctly (re)initialized,
+      ;; see `conn-opts->kop-key` for details.
+      (do
+        (let [{:keys [socket-opts]} parsed-conn-opts
+              ^Socket socket (.-socket ^Conn conn)]
 
-      #_
-      (when (contains? so :read-timeout-ms)
-        (.setSoTimeout ^Socket (.-socket conn)
-          (int (or (get so :read-timeout-ms) 0))))
+          (let [read-timeout-ms
+                (or (utils/get-first-contained socket-opts
+                      :read-timeout-ms :so-timeout :setSoTimeout) 0)]
+            (.setSoTimeout socket (int read-timeout-ms))))
+
+        ;; Currently no other relevant opts that would be excluded from
+        ;; kop-key and so require re(initialization) here.
+        )
 
       conn))
 

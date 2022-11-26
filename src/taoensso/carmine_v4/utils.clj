@@ -71,33 +71,27 @@
   ([cb      data_] (when cb (safely (cb @data_))))
   ([cb1 cb2 data_]
    (when cb1 (safely (cb1 @data_)))
-   (when cb2 (safely (cb2 @data_)))))
+   (when cb2 (safely (cb2 @data_))))
 
-(defn cb-notify-and-throw!
-  "Notifies callbacks with error data, then throws error."
-  ([cbid cb error]
-   (when cb
-     (let [data (assoc (ex-data error) :cbid cbid)
-           data
-           (if-let [cause (or (get data :cause) (ex-cause error))]
-             (assoc data :cause cause)
-             (do    data))]
-       (safely (cb data))))
+  ([cb1 cb2 cb3 data_]
+   (when cb1 (safely (cb1 @data_)))
+   (when cb2 (safely (cb2 @data_)))
+   (when cb3 (safely (cb3 @data_)))))
 
-   (throw error))
+(let [get-data_
+      (fn [error cbid]
+        (let [data (assoc (ex-data error) :cbid cbid)
+              data
+              (if-let [cause (or (get data :cause) (ex-cause error))]
+                (assoc data :cause cause)
+                (do    data))]
+          (delay data)))]
 
-  ([cbid cb1 cb2 error]
-   (when (or cb1 cb2)
-     (let [data (assoc (ex-data error) :cbid cbid)
-           data
-           (if-let [cause (or (get data :cause) (ex-cause error))]
-             (assoc data :cause cause)
-             (do    data))]
-
-       (when cb1 (safely (cb1 data)))
-       (when cb2 (safely (cb2 data)))))
-
-   (throw error)))
+  (defn cb-notify-and-throw!
+    "Notifies callbacks with error data, then throws error."
+    ([cbid cb          error] (cb-notify! cb          (get-data_ error cbid)) (throw error))
+    ([cbid cb1 cb2     error] (cb-notify! cb1 cb2     (get-data_ error cbid)) (throw error))
+    ([cbid cb1 cb2 cb3 error] (cb-notify! cb1 cb2 cb3 (get-data_ error cbid)) (throw error))))
 
 (comment
   (cb-and-throw! println :cbid1

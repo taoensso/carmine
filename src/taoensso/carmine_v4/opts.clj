@@ -41,8 +41,7 @@
   ^:dynamic taoensso.carmine-v4/*default-sentinel-opts*
             taoensso.carmine-v4/default-pool-opts
             taoensso.carmine-v4.conns/conn-manager?
-            taoensso.carmine-v4.sentinel/sentinel-spec?
-            taoensso.carmine-v4/default-conn-manager-pooled_)
+            taoensso.carmine-v4.sentinel/sentinel-spec?)
 
 (do
   (alias 'core     'taoensso.carmine-v4)
@@ -68,7 +67,8 @@
    :server      ["127.0.0.1" "6379"]
    :cbs         {:on-conn-close nil :on-conn-error nil} ; vars
    :buffer-opts {:init-size-in 8192 :init-size-out 8192}
-   :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000}
+   :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000
+                 :ready-timeout-ms 200}
    :init
    {:commands [#_["HELLO" 3 "AUTH" "my-username" "my-password" "SETNAME" "client-name"]
                #_["auth" "my-username" "my-password"]]
@@ -82,7 +82,8 @@
    #_:server ; [ip port] of Sentinel server will be auto added by resolver
    :cbs         {:on-conn-close nil :on-conn-error nil} ; vars
    :buffer-opts {:init-size-in 1024 :init-size-out 512}
-   :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000}
+   :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000
+                 :ready-timeout-ms 200}
    :init
    {:commands []
     :resp3? true
@@ -110,7 +111,8 @@
    :server      ["127.0.0.1" 6379]
    :cbs         {:on-conn-close nil, :on-conn-error nil}
    :buffer-opts {:init-size-in 8192, :init-size-out 8192}
-   :socket-opts {:ssl false, :connect-timeout-ms 400, :read-timeout-ms nil}
+   :socket-opts {:ssl false, :connect-timeout-ms 400, :read-timeout-ms nil
+                 :ready-timeout-ms 200}
    :init
    {:auth {:username "default" :password nil}
     :client-name :auto
@@ -120,7 +122,8 @@
 (def ^:private default-sentinel-conn-opts
   {:cbs         {:on-conn-close nil, :on-conn-error nil}
    :buffer-opts {:init-size-in 512, :init-size-out 256}
-   :socket-opts {:ssl false, :connect-timeout-ms 200, :read-timeout-ms 200}})
+   :socket-opts {:ssl false, :connect-timeout-ms 200, :read-timeout-ms 200
+                 :ready-timeout-ms 200}})
 
 (def default-sentinel-opts
   "Used by `core/*default-sentinel-opts*`"
@@ -273,9 +276,9 @@
     (enc/run-kv!
       (fn [k v]
         (case k
-          ;; (:ssl :connect-timeout-ms) nil ; Carmine options, noop and pass through
+          ;; Carmine options, noop and pass through
           :ssl nil
-          :connect-timeout-ms (have? [:or nil? int?] v)
+          (:connect-timeout-ms :ready-timeout-ms) (have? [:or nil? int?] v)
 
           (:setKeepAlive    :keep-alive?)    nil
           (:setOOBInline    :oob-inline?)    nil
@@ -301,7 +304,8 @@
     (enc/run-kv!
       (fn [k v]
         (case k
-          (:ssl :connect-timeout-ms) nil ; Carmine options, noop and pass through
+          ;; Carmine options, noop and pass through
+          (:ssl :connect-timeout-ms :ready-timeout-ms) nil
 
           (:setKeepAlive    :keep-alive?)    (.setKeepAlive    s (boolean v))
           (:setOOBInline    :oob-inline?)    (.setOOBInline    s (boolean v))

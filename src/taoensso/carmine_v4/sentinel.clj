@@ -30,6 +30,11 @@
   (remove-ns      'taoensso.carmine-v4.sentinel)
   (test/run-tests 'taoensso.carmine-v4.sentinel))
 
+(enc/declare-remote
+  ^:dynamic taoensso.carmine-v4/*conn-cbs*)
+
+(alias 'core 'taoensso.carmine-v4)
+
 ;;;; Dev/test config
 
 (defn- spit-sentinel-test-config
@@ -141,7 +146,7 @@ sentinel down-after-milliseconds %3$s 60000"
 
     For options docs, see `*default-sentinel-opts*` docstring."))
 
-(def ^:dynamic *cbs*
+(def ^:dynamic *mgr-cbs*
   "Private, implementation detail.
   Mechanism to allow ConnManagers to easily request cbs from
   a resolution that they've requested."
@@ -213,8 +218,9 @@ sentinel down-after-milliseconds %3$s 60000"
         false
         (do
           (utils/cb-notify!
-            (get *cbs* :on-sentinels-change)
-            (get  cbs  :on-sentinels-change)
+            (get core/*conn-cbs* :on-sentinels-change)
+            (get       *mgr-cbs* :on-sentinels-change)
+            (get            cbs  :on-sentinels-change)
             (delay
               {:cbid :on-sentinels-change
                :master-name    master-name
@@ -238,8 +244,9 @@ sentinel down-after-milliseconds %3$s 60000"
         (do
           (inc-stat! resolve-stats_ master-name :n-changes)
           (utils/cb-notify!
-            (get *cbs* :on-resolve-change)
-            (get  cbs  :on-resolve-change)
+            (get core/*conn-cbs* :on-resolve-change)
+            (get       *mgr-cbs* :on-resolve-change)
+            (get            cbs  :on-resolve-change)
             (delay
               {:cbid :on-resolve-change
                :master-name   master-name
@@ -265,8 +272,9 @@ sentinel down-after-milliseconds %3$s 60000"
         (do
           (inc-stat! resolve-stats_ master-name :n-errors)
           (utils/cb-notify-and-throw! :on-resolve-error
-            (get *cbs* :on-resolve-error)
-            (get  cbs  :on-resolve-error)
+            (get core/*conn-cbs*      :on-resolve-error)
+            (get       *mgr-cbs*      :on-resolve-error)
+            (get            cbs       :on-resolve-error)
             (ex-info "[Carmine] [Sentinel] No Sentinel server addresses configured for requested master"
               {:eid :carmine.sentinel/no-sentinel-addrs-in-spec
                :master-name   master-name
@@ -320,8 +328,9 @@ sentinel down-after-milliseconds %3$s 60000"
                   (do
                     (inc-stat! resolve-stats_ master-name :n-errors)
                     (utils/cb-notify-and-throw! :on-resolve-error
-                      (get *cbs* :on-resolve-error)
-                      (get  cbs  :on-resolve-error)
+                      (get core/*conn-cbs*      :on-resolve-error)
+                      (get       *mgr-cbs*      :on-resolve-error)
+                      (get            cbs       :on-resolve-error)
                       error))
 
                   (let [sentinel-addr (opts/parse-sock-addr ?sentinel-addr)
@@ -329,8 +338,9 @@ sentinel down-after-milliseconds %3$s 60000"
                     (inc-stat! sentinel-stats_ sentinel-addr :n-successes)
                     (inc-stat! resolve-stats_  master-name   :n-successes)
                     (utils/cb-notify!
-                      (get *cbs* :on-resolve-success)
-                      (get  cbs  :on-resolve-success)
+                      (get core/*conn-cbs* :on-resolve-success)
+                      (get       *mgr-cbs* :on-resolve-success)
+                      (get            cbs  :on-resolve-success)
                       (delay
                         {:cbid :on-resolve-success
                          :master-name   master-name
