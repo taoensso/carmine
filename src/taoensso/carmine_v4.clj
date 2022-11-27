@@ -30,11 +30,13 @@
   (run-all-carmine-tests))
 
 ;;;; TODO
-;; - Finish `conns/mgr-borrow!`
+
+;; - [Perf] Might it be possible to avoid parsing sentinel opts in sentinel ns?
+;;   Would need to incorporate the parse as part of parse-conn-opts, which'd
+;;   need to take *default-sentinel-opts*
+
 ;; - Integrate `conns/get-conn` into `with-carmine`, etc.
 ;; - Low-level API combo: `get-conn` + `with-conn` + `resp/with-replies`, etc.
-
-;; - Re-check Sentinel client docs
 ;;
 ;; - Confirm pool manager flow, closing data, etc.
 ;; - Wrap pool errors? How + where? Keep or retire `try-borrow-conn!`?
@@ -45,9 +47,12 @@
 
 ;; - Investigate Cluster
 
-;; - Core: new Pub/Sub API
-;; - Sentinel: integrate with Pub/Sub - mgr-master-addr-change!
 ;; - Common & core util to parse-?marked-ba -> [<kind> <payload>]
+;; - Core: new Pub/Sub API
+;;   - Pub/Sub + Sentinel integration
+;;     - psubscribe* to Sentinel server
+;;       - check for `switch-master` channel name
+;;         - "switch-master" <master-name> <old-ip> <old-port> <new-ip> <new-port>
 
 ;; - Test `resp/basic-ping!`
 ;; - High-level tests -> `taoensso.carmine-v4.tests.main`
@@ -105,6 +110,8 @@
 ;; - [new] Improved config: more options, more ways to set options,
 ;;         better documentation, better validation, etc.
 ;; - [new] Improved transparency (derefs, stats, cbs, timings for profiling, etc.).
+;; - [new] Common conn utils are now aliased in core Carmine ns for convenience.
+;; - [new] Support for Sentinel auto-failover, and read replicas
 
 ;;;; Config
 
@@ -187,6 +194,8 @@
   "TODO Docstring"
   (delay (conns/conn-manager-pooled {:pool-opts default-pool-opts})))
 
+(comment @default-conn-manager-pooled_)
+
 (def ^:dynamic *default-conn-opts*
   "TODO Docstring, describe conn-opts, edn-config"
   (let [{:keys [config]}
@@ -212,18 +221,23 @@
   Useful for REPL/debugging/tests/etc.
 
   Possible keys:
-    :on-conn-close :on-conn-error
-    :on-resolve-success :on-resolve-error :on-resolve-change
-    :on-sentinels-change
+    :on-conn-close
+    :on-conn-error
+    :on-resolve-success
+    :on-resolve-error
+    :on-changed-master
+    :on-changed-replicas
+    :on-changed-sentinels
 
-  All callbacks should be unary fns of a single data map."
+  Values (callbacks) should be unary fns of a single data map."
 
   nil)
 
 ;;;; Aliases
 
 (do
-  (enc/defalias com/reply-error?)
+  (do ; Encore
+    (enc/defalias enc/load-edn-config))
 
   (do ; Read opts
     (enc/defalias com/skip-replies)
@@ -233,6 +247,7 @@
     (enc/defalias com/natural-reads))
 
   (do ; Reply parsing
+    (enc/defalias com/reply-error?)
     (enc/defalias com/unparsed)
     (enc/defalias com/parse)
     (enc/defalias com/parse-aggregates)
@@ -258,21 +273,19 @@
 
   (do ; Connections
     (enc/defalias conns/conn?)
-    (enc/defalias conns/conn-manager?)
-
     (enc/defalias conns/conn-ready?)
     (enc/defalias conns/conn-close!)
-
-    (enc/defalias conns/conn-manager-unpooled) ; TODO Docstring
-    (enc/defalias conns/conn-manager-pooled)   ; TODO Docstring
 
     (enc/defalias sentinel/sentinel-spec)
     (enc/defalias sentinel/sentinel-spec?)
 
-    (enc/defalias conn-mgr-init!                   conns/mgr-init!)
-    (enc/defalias conn-mgr-ready?                  conns/mgr-ready?)
-    (enc/defalias conn-mgr-close!                  conns/mgr-close!)
-    (enc/defalias conn-mgr-master-resolve-changed! conns/mgr-resolve-changed!)))
+    (enc/defalias conns/conn-manager?)
+    (enc/defalias conns/conn-manager-unpooled)
+    (enc/defalias conns/conn-manager-pooled)
+    (enc/defalias       conn-manager-init!           conns/mgr-init!)
+    (enc/defalias       conn-manager-ready?          conns/mgr-ready?)
+    (enc/defalias       conn-manager-close!          conns/mgr-close!)
+    (enc/defalias       conn-manager-master-changed! conns/mgr-master-changed!)))
 
 ;;;; Connections
 

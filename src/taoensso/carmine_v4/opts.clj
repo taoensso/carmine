@@ -40,6 +40,7 @@
   ^:dynamic taoensso.carmine-v4/*default-conn-opts*
   ^:dynamic taoensso.carmine-v4/*default-sentinel-opts*
             taoensso.carmine-v4/default-pool-opts
+            taoensso.carmine-v4/default-conn-manager-pooled_
             taoensso.carmine-v4.conns/conn-manager?
             taoensso.carmine-v4.sentinel/sentinel-spec?)
 
@@ -94,14 +95,18 @@
 (def ^:private ref-sentinel-opts
   {:conn-opts ref-sentinel-conn-opts
    :cbs
-   {:on-resolve-success  nil
-    :on-resolve-error    nil
-    :on-resolve-change   nil
-    :on-sentinels-change nil} ; vars
+   {:on-resolve-success   nil
+    :on-resolve-error     nil
+    :on-changed-master    nil
+    :on-changed-replicas  nil
+    :on-changed-sentinels nil} ; vars
 
-   :add-missing-sentinels? true
-   :retry-delay-ms         250
-   :resolve-timeout-ms     2000})
+   :update-sentinels?     true
+   :update-replicas?      false
+   :prefer-read-replica?  false
+
+   :retry-delay-ms        250
+   :resolve-timeout-ms    2000})
 
 ;;;; Default opts
 
@@ -128,14 +133,18 @@
 (def default-sentinel-opts
   "Used by `core/*default-sentinel-opts*`"
   {:cbs
-   {:on-resolve-success  nil
-    :on-resolve-error    nil
-    :on-resolve-change   nil
-    :on-sentinels-change nil}
+   {:on-resolve-success   nil
+    :on-resolve-error     nil
+    :on-changed-master    nil
+    :on-changed-replicas  nil
+    :on-changed-sentinels nil}
 
-   :add-missing-sentinels? true
-   :retry-delay-ms         250
-   :resolve-timeout-ms     2000
+   :update-sentinels?    true
+   :update-replicas?     false
+   :prefer-read-replica? false
+
+   :retry-delay-ms       250
+   :resolve-timeout-ms   2000
 
    :conn-opts default-sentinel-conn-opts})
 
@@ -219,7 +228,7 @@
         (let [{:keys [ip port]} server]
           {:server (parse-sock-addr ip port (meta server))})
 
-        (#{:master-name :sentinel-spec}
+        (#{:master-name :sentinel-spec               }
          #{:master-name :sentinel-spec :sentinel-opts})
 
         (let [{:keys [master-name sentinel-spec sentinel-opts]} server]
@@ -232,6 +241,7 @@
                 (if sentinel-opts
                   (assoc server :sentinel-opts (-parse-sentinel-opts sentinel-opts))
                   (do    server))]
+
             {:server server}))
 
         (throw     (ex-info "Unexpected :server keys" {:keys (keys server)})))
@@ -522,12 +532,14 @@
     opts
     (try
       (have? map? opts)
-      (have? [:ks<= #{:id :conn-opts :cbs :add-missing-sentinels?
+      (have? [:ks<= #{:id :conn-opts :cbs
+                      :update-sentinels? :update-replicas? :prefer-read-replica?
                       :retry-delay-ms :resolve-timeout-ms}] opts)
 
       (let [{:keys [cbs]} opts]
-        (have? [:ks<= #{:on-resolve-success :on-resolve-error :on-resolve-change :on-sentinels-change}] cbs)
-        (have? [:or nil? var?] :in                                                                (vals cbs)))
+        (have? [:ks<= #{:on-resolve-success :on-resolve-error
+                        :on-changed-master :on-changed-replicas :on-changed-sentinels}] cbs)
+        (have? [:or nil? var?] :in                                                (vals cbs)))
 
       (if-let [conn-opts (not-empty (get opts :conn-opts))]
         (assoc opts :conn-opts (-parse-conn-opts :in-sentinel-opts conn-opts))

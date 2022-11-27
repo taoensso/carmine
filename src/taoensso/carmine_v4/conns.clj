@@ -22,8 +22,8 @@
   (test/run-tests 'taoensso.carmine-v4.conns))
 
 (enc/declare-remote
-            taoensso.carmine-v4.sentinel/get-master-addr
-            taoensso.carmine-v4.sentinel/resolve-master-addr
+            taoensso.carmine-v4.sentinel/resolve-addr
+            taoensso.carmine-v4.sentinel/resolved-addr?
   ^:dynamic taoensso.carmine-v4.sentinel/*mgr-cbs*
   ^:dynamic taoensso.carmine-v4/*conn-cbs*
             taoensso.carmine-v4/default-pool-opts)
@@ -92,9 +92,9 @@
     "Performs any preparations necessary for borrowing (e.g. spin up connections).
     Blocking. Returns true iff successful.")
 
-  (^:private -mgr-resolve-changed!
+  (^:private -mgr-master-changed!
    [mgr master-name] [mgr master-name await-active-ms]
-   "See `mgr-resolve-changed!`.")
+   "See `mgr-master-changed!`.")
 
   (^:public mgr-ready? [mgr] "Returns true iff ConnManager is ready for borrowing (e.g. not closed).")
   (^:public mgr-close! [mgr data] [mgr data await-active-ms]
@@ -108,15 +108,15 @@
        **WARNING** Can be dangerous to data integrity (pipelines may be interrupted
        mid-execution, etc.). Use this only if you understand the risks!"))
 
-(defn ^:public mgr-resolve-changed!
-  "Informs ConnManager that the given named Redis master address has changed
+(defn ^:public mgr-master-changed!
+  "Informs ConnManager that the address for the given named Redis master has changed
   (for example due to Sentinel failover). Returns true iff successful.
 
   The ConnManager will destroy any idle or returned Conns for the given master.
   If `await-active-ms` is provided, also blocks to await the return of any active
   conns to master - before forcibly interrupting any still active after wait."
-  ([mgr master-name                ] (-mgr-resolve-changed! mgr (enc/as-qname master-name)))
-  ([mgr master-name await-active-ms] (-mgr-resolve-changed! mgr (enc/as-qname master-name) await-active-ms)))
+  ([mgr master-name                ] (-mgr-master-changed! mgr (enc/as-qname master-name)))
+  ([mgr master-name await-active-ms] (-mgr-master-changed! mgr (enc/as-qname master-name) await-active-ms)))
 
 (defn ^:public conn-manager?
   "Returns true iff given argument satisfies the IConnManager
@@ -133,8 +133,8 @@
 (comment (conn-name nil))
 
 (deftype ^:private Conn [^Socket socket ip port conn-opts in out ^:volatile-mutable closed?]
-  java.io.Closeable (close [this] (-conn-close! this nil false {:via 'java.io.Closeable}))
 
+  java.io.Closeable (close [this] (-conn-close! this nil false {:via 'java.io.Closeable}))
   Object
   (toString [_] ; "Conn[ip:port, managed, ready]"
     (str "Conn[" ip ":" port ", "
@@ -325,14 +325,11 @@
                   @conn-error_))))))))
 
   (conn-resolved-correctly? [this use-cache?]
-    (if-let [{:keys [master-name sentinel-spec]}
+    (if-let [{:keys [master-name sentinel-spec sentinel-opts]}
              (opts/get-sentinel-server conn-opts)]
-      (let [current-master-addr
-            (if use-cache?
-              (sentinel/get-master-addr     sentinel-spec master-name)
-              (sentinel/resolve-master-addr sentinel-spec master-name nil))]
-        (= current-master-addr [ip port]))
-      true)))
+
+      (sentinel/resolved-addr? sentinel-spec master-name
+        sentinel-opts [ip port] use-cache?))))
 
 (defn ^:public conn?
   "Returns true iff given argument is a Carmine Conn (connection)."
@@ -387,8 +384,9 @@
 (comment (.close (new-socket "127.0.0.1" 6379 {:ssl true :connect-timeout-ms 2000})))
 
 (defn new-conn
-  "Low-level. Returns a new Conn to specific [ip port] socket address.
-  Doesn't do any parsing, Sentinel resolution, or connection management."
+  "Low-level implementation detail.
+  Returns a new Conn to specific [ip port] socket address without parsing,
+  Sentinel resolution, or connection management."
   ^Conn [ip port conn-opts]
   (let [t0   (System/currentTimeMillis)
         ip   (have string? ip)
@@ -445,8 +443,9 @@
           (vector? server) (let [[ip port] server] (new-conn ip port conn-opts))
           (map?    server) ; As `opts/get-sentinel-server`
           (let [{:keys [master-name sentinel-spec sentinel-opts]} server
-                [ip port] (sentinel/resolve-master-addr master-name
-                            sentinel-spec sentinel-opts)]
+                [ip port] (sentinel/resolve-addr sentinel-spec master-name
+                            sentinel-opts false)]
+
             (new-conn ip port conn-opts))
 
           (throw ; Shouldn't be possible after validation
@@ -458,7 +457,8 @@
   [^Conn conn f]
   (try
     (let [result (f conn (.-in conn) (.-out conn))]
-      (-conn-close! conn true false {:via 'with-conn}))
+      (-conn-close! conn true false {:via 'with-conn})
+      result)
 
     (catch Throwable t
       (-conn-close! conn false false {:via 'with-conn :cause t})
@@ -486,8 +486,12 @@
 (deftype ConnManagerUnpooled
   [mgr-opts ^AtomicLong n-created* active-conns_ ^:volatile-mutable closed?]
 
-  Object              (toString [_] (str "ConnManagerUnpooled[" (if closed? "closed" "ready") "]"))
-  java.io.Closeable   (close [this] (mgr-close! this {:via 'java.io.Closeable}))
+  java.io.Closeable (close [this] (mgr-close! this {:via 'java.io.Closeable}))
+  Object
+  (toString [_]
+    (str "ConnManagerUnpooled["
+      (if closed? "closed" "ready") "]"))
+
   clojure.lang.IDeref
   (deref [this]
     {:ready?   (not closed?)
@@ -501,8 +505,8 @@
   (mgr-return! [_ conn]      (do (swap! active-conns_ disj conn) (-conn-close! conn true  true {:via 'mgr-return!})))
   (mgr-remove! [_ conn data] (do (swap! active-conns_ disj conn) (-conn-close! conn false true {:via 'mgr-remove! :data data})))
 
-  (-mgr-resolve-changed! [mgr master-name]                 (not closed?)) ; Noop
-  (-mgr-resolve-changed! [mgr master-name await-active-ms] (not closed?)) ; Noop
+  (-mgr-master-changed! [mgr master-name]                 (not closed?)) ; Noop
+  (-mgr-master-changed! [mgr master-name await-active-ms] (not closed?)) ; Noop
 
   (mgr-init!   [_ conn-opts] (not closed?)) ; Noop
   (mgr-borrow! [this conn-opts]
@@ -552,10 +556,18 @@
     true))
 
 (defn ^:public conn-manager-unpooled
-  "TODO Docstring
-  Returns a new stateful ConnManagerUnpooled for use in `conn-opts`."
-  ^ConnManagerUnpooled [mgr-opts]
-  (ConnManagerUnpooled. mgr-opts (AtomicLong. 0)
+  "Returns a new stateful unpooled ConnManager for use in `conn-opts`.
+
+  Using this as a ConnManager is similar to using no ConnManager, but
+  enables use of the ConnManager API:
+    - Deref for status, connection stats, etc.
+    - Close with `conn-manager-close!` or `java.io.Closeable`.
+    - See also `conn-manager-init!`, `conn-manager-ready?`, etc.
+
+  `mgr-opts` is currently unused."
+
+  ^ConnManagerUnpooled [_mgr-opts]
+  (ConnManagerUnpooled. _mgr-opts (AtomicLong. 0)
     (atom #{}) false))
 
 (comment
@@ -664,8 +676,12 @@
 (deftype ConnManagerPooled
   [mgr-opts ^GenericKeyedObjectPool kop kop-state ^:volatile-mutable closed?]
 
-  Object            (toString [_] (str "ConnManagerPooled[" (if closed? "closed" "ready") "]"))
   java.io.Closeable (close [this] (mgr-close! this {:via 'java.io.Closeable}))
+  Object
+  (toString [_] ; "ConnManagerPooled[ready, sub-pools=3]"
+    (str "ConnManagerPooled["
+      (if closed? "closed" "ready") ", "
+      "sub-pools=" (count @(get kop-state :kop-keys_)) "]"))
 
   clojure.lang.IDeref
   (deref [this]
@@ -707,8 +723,8 @@
       (.preparePool kop kk) ; Ensure that configured min idle instances ready
       true))
 
-  (-mgr-resolve-changed! [mgr master-name] (-mgr-resolve-changed! mgr master-name nil))
-  (-mgr-resolve-changed! [mgr master-name await-active-ms]
+  (-mgr-master-changed! [mgr master-name] (-mgr-master-changed! mgr master-name nil))
+  (-mgr-master-changed! [mgr master-name await-active-ms]
     (let [master-name (enc/as-qname master-name)]
 
       ;; Clear idle Conns to master
@@ -721,7 +737,7 @@
       (if await-active-ms
         (let [{:keys [active-conns-by-master-name_]} kop-state]
           (await-active-conns await-active-ms
-            {:via 'mgr-resolve-changed! :master-name master-name}
+            {:via 'mgr-master-changed! :master-name master-name}
             (fn  get-current  [] (get          @active-conns-by-master-name_ master-name))
             (fn pull-current! [] (enc/pull-val! active-conns-by-master-name_ master-name))))
         true)))
@@ -732,9 +748,10 @@
           conn
           (if using-sentinel?
             (let [cbs
-                  {:on-resolve-change
-                   (fn [{:keys [master-name master-addr]}]
-                     (-mgr-resolve-changed! this master-name))}]
+                  {:on-changed-master
+                   (fn [{:keys [master-name changed]}]
+                     (-mgr-master-changed! this
+                       (have (get changed :new))))}]
 
               (binding [sentinel/*mgr-cbs* cbs] (.borrowObject kop kk)))
             (do                                 (.borrowObject kop kk)))]
@@ -775,7 +792,24 @@
           true)))))
 
 (defn ^:public conn-manager-pooled
-  "TODO Docstring, incl. :pool-opts {}, mention `default-pool-opts`"
+  "Returns a new stateful pooled ConnManager for use in `conn-opts`.
+  Pooling is backed by Apache Commons Pool 2.
+
+  This is a solid and highly configurable, general-purpose connection
+  manager for Carmine and should generally be your default choice
+  unless you have very specific/unusual requirements.
+
+  ConnManager API:
+    - Deref for status, connection stats, etc.
+    - Close with `conn-manager-close!` or `java.io.Closeable`.
+    - See also `conn-manager-init!`, `conn-manager-ready?`, etc.
+
+  Options:
+    - `:pool-opts` - Options for Manager's underlying
+                     `org.apache.commons.pool2.impl.GenericKeyedObjectPool`.
+                     For more info, see `default-pool-opts` or the
+                     `GenericKeyedObjectPool` Javadoc."
+
   [mgr-opts]
   (let [pool-opts (utils/merge-opts core/default-pool-opts (get mgr-opts :pool-opts))
         factory
