@@ -101,9 +101,10 @@ sentinel down-after-milliseconds %3$s 60000"
 
 (defprotocol ^:private ISentinelSpec
   "Internal protocol, not for public use or extension."
-  (update-addrs!  [spec cbs master-name kind f])
-  (resolve-addr   [spec     master-name sentinel-opts use-cache?])
-  (resolved-addr? [spec     master-name sentinel-opts use-cache? addr]))
+  (sentinel-opts  [spec])
+  (update-addrs!  [spec master-name cbs                  kind f])
+  (resolve-addr   [spec master-name parsed-sentinel-opts use-cache?])
+  (resolved-addr? [spec master-name parsed-sentinel-opts use-cache? addr]))
 
 (def ^:dynamic *mgr-cbs*
   "Private, implementation detail.
@@ -111,7 +112,7 @@ sentinel down-after-milliseconds %3$s 60000"
   a resolution that they've requested."
   nil)
 
-(enc/defn-cached ^:private unique-addrs {:size 100 :gc-every 100}
+(enc/defn-cached ^:private unique-addrs {:size 128 :gc-every 100}
   [addrs-state]
   (let [vs (vals addrs-state)]
     {:masters   (into #{}       (map :master)         vs)
@@ -155,7 +156,7 @@ sentinel down-after-milliseconds %3$s 60000"
 (comment (inc-stat! (atom {}) "foo" :k1))
 
 (deftype SentinelSpec
-  [base-sentinel-opts
+  [spec-sentinel-opts
    addrs-state_    ; Delayed {<master-name>   {:master <addr>, :replicas [<addr>s], :sentinels [<addr>s]}}
    resolve-stats_  ;         {<master-name>   {:keys [n-requests n-attempts n-successes n-errors n-resolved-to-X n-changes-to-X]}
    sentinel-stats_ ;         {<sentinel-addr> {:keys [           n-attempts n-successes n-errors n-ignorant n-unreachable n-misidentified]}
@@ -172,7 +173,7 @@ sentinel down-after-milliseconds %3$s 60000"
   clojure.lang.IDeref
   (deref [this]
     (let [addrs-state (force @addrs-state_)]
-      {:sentinel-opts base-sentinel-opts
+      {:sentinel-opts spec-sentinel-opts
        :nodes-addrs   addrs-state
        :stats
        (let [{:keys [masters replicas sentinels]} (unique-addrs addrs-state)]
@@ -185,7 +186,8 @@ sentinel down-after-milliseconds %3$s 60000"
           :sentinel-stats @sentinel-stats_})}))
 
   ISentinelSpec
-  (update-addrs! [this cbs master-name kind f]
+  (sentinel-opts [_] spec-sentinel-opts)
+  (update-addrs! [this master-name cbs kind f]
     (have? [:el #{:master :replicas :sentinels}] kind)
     (let [master-name (enc/as-qname master-name)
           master? (identical? kind :master)]
@@ -228,20 +230,17 @@ sentinel down-after-milliseconds %3$s 60000"
                 {:cbid           cbid
                  :master-name    master-name
                  :sentinel-spec  this
-                 :sentinel-opts  base-sentinel-opts
+                 :sentinel-opts  spec-sentinel-opts
                  :changed        {:old old-val, :new new-val}})))
           true)
 
         false)))
 
-  (resolve-addr [this master-name sentinel-opts use-cache?]
+  (resolve-addr [this master-name parsed-sentinel-opts use-cache?]
     (let [master-name (enc/as-qname      master-name)
           node-addrs  (get @addrs-state_ master-name)
 
-          sentinel-opts
-          (opts/parse-sentinel-opts :with-dynamic-default
-            base-sentinel-opts sentinel-opts)
-
+          sentinel-opts           parsed-sentinel-opts
           {:keys [prefer-read-replica?]} sentinel-opts]
 
       (if use-cache?
@@ -310,7 +309,7 @@ sentinel down-after-milliseconds %3$s 60000"
                    (inc-stat! resolve-stats_ master-name :n-errors)
 
                    (when-let [addrs @reported-sentinel-addrs_]
-                     (update-addrs! this cbs master-name :sentinels
+                     (update-addrs! this master-name cbs :sentinels
                        (fn [old] (add-addrs->back old addrs))))
 
                    (utils/cb-notify-and-throw! :on-resolve-error
@@ -324,11 +323,11 @@ sentinel down-after-milliseconds %3$s 60000"
                          resolved-addr           (opts/parse-sock-addr resolved-addr)]
 
                      (when-let [addrs @reported-replica-addrs_]
-                       (update-addrs! this cbs master-name :replicas
+                       (update-addrs! this master-name cbs :replicas
                          (fn [old] (reset-addrs addrs))))
 
                      (when-let [addrs @reported-sentinel-addrs_]
-                       (update-addrs! this cbs master-name :sentinels
+                       (update-addrs! this master-name cbs :sentinels
                          (fn [old] (add-addrs->back old addrs))))
 
                      (inc-stat! sentinel-stats_ reporting-sentinel-addr :n-successes)
@@ -346,7 +345,7 @@ sentinel down-after-milliseconds %3$s 60000"
                           :ms-elapsed (- (System/currentTimeMillis) t0)}))
 
                      (when (identical? confirmed-role :master)
-                       (update-addrs! this cbs master-name :master
+                       (update-addrs! this master-name cbs :master
                          (fn [_old] resolved-addr)))
 
                      resolved-addr)))]
@@ -465,10 +464,8 @@ sentinel down-after-milliseconds %3$s 60000"
                         (Thread/sleep retry-delay-ms)
                         (recur (inc n-retries)))))))))))))
 
-  (resolved-addr? [this master-name sentinel-opts use-cache? addr]
-    (let [sentinel-opts
-          (opts/parse-sentinel-opts :with-dynamic-default
-            base-sentinel-opts sentinel-opts)]
+  (resolved-addr? [this master-name parsed-sentinel-opts use-cache? addr]
+    (let [sentinel-opts parsed-sentinel-opts]
 
       (when-not use-cache? ; Update cache
         (resolve-addr this master-name sentinel-opts false))

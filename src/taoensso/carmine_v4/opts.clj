@@ -42,7 +42,8 @@
             taoensso.carmine-v4/default-pool-opts
             taoensso.carmine-v4/default-conn-manager-pooled_
             taoensso.carmine-v4.conns/conn-manager?
-            taoensso.carmine-v4.sentinel/sentinel-spec?)
+            taoensso.carmine-v4.sentinel/sentinel-spec?
+            taoensso.carmine-v4.sentinel/sentinel-opts)
 
 (do
   (alias 'core     'taoensso.carmine-v4)
@@ -217,7 +218,28 @@
 
 (declare ^:private -parse-sentinel-opts)
 
-(defn- parse-server->opts [server]
+(defn- parse-sentinel-server [default-sentinel-opts server]
+  (have? map? server)
+  (let [{:keys [master-name sentinel-spec sentinel-opts]} server
+
+        master-name (enc/as-qname (have [:or string? enc/named?] master-name))
+        sentinel-opts
+        (let [spec (have [:or sentinel/sentinel-spec? dummy-val?]
+                     @(have var? sentinel-spec))
+
+              spec-sentinel-opts
+              (when (sentinel/sentinel-spec? spec)
+                (sentinel/sentinel-opts      spec))]
+
+          (-parse-sentinel-opts
+            (or (utils/merge-opts default-sentinel-opts spec-sentinel-opts
+                  (have [:or nil? map? ] sentinel-opts)) {})))]
+
+    (assoc server
+      :master-name   master-name
+      :sentinel-opts sentinel-opts)))
+
+(defn- parse-server->opts [default-sentinel-opts server]
   (try
     (enc/cond
       (vector?         server) {:server (parse-sock-addr server)}
@@ -230,19 +252,7 @@
 
         (#{:master-name :sentinel-spec               }
          #{:master-name :sentinel-spec :sentinel-opts})
-
-        (let [{:keys [master-name sentinel-spec sentinel-opts]} server]
-          (have? [:or string? enc/named?] master-name)
-          (have? var?                                      sentinel-spec)
-          (have? [:or sentinel/sentinel-spec? dummy-val?] @sentinel-spec)
-          (have? [:or nil? map?]                           sentinel-opts)
-          (let [server (assoc server :master-name (enc/as-qname master-name))
-                server
-                (if sentinel-opts
-                  (assoc server :sentinel-opts (-parse-sentinel-opts sentinel-opts))
-                  (do    server))]
-
-            {:server server}))
+        {:server (parse-sentinel-server default-sentinel-opts server)}
 
         (throw     (ex-info "Unexpected :server keys" {:keys (keys server)})))
       :else (throw (ex-info "Unexpected :server type" {:type (type server)})))
@@ -257,18 +267,143 @@
           t)))))
 
 (deftest ^:private _parse-server->opts
-  [(is (= (parse-server->opts ["127.0.0.1" "80"])           {:server ["127.0.0.1" 80]}))
-   (is (= (parse-server->opts {:ip "127.0.0.1" :port "80"}) {:server ["127.0.0.1" 80]}))
-   (is (= (parse-server->opts {:sentinel-spec #'dummy-var, :master-name :foo/bar})
-          {:server            {:sentinel-spec #'dummy-var, :master-name "foo/bar"}}))
+  [(is (= (parse-server->opts nil ["127.0.0.1" "80"])           {:server ["127.0.0.1" 80]}))
+   (is (= (parse-server->opts nil {:ip "127.0.0.1" :port "80"}) {:server ["127.0.0.1" 80]}))
+   (is (= (parse-server->opts nil {:sentinel-spec #'dummy-var, :master-name :foo/bar})
+          {:server                {:sentinel-spec #'dummy-var, :master-name "foo/bar" :sentinel-opts {}}}))
 
-   (is (->> (parse-server->opts {:ip "127.0.0.1" :port "80" :invalid true})
+   (is (->> (parse-server->opts nil {:ip "127.0.0.1" :port "80" :invalid true})
             (enc/throws? :any {:eid :carmine.conn-opts/invalid-server})))
 
-   (is (= (parse-server->opts "redis://redistogo:pass@panga.redistogo.com:9475/0")
+   (is (= (parse-server->opts nil "redis://redistogo:pass@panga.redistogo.com:9475/0")
           {:server ["panga.redistogo.com" 9475],
            :init {:auth {:username "redistogo", :password "pass"},
                   :select-db 0}}))])
+
+;;;; conn-opts
+
+(declare ^:private socket-opts-dry-run!)
+
+(defn- -parse-conn-opts
+  "Returns valid parsed conn-opts, or throws.
+  Uncached and expensive."
+  [in-sentinel-opts? default-sentinel-opts opts]
+  (if (and (map? opts) (get opts :skip-validation?)) ; Undocumented
+    opts
+    (try
+      (have? map? opts)
+      (let [{:keys [mgr server cbs socket-opts buffer-opts init]} opts
+            {:keys [auth]} init]
+
+        (if in-sentinel-opts?
+          ;; [ip port] of Sentinel server will be auto added by resolver
+          (have? [:ks<= #{:id :mgr #_:server :cbs :socket-opts :buffer-opts :init}] opts)
+          (have? [:ks<= #{:id :mgr   :server :cbs :socket-opts :buffer-opts :init}] opts))
+
+        (when-let [mgr (have [:or nil? var?] mgr)]
+          ;; (have? [:or conns/conn-manager? dummy-val?] (force @mgr)) ; Don't realise
+          (have?    [:or conns/conn-manager? dummy-val? delay?] @mgr))
+
+        (have? [:ks<= #{:on-conn-close :on-conn-error}] cbs)
+        (have? [:or var? nil?] :in                (vals cbs))
+
+        (when socket-opts (socket-opts-dry-run! socket-opts))
+
+        ;; socket-opts will be verified during socket creation
+        (have? [:ks<= #{:init-size-in :init-size-out}] buffer-opts)
+
+        (if in-sentinel-opts?
+          (have? [:ks<= #{:commands :auth :resp3? #_:client-name #_:select-db}] init)
+          (have? [:ks<= #{:commands :auth :resp3?   :client-name   :select-db}] init))
+
+        (have? [:ks<= #{:username :password}] auth)
+
+        (if in-sentinel-opts?
+          (do    opts) ; Doesn't have :server
+          (conj  opts (parse-server->opts default-sentinel-opts server))))
+
+      (catch Throwable t
+        (throw
+          (ex-info "[Carmine] Invalid connection options"
+            {:eid  :carmine.conn-opts/invalid
+             :opts {:id (get opts :id), :value opts, :type (type opts)}
+             :purpose
+             (if in-sentinel-opts?
+               :conn-to-sentinel-server
+               :conn-to-redis-server)}
+            t))))))
+
+(deftest ^:private _parse-conn-opts
+  [(is (map? (-parse-conn-opts false nil     ref-conn-opts)))
+   (is (map? (-parse-conn-opts false nil default-conn-opts)))
+
+   (is (map? (-parse-conn-opts true  nil     ref-sentinel-conn-opts)))
+   (is (map? (-parse-conn-opts true  nil default-sentinel-conn-opts)))
+
+   (is (= (-parse-conn-opts false nil {:server ["127.0.0.1" "6379"]})
+          {:server ["127.0.0.1" 6379]}))
+
+   (is (->> (-parse-conn-opts false nil {:server ["127.0.0.1" "invalid-port"]})
+            (enc/throws? :any)))
+
+   (is (->> (-parse-conn-opts false nil ^:my-meta {:server ["127.0.0.1" "6379"]})
+            (meta) :my-meta) "Retains metadata")])
+
+(let [;; Opts are pure data => safe to cache
+      cached2 (enc/cache {:size 128 :gc-every 1000} (partial -parse-conn-opts false))
+      cached3
+      (enc/cache {:size 1024 :gc-every 8000}
+        (fn [dyn-conn-opts dyn-sentinel-opts conn-opts]
+          (have? [:or nil? map?] dyn-conn-opts dyn-sentinel-opts conn-opts)
+          (cached2
+            dyn-sentinel-opts
+            (or (utils/merge-opts dyn-conn-opts conn-opts) {}))))]
+
+  (defn parse-conn-opts [with-defaults? conn-opts]
+    (if with-defaults?
+      (cached3 core/*default-conn-opts* core/*default-sentinel-opts* conn-opts)
+      (cached2                          nil                          conn-opts))))
+
+(comment (enc/qb 1e6 (parse-conn-opts true ref-conn-opts))) ; 218
+
+(deftest ^:private _parse-conn-opts
+  [(is (map? (parse-conn-opts true  {})))
+   (is (map? (parse-conn-opts false {:server ["127.0.0.1" "6379"]})))
+   (is (->>  (parse-conn-opts false {}) (enc/throws? :any)))])
+
+;;;; sentinel-opts
+
+(defn- -parse-sentinel-opts
+  "Returns valid parsed sentinel-opts, or throws.
+  Uncached and expensive."
+  [opts]
+  (if (and (map? opts) (get opts :skip-validation?)) ; Undocumented
+    opts
+    (try
+      (have? map? opts)
+      (have? [:ks<= #{:id :conn-opts :cbs :retry-delay-ms :resolve-timeout-ms
+                      :update-sentinels? :update-replicas? :prefer-read-replica?}] opts)
+
+      (let [{:keys [cbs]} opts]
+        (have? [:ks<= #{:on-resolve-success :on-resolve-error
+                        :on-changed-master :on-changed-replicas :on-changed-sentinels}] cbs)
+        (have? [:or nil? var?] :in                                                (vals cbs)))
+
+      (if-let [conn-opts (not-empty (get opts :conn-opts))]
+        (assoc opts :conn-opts (-parse-conn-opts :in-sentinel-opts nil conn-opts))
+        (do    opts))
+
+      (catch Throwable t
+        (throw
+          (ex-info "[Carmine] Invalid Sentinel options"
+            {:eid :carmine.sentinel-opts/invalid
+             :opts {:id (get opts :id), :value opts, :type (type opts)}}
+            t))))))
+
+(enc/defn-cached parse-sentinel-opts {:size 128 :gc-every 1000}
+  [sentinel-opts] (-parse-sentinel-opts sentinel-opts))
+
+(comment (enc/qb 1e6 (parse-sentinel-opts ref-sentinel-opts))) ; 234.71
 
 ;;;; Config mutators
 
@@ -430,147 +565,3 @@
           (throw! k v kop-opts)))
       kop-opts)
     kop))
-
-;;;; conn-opts
-
-(defn- -parse-conn-opts
-  "Returns valid parsed conn-opts, or throws.
-  Uncached and expensive."
-  [in-sentinel-opts? opts]
-  (if (and (map? opts) (get opts :skip-validation?)) ; Undocumented
-    opts
-    (try
-      (have? map? opts)
-      (let [{:keys [mgr server cbs socket-opts buffer-opts init]} opts
-            {:keys [auth]} init]
-
-        (if in-sentinel-opts?
-          ;; [ip port] of Sentinel server will be auto added by resolver
-          (have? [:ks<= #{:id :mgr #_:server :cbs :socket-opts :buffer-opts :init}] opts)
-          (have? [:ks<= #{:id :mgr   :server :cbs :socket-opts :buffer-opts :init}] opts))
-
-        (when-let [mgr (have [:or nil? var?] mgr)]
-          ;; (have? [:or conns/conn-manager? dummy-val?] (force @mgr)) ; Don't realise
-          (have?    [:or conns/conn-manager? dummy-val? delay?] @mgr))
-
-        (have? [:ks<= #{:on-conn-close :on-conn-error}] cbs)
-        (have? [:or var? nil?] :in                (vals cbs))
-
-        (when socket-opts (socket-opts-dry-run! socket-opts))
-
-        ;; socket-opts will be verified during socket creation
-        (have? [:ks<= #{:init-size-in :init-size-out}] buffer-opts)
-
-        (if in-sentinel-opts?
-          (have? [:ks<= #{:commands :auth :resp3? #_:client-name #_:select-db}] init)
-          (have? [:ks<= #{:commands :auth :resp3?   :client-name   :select-db}] init))
-
-        (have? [:ks<= #{:username :password}] auth)
-
-        (if in-sentinel-opts?
-          (do    opts)
-          (conj  opts (parse-server->opts server))))
-
-      (catch Throwable t
-        (throw
-          (ex-info "[Carmine] Invalid connection options"
-            {:eid  :carmine.conn-opts/invalid
-             :opts {:id (get opts :id), :value opts, :type (type opts)}
-             :purpose
-             (if in-sentinel-opts?
-               :conn-to-sentinel-server
-               :conn-to-redis-server)}
-            t))))))
-
-(deftest ^:private _parse-conn-opts
-  [(is (map? (-parse-conn-opts false     ref-conn-opts)))
-   (is (map? (-parse-conn-opts false default-conn-opts)))
-
-   (is (map? (-parse-conn-opts true      ref-sentinel-conn-opts)))
-   (is (map? (-parse-conn-opts true  default-sentinel-conn-opts)))
-
-   (is (= (-parse-conn-opts false {:server ["127.0.0.1" "6379"]})
-          {:server ["127.0.0.1" 6379]}))
-
-   (is (->> (-parse-conn-opts false {:server ["127.0.0.1" "invalid-port"]})
-            (enc/throws? :any)))
-
-   (is (->> (-parse-conn-opts false ^:my-meta {:server ["127.0.0.1" "6379"]})
-            (meta) :my-meta) "Retains metadata")])
-
-(let [;; Opts are pure data => safe to cache
-      cached1 (enc/cache {:size 128 :gc-every 1000} (partial -parse-conn-opts false))
-      cached2
-      (enc/cache {:size 256 :gc-every 4000}
-        (fn [opts1 opts2]
-          (have? [:or nil? map?]         opts1 opts2)
-          (cached1 (or (utils/merge-opts opts1 opts2) {}))))]
-
-  (defn parse-conn-opts
-    "Returns validated `conn-opts` merged over defaults, or throws.
-    NB: no dynamic *vars* or defaults should apply to config after parsing.
-    Cached."
-    [with-dynamic-defaults? conn-opts]
-    (if with-dynamic-defaults?
-      (cached2 core/*default-conn-opts* conn-opts)
-      (cached1                          conn-opts))))
-
-(comment (enc/qb 1e6 (parse-conn-opts true ref-conn-opts))) ; 218
-
-(deftest ^:private _parse-conn-opts
-  [(is (map? (parse-conn-opts true  {})))
-   (is (map? (parse-conn-opts false {:server ["127.0.0.1" "6379"]})))
-   (is (->>  (parse-conn-opts false {}) (enc/throws? :any)))])
-
-;;;; sentinel-opts
-
-(defn- -parse-sentinel-opts
-  "Returns valid parsed sentinel-opts, or throws.
-  Uncached and expensive."
-  [opts]
-  (if (and (map? opts) (get opts :skip-validation?)) ; Undocumented
-    opts
-    (try
-      (have? map? opts)
-      (have? [:ks<= #{:id :conn-opts :cbs
-                      :update-sentinels? :update-replicas? :prefer-read-replica?
-                      :retry-delay-ms :resolve-timeout-ms}] opts)
-
-      (let [{:keys [cbs]} opts]
-        (have? [:ks<= #{:on-resolve-success :on-resolve-error
-                        :on-changed-master :on-changed-replicas :on-changed-sentinels}] cbs)
-        (have? [:or nil? var?] :in                                                (vals cbs)))
-
-      (if-let [conn-opts (not-empty (get opts :conn-opts))]
-        (assoc opts :conn-opts (-parse-conn-opts :in-sentinel-opts conn-opts))
-        (do    opts))
-
-      (catch Throwable t
-        (throw
-          (ex-info "[Carmine] Invalid Sentinel options"
-            {:eid :carmine.sentinel-opts/invalid
-             :opts {:id (get opts :id), :value opts, :type (type opts)}}
-            t))))))
-
-(let [;; Opts are pure data => safe to cache
-      cached1 (enc/cache {:size 128 :gc-every 1000} -parse-sentinel-opts)
-      cached3
-      (enc/cache {:size 512 :gc-every 4000}
-        (fn [opts1 opts2 opts3]
-          (have? [:or nil? map?]         opts1 opts2 opts3)
-          (cached1 (or (utils/merge-opts opts1 opts2 opts3) {}))))]
-
-  (defn parse-sentinel-opts
-    "Returns validated `sentinel-opts` merged over defaults, or throws.
-    NB: no dynamic *vars* or defaults should apply to config after parsing.
-    Cached."
-    [with-dynamic-defaults? spec-sentinel-opts sentinel-opts]
-    (if with-dynamic-defaults?
-      (cached3 core/*default-sentinel-opts* spec-sentinel-opts sentinel-opts)
-      (cached3 nil                          spec-sentinel-opts sentinel-opts))))
-
-(comment (enc/qb 1e6 (parse-sentinel-opts true {} ref-sentinel-opts))) ; 234.71
-
-(deftest ^:private _parse-sentinel-opts
-  [(is (map? (parse-sentinel-opts true  {} {})))
-   (is (map? (parse-sentinel-opts false {} {})))])

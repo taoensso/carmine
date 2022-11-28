@@ -31,10 +31,6 @@
 
 ;;;; TODO
 
-;; - [Perf] Might it be possible to avoid parsing sentinel opts in sentinel ns?
-;;   Would need to incorporate the parse as part of parse-conn-opts, which'd
-;;   need to take *default-sentinel-opts*
-
 ;; - Integrate `conns/get-conn` into `with-carmine`, etc.
 ;; - Low-level API combo: `get-conn` + `with-conn` + `resp/with-replies`, etc.
 ;;
@@ -214,7 +210,7 @@
            :res  "taoensso.carmine.default-sentinel-opts.edn"
            :default opts/default-sentinel-opts})]
 
-    (opts/parse-sentinel-opts false nil config)))
+    (opts/parse-sentinel-opts config)))
 
 (def ^:dynamic *conn-cbs*
   "Map of any additional callback fns, as in `conn-opts` or `sentinel-opts`.

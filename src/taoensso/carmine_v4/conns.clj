@@ -430,8 +430,8 @@
   ^Conn [conn-opts parse-opts? use-mgr?]
   (let [conn-opts
         (if parse-opts?
-          (opts/parse-conn-opts :with-dynamic-default conn-opts)
-          (do                                         conn-opts))]
+          (opts/parse-conn-opts :with-defaults conn-opts)
+          (do                                  conn-opts))]
 
     (if-let [mgr-var (and use-mgr? (get conn-opts :mgr))]
 
@@ -590,11 +590,10 @@
 ;; conn-opts->kop-key
 (let [cached ; Opts are pure data => safe to cache
       (enc/cache {:size 128 :gc-every 1000}
-        (fn [conn-opts]
-          (have? map? conn-opts)
-          (let [conn-opts (opts/parse-conn-opts false conn-opts)
-                kop-key
-                (enc/select-nested-keys conn-opts
+        (fn [parsed-conn-opts]
+          (have? map? parsed-conn-opts)
+          (let [kop-key
+                (enc/select-nested-keys parsed-conn-opts
                   [:socket-opts :init {:server [:master-name]}])
 
                 kop-key
@@ -602,7 +601,7 @@
                   [:read-timeout-ms :so-timeout :setSoTimeout :ready-timeout-ms])]
 
             (with-meta kop-key
-              {:__conn-opts conn-opts}))))]
+              {:__conn-opts parsed-conn-opts}))))]
 
   (defn- conn-opts->kop-key
     "Our ConnManagerPooled is backed by a KeyedObjectPool that is essentially a
@@ -614,12 +613,12 @@
 
     Any opts not present in kop-key, should be (re)initialized by ConnManager
     after borrowing."
-    [conn-opts]
-    (if-let [kop-key (get (meta conn-opts) :__kop-key)]
+    [parsed-conn-opts]
+    (if-let [kop-key (get (meta parsed-conn-opts) :__kop-key)]
       kop-key
       (do
         (when-let [kc *kop-counter*] (kc))
-        (cached conn-opts)))))
+        (cached parsed-conn-opts)))))
 
 (defn- kop-key->conn-opts [kop-key]
   (when-let [conn-opts (get (meta kop-key) :__conn-opts)]
@@ -628,7 +627,7 @@
 (deftest ^:private kop-keys
   (let [kc (enc/counter 0)]
     (binding [*kop-counter* kc]
-      (let [result (-> {:server ["127.0.0.1" "6379"], :socket-opts {:read-timeout-ms 1000}}
+      (let [result (-> {:server ["127.0.0.1" 6379], :socket-opts {:read-timeout-ms 1000}}
                      conn-opts->kop-key kop-key->conn-opts
                      conn-opts->kop-key kop-key->conn-opts
                      conn-opts->kop-key kop-key->conn-opts)]
@@ -713,10 +712,7 @@
     true)
 
   (mgr-init! [_ unparsed-conn-opts]
-    (let [parsed-conn-opts
-          (opts/parse-conn-opts :with-dynamic-defaults
-            unparsed-conn-opts)
-
+    (let [parsed-conn-opts (opts/parse-conn-opts :with-defaults unparsed-conn-opts)
           kk (conn-opts->kop-key parsed-conn-opts)]
 
       (swap! (get kop-state :kop-keys_) conj kk)
