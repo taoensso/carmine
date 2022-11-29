@@ -32,17 +32,8 @@
 
 ;;;; TODO
 
-;; - Add first low-level API tests using conns, conn managers x2, replies, etc.
-;;   - `taoensso.carmine-v4.tests.main`
-;;     - Test `resp/basic-ping!`
-;;     - Confirm pool manager flow, closing data, etc.
-;;     - Test hard & soft shutdown
-;;       - Ability to interrupt long-blocking reqs (grep "v3 conn closing" in this ns)
-;;     - Test Sentinel, resolve changes
-;;     - Confirm :mgr works correctly w/in sentinel-opts/conn-opts
-
 ;; - Investigate Cluster
-;; - Pause v4 work
+;; - Pause v4 work for now?
 
 ;; - Common & core util to parse-?marked-ba -> [<kind> <payload>]
 ;; - Core: new Pub/Sub API
@@ -52,12 +43,11 @@
 ;;         - "switch-master" <master-name> <old-ip> <old-port> <new-ip> <new-port>
 
 ;; - Polish
-;;   - Check ns layout + hierarchy, incl. conns, replies, types, tests
-;;   - `defprotocol` docstrings
-;;   - Check all errors: eids, messages, data, cb-ids
+;;   - Check all errors: eids, messages, data, cbids
 ;;   - Check all dynamic bindings and sys-vals, ensure accessible
-;;   - Document `*default-conn-opts*`,     incl. cbs, Sentinel :server
+;;   - Document `*default-conn-opts*`,     incl. cbs
 ;;   - Document `*default-sentinel-opts*`, incl. cbs
+;;   - Complete (esp. high-level / integration) tests
 ;;   - Grep for TODOs
 
 ;; - Refactor commands, add modules support
@@ -65,20 +55,10 @@
 ;; - Refactor helpers API, etc.
 ;; - Consider later refactoring mq?
 
-;; - Final Jedis IO benching (grep for `.read`), and/or remove Jedis code?
-;;   - `jedis.RedisInputStream`: readLineBytes, readIntCrLf, readLongCrLf
-;;   - `jedis.RedisOutputStream`: writeCrLf, writeIntCrLf
-
 ;; - Plan for ->v4 upgrade with back compatibility? ^{:deprecated <str>}
-
 ;; - v4 wiki with changes, migration, new features, examples, etc.
 ;;   - Mention `redis-call`, esp. re: modules and new API stuff
 ;; - First alpha release
-
-;; - Could add `to-streaming-freeze` that uses the RESP3 API streaming bulk
-;;   type to freeze objects directly to output stream (i.e. without intermediary
-;;   ba)? Probably most useful for large objects, but complex, involves tradeoffs,
-;;   and how often would this be useful?
 
 ;;;; CHANGELOG
 ;; - [new] Full RESP3 support, incl. streaming, etc.
@@ -92,6 +72,9 @@
 ;;   - Transparency (deref stats, cbs, timings for profiling, etc.).
 ;;     - Derefs: Conns, ConnManagers, SentinelSpecs.
 ;;   - Protocols for extension by advanced users.
+;;   - Full integration with Sentinel, incl.:
+;;     - Auto invalidation of pool conns on master changes.
+;;     - Auto verification of addresses on pool borrows.
 ;;
 ;; - [new] Common conn utils are now aliased in core Carmine ns for convenience.
 ;; - [new] Improved pool efficiency, incl. smarter sub-pool keying.
@@ -261,7 +244,11 @@
   (do ; RESP3
     (enc/defalias resp/redis-call)
     (enc/defalias resp/redis-call*)
-    (enc/defalias resp/local-echo))
+    (enc/defalias resp/redis-calls)
+    (enc/defalias resp/redis-calls*)
+    (enc/defalias resp/local-echo)
+    (enc/defalias resp/local-echos)
+    (enc/defalias resp/local-echos*))
 
   (do ; Connections
     (enc/defalias conns/conn?)

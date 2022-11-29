@@ -36,49 +36,103 @@
       read-opts-natural
       (com/get-read-opts))))
 
+(defn throw-no-ctx-error! [called]
+  (throw
+    (ex-info "[Carmine] Carmine command/s called without expected `wcar` or `with-car` context."
+      {:eid :carmine.conns/no-context
+       :called called})))
+
 (let [get-read-opts get-read-opts]
+
+  ;; TODO These could alternatively write immediately (i.e. forgo pending-reqs*).
+  ;; Awaiting Sentinel & Cluster to decide.
+
   (defn ^:public redis-call*
-    "Vector-args version of `redis-call`."
-    [args]
-    ;; Could alternatively write immediately (i.e. forgo pending-reqs*).
-    ;; Awaiting Sentinel & Cluster to decide.
-    (when-let [^Ctx ctx *ctx*]
-      (.addLast ^LinkedList (.-pending-reqs* ctx)
-        (Request. (get-read-opts ctx) args)))
-    nil))
+    "Sends 1 arbitrary command to Redis server.
+    Takes a vector of args for the command call:
+      (wcar {} (redis-call* [\"set\" \"my-key\" \"my-val\"])) => \"OK\"
+
+    Useful for DSLs, and to call commands (including Redis module commands)
+    that might not yet have a native Clojure fn provided by Carmine."
+    [call-args]
+    (if-let [^Ctx ctx *ctx*]
+      (do
+        (.addLast ^LinkedList (.-pending-reqs* ctx)
+          (Request. (get-read-opts ctx) call-args))
+        nil)
+      (throw-no-ctx-error! call-args)))
+
+  (defn ^:public redis-calls*
+    "Send >=0 arbitrary commands to Redis server.
+    Takes a vector of calls, with each call a vector of args:
+      (wcar {}
+        (redis-calls* [[\"set\" \"my-key\" \"my-val\"]
+                       [\"get\" \"my-key\"]])) => [\"OK\" \"my-val\"]
+
+    Useful for DSLs, and to call commands (including Redis module commands)
+    that might not yet have a native Clojure fn provided by Carmine."
+    [calls]
+    (if-let [^Ctx ctx *ctx*]
+      (let [^LinkedList pending-reqs (.-pending-reqs* ctx)
+            read-opts                (get-read-opts   ctx)]
+        (run!
+          (fn [call-args] (.addLast pending-reqs (Request. read-opts call-args)))
+          calls)
+        nil)
+      (throw-no-ctx-error! calls))))
 
 (let [redis-call* redis-call*]
   (defn ^:public redis-call
-    "Low-level generic Redis command util.
-    Sends given arguments to Redis server as a single arbitrary command call:
-      (redis-call \"ping\")
-      (redis-call \"set\" \"my-key\" \"my-val\")
+    "Sends 1 arbitrary command to Redis server.
+    Takes varargs for the command call:
+      (wcar {} (redis-call \"set\" \"my-key\" \"my-val\")) => \"OK\"
 
-    As with all Carmine Redis command fns: expects to be called within a `wcar`
-    body, and returns nil. The server's reply to this command will be included
-    in the replies returned by the enclosing `wcar`.
+    Useful for DSLs, and to call commands (including Redis module commands)
+    that might not yet have a native Clojure fn provided by Carmine."
+    [& call-args] (redis-call* call-args)))
 
-    `redis-call` is useful for DSLs, and to call commands (including Redis module
-    commands) that might not yet have a native Clojure fn provided by Carmine."
-    [& args] (redis-call* args)))
+(let [redis-calls* redis-calls*]
+  (defn ^:public redis-calls
+    "Send >=0 arbitrary commands to Redis server.
+    Takes vararg calls, with each call a vector of args:
+      (wcar {}
+        (redis-call [\"set\" \"my-key\" \"my-val\"]
+                    [\"get\" \"my-key\"])) => [\"OK\" \"my-val\"]
+
+    Useful for DSLs, and to call commands (including Redis module commands)
+    that might not yet have a native Clojure fn provided by Carmine."
+    [& calls] (redis-calls* calls)))
 
 (let [get-read-opts get-read-opts]
   (defn ^:public local-echo
-    "Acts exactly like the Redis `echo` command, except entirely local: no data
-    is actually sent to/from Redis server.
+    "Like the `echo` command except entirely local: no data is sent to/from Redis:
+      (wcar {} (local-echo \"foo\")) => \"foo\"
 
-    As with all Carmine Redis command fns: expects to be called within a `wcar`
-    body, and returns nil. The server's reply to this command will be included
-    in the replies returned by the enclosing `wcar`.
+    Useful for DSLs and other advanced applications. Can be combined with
+    `with-replies` or nested `wcar` calls to achieve some very powerful effects."
+    [x]
+    (if-let [^Ctx ctx *ctx*]
+      (do
+        (.addLast ^LinkedList (.-pending-reqs* ctx)
+          (LocalEchoRequest. (get-read-opts ctx) x))
+        nil)
+      (throw-no-ctx-error! ["LOCAL-ECHO" x])))
 
-    `local-echo` is useful for DSLs and other advanced applications.
-    Can be combined with `with-replies` or nested `wcar` calls to achieve some
-    very powerful effects."
-    [reply]
-    (when-let [^Ctx ctx *ctx*]
-      (.addLast ^LinkedList (.-pending-reqs* ctx)
-        (LocalEchoRequest. (get-read-opts ctx) reply)))
-    nil))
+  (defn ^:public local-echos*
+    "Like `local-echo`, except takes a vector of >=0 args to echo."
+    [xs]
+    (if-let [^Ctx ctx *ctx*]
+      (let [^LinkedList pending-reqs (.-pending-reqs* ctx)
+            read-opts                (get-read-opts   ctx)]
+        (run!
+          (fn [x] (.addLast pending-reqs (LocalEchoRequest. read-opts x)))
+          xs)
+        nil)
+      (throw-no-ctx-error! (into ["LOCAL-ECHOS"] xs))))
+
+  (defn ^:public local-echos
+    "Like `local-echo`, except takes >=0 varargs to echo."
+    [& xs] (local-echos* xs)))
 
 (do ; Basic commands for testing
   (defn ping []    (redis-call "PING"))
@@ -251,8 +305,8 @@
         (set? b1)
         (case b1
           #{}                       [nil                    bn]
-          #{:as-vec}                [{:as-vec?        true} bn]
-          #{:natural-reads}         [{:natural-reads? true} bn]
+          #{:as-vec               } [{:as-vec?        true} bn]
+          #{        :natural-reads} [{:natural-reads? true} bn]
           #{:as-vec :natural-reads} [{:as-vec?        true
                                       :natural-reads? true} bn]
           (throw

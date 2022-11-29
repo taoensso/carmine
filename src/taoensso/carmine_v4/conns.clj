@@ -404,6 +404,12 @@
   "Low-level implementation detail.
   Returns a new Conn to specific [ip port] socket address without parsing,
   Sentinel resolution, or connection management."
+
+  ;; Note could instead use Jedis streams below:
+  ;;   - `jedis.RedisInputStream`: readLineBytes, readIntCrLf, readLongCrLf
+  ;;   - `jedis.RedisOutputStream`:  writeCrLf, writeIntCrLf
+  ;; But initial benching showed little/no benefit.
+
   ^Conn [ip port conn-opts]
   (let [t0   (System/currentTimeMillis)
         ip   (have string? ip)
@@ -455,8 +461,8 @@
       ;; Request a conn via manager
       (mgr-borrow! (force @mgr-var) conn-opts)
 
-      (let [;; conn-opts (dissoc conn-opts :mgr) ; Unnecessary?
-            {:keys [server]}     conn-opts]
+      (let [conn-opts (dissoc conn-opts :mgr)
+            {:keys [server]}  conn-opts]
         (enc/cond
           (vector? server) (let [[ip port] server] (new-conn ip port conn-opts))
           (map?    server) ; As `opts/get-sentinel-server`
@@ -542,7 +548,7 @@
   Loops, waiting up to ~`await-ms` for (fn-get-current) to be empty.
   If still not empty, forcibly closes every conn in (fn-pull-current!)."
   [await-ms close-data fn-get-current fn-pull-current!]
-  (if-let [await-ms (enc/as-?pos-int await-ms)]
+  (if-let [await-ms (enc/as-?nat-int await-ms)]
     (let [timeout-at-ms (+ (System/currentTimeMillis) await-ms)]
       (loop []
         (cond
