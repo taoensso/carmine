@@ -176,7 +176,7 @@
 (declare ^:private complete-replies)
 
 (defn with-replies
-  "Establishes (possibly-nested) Ctx, flushing requests in body,
+  "Establishes (possibly-nested) Ctx, flushes requests in body,
   and returns completed replies."
   ([in out natural-reads? as-vec? body-fn] ; Used by `with-carmine`, etc.
    (when-let [^Ctx parent-ctx *ctx*]
@@ -238,3 +238,26 @@
     (.write out ba-command 0 ba-len)
     (.flush out)
     (read/read-reply read-opts-natural in)))
+
+;;;;
+
+(defn parse-body-reply-opts
+  "Returns [?reply-opts body]"
+  [body]
+  (let [[b1 & bn] body]
+    (case b1
+      (:as-vec :as-pipeline) [{:as-vec? true} bn]
+      (cond
+        (set? b1)
+        (case b1
+          #{}                       [nil                    bn]
+          #{:as-vec}                [{:as-vec?        true} bn]
+          #{:natural-reads}         [{:natural-reads? true} bn]
+          #{:as-vec :natural-reads} [{:as-vec?        true
+                                      :natural-reads? true} bn]
+          (throw
+            (ex-info "[Carmine] Unexpected reply-opts in body"
+              {:opts {:value b1 :type (type b1)}})))
+
+        (map? b1) [b1    bn]
+        :else     [nil body]))))

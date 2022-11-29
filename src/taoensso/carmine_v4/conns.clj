@@ -86,9 +86,9 @@
     ConnManagerUnpooled
     ConnManagerPooled"
 
-  (^:private mgr-return!       [mgr ^Conn conn]      "Releases given Conn back to ConnManager. Returns true iff successful.")
-  (^:private mgr-remove!       [mgr ^Conn conn data] "Invalidates and destroys given Conn. Returns true iff successful.")
-  (^:private mgr-borrow! ^Conn [mgr conn-opts]
+  (^:private  mgr-return! [mgr conn]      "Releases given Conn back to ConnManager. Returns true iff successful.")
+  (^:private  mgr-remove! [mgr conn data] "Invalidates and destroys given Conn. Returns true iff successful.")
+  (^:private -mgr-borrow! [mgr conn-opts]
    "Borrows a (possibly new) Conn from ConnManager that conforms to given `conn-opts`.
     Returns the Conn, or throws. Blocking.")
 
@@ -121,6 +121,18 @@
   conns to master - before forcibly interrupting any still active after wait."
   ([mgr master-name                ] (-mgr-master-changed! mgr (enc/as-qname master-name)))
   ([mgr master-name await-active-ms] (-mgr-master-changed! mgr (enc/as-qname master-name) await-active-ms)))
+
+(defn- mgr-borrow! [mgr conn-opts]
+  (let [t0 (System/currentTimeMillis)
+        error_ (volatile! nil)]
+    (or
+      (try (-mgr-borrow! mgr conn-opts) (catch Throwable t (vreset! error_ t) nil))
+      (throw
+        (ex-info "[Carmine] Error borrowing connection from ConnManager"
+          {:eid :carmine.conns/borrow-conn-error
+           :conn-opts  conn-opts
+           :elapsed-ms (- (System/currentTimeMillis) t0)}
+          @error_)))))
 
 (defn ^:public conn-manager?
   "Returns true iff given argument satisfies the IConnManager
@@ -166,8 +178,8 @@
       ;; request closing by their manager
       :if-let [mgr-var (if force? nil (get conn-opts :mgr))]
       (if clean?
-        (mgr-return! @mgr-var this)
-        (mgr-remove! @mgr-var this data))
+        (mgr-return! (force @mgr-var) this)
+        (mgr-remove! (force @mgr-var) this data))
 
       :else
       (do
@@ -202,7 +214,7 @@
               (if (conn-resolved-correctly? this :use-cache)
                 true
                 (do
-                  (vreset! error_ (ex-info "Conn incorrectly resolved"))
+                  (vreset! error_ (ex-info "Conn incorrectly resolved" {}))
                   false))
 
               (let [current-timeout-ms (.getSoTimeout socket)
@@ -333,7 +345,8 @@
              (opts/get-sentinel-server conn-opts)]
 
       (sentinel/resolved-addr? sentinel-spec master-name
-        sentinel-opts [ip port] use-cache?))))
+        sentinel-opts [ip port] use-cache?)
+      true)))
 
 (defn ^:public conn?
   "Returns true iff given argument is a Carmine Conn (connection)."
@@ -442,7 +455,8 @@
       ;; Request a conn via manager
       (mgr-borrow! (force @mgr-var) conn-opts)
 
-      (let [{:keys [server]} conn-opts]
+      (let [;; conn-opts (dissoc conn-opts :mgr) ; Unnecessary?
+            {:keys [server]}     conn-opts]
         (enc/cond
           (vector? server) (let [[ip port] server] (new-conn ip port conn-opts))
           (map?    server) ; As `opts/get-sentinel-server`
@@ -468,22 +482,11 @@
       (-conn-close! conn false false {:via 'with-conn :cause t})
       (throw t))))
 
-(comment (with-conn (new-conn "127.0.0.1" 6379 {}) (fn [c _ _] (conn-ready? c))))
+(comment
+  (with-conn (new-conn "127.0.0.1" 6379 {})
+    (fn [c _ _] (conn-ready? c))))
 
 ;;;; ConnManagerUnpooled
-
-(defn- try-borrow-conn! [mgr mgr-opts conn-opts body-fn]
-  (let [t0 (System/currentTimeMillis)
-        error_ (volatile! nil)]
-    (or
-      (try (body-fn) (catch Throwable t (vreset! error_ t) nil))
-      (throw
-        (ex-info "[Carmine] Error borrowing connection from manager"
-          {:eid :carmine.conns/borrow-conn-error
-           :mgr-opts   mgr-opts
-           :conn-opts  conn-opts
-           :elapsed-ms (- (System/currentTimeMillis) t0)}
-          @error_)))))
 
 (declare ^:private await-active-conns)
 
@@ -513,15 +516,13 @@
   (-mgr-master-changed! [mgr master-name await-active-ms] (not closed?)) ; Noop
 
   (mgr-init!   [_ conn-opts] (not closed?)) ; Noop
-  (mgr-borrow! [this conn-opts]
-    (try-borrow-conn! this mgr-opts conn-opts
-      (fn []
-        (if closed?
-          (throw (ex-info "[Carmine] Cannot borrow from closed ConnManagerUnpooled" {}))
-          (when-let [conn (get-conn conn-opts true false)]
-            (.getAndIncrement n-created*)
-            (swap! active-conns_ conj conn)
-            (do                       conn))))))
+  (-mgr-borrow! [this conn-opts]
+    (if closed?
+      (throw (ex-info "[Carmine] Cannot borrow from closed ConnManagerUnpooled" {}))
+      (when-let [conn (get-conn conn-opts true false)]
+        (.getAndIncrement n-created*)
+        (swap! active-conns_ conj conn)
+        (do                       conn))))
 
   (mgr-close! [this data                ] (mgr-close! this data nil))
   (mgr-close! [this data await-active-ms]
@@ -575,14 +576,14 @@
     (atom #{}) false))
 
 (comment
-  (def my-mgr (conn-manager-unpooled {}))
-  (with-conn
-    (get-conn {:server ["127.0.0.1" 6379] :mgr #'my-mgr} true true)
-    (fn [_ in out]
-      (resp/with-replies in out true true
-        (fn [] (resp/redis-call "PING")))))
-
-  @my-mgr)
+  (do
+    (def my-mgr (conn-manager-unpooled {}))
+    [(with-conn
+       (get-conn {:server ["127.0.0.1" 6379] :mgr #'my-mgr} true true)
+       (fn [_ in out]
+         (resp/with-replies in out true true
+           (fn [] (resp/redis-call "PING")))))
+     @my-mgr]))
 
 ;;;; ConnManagerPooled (using Apache Commons Pool 2)
 ;; Ref. org.apache.commons.pool2.impl.BaseGenericObjectPool,
@@ -690,7 +691,7 @@
   (deref [this]
     {:ready?   (mgr-ready? this)
      :mgr-opts mgr-opts
-     :pool     kop
+     :pool_    (delay kop) ; Delayed since printing kop is super noisy
      :stats_   (delay (get-kop-stats kop @(get kop-state :kop-keys_)))})
 
   IConnManager
@@ -742,38 +743,41 @@
             (fn pull-current! [] (enc/pull-val! active-conns-by-master-name_ master-name))))
         true)))
 
-  (mgr-borrow! [this parsed-conn-opts]
-    (let [using-sentinel? (opts/get-sentinel-server parsed-conn-opts)
-          kk              (conn-opts->kop-key       parsed-conn-opts)
-          conn
-          (if using-sentinel?
-            (let [cbs
-                  {:on-changed-master
-                   (fn [{:keys [master-name changed]}]
-                     (-mgr-master-changed! this
-                       (have (get changed :new))))}]
+  (-mgr-borrow! [this parsed-conn-opts]
+    (if-not (mgr-ready? this)
+      (throw (ex-info "[Carmine] Cannot borrow from closed ConnManagerPooled" {}))
+      (let [using-sentinel? (opts/get-sentinel-server parsed-conn-opts)
+            kk              (conn-opts->kop-key       parsed-conn-opts)
+            conn
+            (if using-sentinel?
+              (let [cbs
+                    {:on-changed-master
+                     (fn [{:keys [master-name changed]}]
+                       (-mgr-master-changed! this
+                         (have (get changed :new))))}]
 
-              (binding [sentinel/*mgr-cbs* cbs] (.borrowObject kop kk)))
-            (do                                 (.borrowObject kop kk)))]
+                (binding [sentinel/*mgr-cbs* cbs] (.borrowObject kop kk)))
+              (do                                 (.borrowObject kop kk)))]
 
-      (update-kop-state! kop-state :active conn kk)
+        (swap!        (get kop-state :kop-keys_) conj kk)
+        (update-kop-state! kop-state :active conn kk)
 
-      ;; Ensure borrowed connection is correctly (re)initialized,
-      ;; see `conn-opts->kop-key` for details.
-      (do
-        (let [{:keys [socket-opts]} parsed-conn-opts
-              ^Socket socket (.-socket ^Conn conn)]
+        ;; Ensure borrowed connection is correctly (re)initialized,
+        ;; see `conn-opts->kop-key` for details.
+        (do
+          (let [{:keys [socket-opts]} parsed-conn-opts
+                ^Socket socket (.-socket ^Conn conn)]
 
-          (let [read-timeout-ms
-                (or (utils/get-first-contained socket-opts
-                      :read-timeout-ms :so-timeout :setSoTimeout) 0)]
-            (.setSoTimeout socket (int read-timeout-ms))))
+            (let [read-timeout-ms
+                  (or (utils/get-first-contained socket-opts
+                        :read-timeout-ms :so-timeout :setSoTimeout) 0)]
+              (.setSoTimeout socket (int read-timeout-ms))))
 
-        ;; Currently no other relevant opts that would be excluded from
-        ;; kop-key and so require re(initialization) here.
-        )
+          ;; Currently no other relevant opts that would be excluded from
+          ;; kop-key and so require re(initialization) here.
+          )
 
-      conn))
+        conn)))
 
   (mgr-close! [this data                ] (mgr-close! this data nil))
   (mgr-close! [this data await-active-ms]
@@ -824,10 +828,12 @@
                   conn (get-conn conn-opts false false)]
               (DefaultPooledObject. conn))))
 
-        kop (GenericKeyedObjectPool. (factory))]
+        kop (GenericKeyedObjectPool. factory)]
 
     (opts/kop-opts-set! kop pool-opts)
     (ConnManagerPooled. mgr-opts kop (new-kop-state) false)))
+
+(comment (conn-manager-pooled {}))
 
 (defn- get-kop-stats [^GenericKeyedObjectPool kop kop-keys]
   {:counts

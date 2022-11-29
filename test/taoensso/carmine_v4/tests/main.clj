@@ -19,8 +19,8 @@
 ;; - Interactions between systems (read-opts, parsers, etc.)
 
 (deftest ^:private _wcar-basics
-  [(is (= (wcar {}              (resp/ping))  "PONG"))
-   (is (= (wcar {:as-vec? true} (resp/ping)) ["PONG"]))
+  [(is (= (wcar {}                 (resp/ping))  "PONG"))
+   (is (= (wcar {} {:as-vec? true} (resp/ping)) ["PONG"]))
 
    (is (= (wcar {} (resp/local-echo "hello")) "hello") "Local echo")
 
@@ -69,3 +69,42 @@
          ["PONG" "PONG" "PONG"])
 
      "Nested :as-vec")])
+
+;;;; Scratch
+
+(comment ; TODO Testing v3 conn closing
+  ;; TODO Make a test
+  (def c (nconn))
+
+  ;; Push
+  (let [{:keys [in out]} c]
+    (resp/with-replies in out false false
+      (fn [] (resp/redis-call "lpush" "l1" "x"))))
+
+  ;; Pop
+  (future
+    (let [{:keys [in out]} c
+          reply
+          (try
+            (resp/with-replies in out false false
+              (fn []
+                (resp/redis-call "blpop" "l1" 3)))
+            (catch Throwable t t))]
+      (println "RESPONSE: " reply)))
+
+  (let [{:keys [in out]} c]
+    (resp/with-replies in out false false
+      (fn []
+        (resp/redis-call "blpop" "l1" "3"))))
+
+  (v3-conns/close-conn c))
+
+(comment
+  (v3-protocol/with-context (nconn)
+    (v3-protocol/with-replies
+      (v3-cmds/enqueue-request 1 ["SET" "KX" "VY"])
+      (v3-cmds/enqueue-request 1 ["GET" "KX"])))
+
+  (let [c (nconn)] (.read (:in c))) ; Inherently blocking
+  (let [c (nconn)] (v3-conns/close-conn c) (.read (:in c))) ; Closed
+  )

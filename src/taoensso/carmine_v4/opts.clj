@@ -288,7 +288,7 @@
   "Returns valid parsed conn-opts, or throws.
   Uncached and expensive."
   [in-sentinel-opts? default-sentinel-opts opts]
-  (if (and (map? opts) (get opts :skip-validation?)) ; Undocumented
+  (if (and (map? opts) (get opts :skip-parsing?)) ; Undocumented
     opts
     (try
       (have? map? opts)
@@ -377,7 +377,7 @@
   "Returns valid parsed sentinel-opts, or throws.
   Uncached and expensive."
   [opts]
-  (if (and (map? opts) (get opts :skip-validation?)) ; Undocumented
+  (if (and (map? opts) (get opts :skip-parsing?)) ; Undocumented
     opts
     (try
       (have? map? opts)

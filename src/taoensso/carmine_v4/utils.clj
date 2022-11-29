@@ -10,18 +10,22 @@
 
 ;;;;
 
-(let [merge2
+(let [not-found (Object.)
+      merge2
       (fn [left right]
         (reduce-kv
           (fn rf [rm lk lv]
-            (if (map? lv)
-              (if (contains? rm lk)
-                (assoc rm lk (reduce-kv rf (get rm lk) lv))
-                (assoc rm lk                           lv))
+            (let [rv (get rm lk not-found)]
+              (enc/cond
+                (identical? rv not-found)
+                (assoc rm lk lv)
 
-              (if (contains? rm lk)
-                (do    rm)
-                (assoc rm lk lv))))
+                (map? rv)
+                (if (map? lv)
+                  (assoc rm lk (reduce-kv rf rv lv))
+                  (do    rm))
+
+                :else rm)))
 
           right left))]
 
@@ -51,6 +55,7 @@
 (deftest ^:private _merge-opts
   [(is (= (merge-opts {:a 1 :b 1}       {:a      2})  {:a 2,       :b 1}))
    (is (= (merge-opts {:a {:a1 1} :b 1} {:a {:a1 2}}) {:a {:a1 2}, :b 1}))
+   (is (= (merge-opts {:a {:a1 1} :b 1} {:a     nil}) {:a nil,     :b 1}))
 
    (is (= (merge-opts {:a 1} {:a 2} {:a 3}) {:a 3}))
 
@@ -58,7 +63,7 @@
    (is (= (merge-opts {:a 1} {    } {:a 3}) {:a 3}))
    (is (= (merge-opts {    } {:a 2} {:a 3}) {:a 3}))])
 
-(comment (enc/qb 1e6 (merge-opts {:a 1} {:a 2} {:a 3}))) ; 148.25
+(comment (enc/qb 1e6 (merge-opts {:a 1} {:a 2} {:a 3}))) ; 121.64
 
 ;;;;
 

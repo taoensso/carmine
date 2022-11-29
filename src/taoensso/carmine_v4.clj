@@ -15,6 +15,7 @@
    [taoensso.carmine-v4.resp.write  :as write]
    [taoensso.carmine-v4.resp        :as resp]
 
+   [taoensso.carmine-v4.utils    :as utils]
    [taoensso.carmine-v4.opts     :as opts]
    [taoensso.carmine-v4.conns    :as conns]
    [taoensso.carmine-v4.sentinel :as sentinel]))
@@ -31,17 +32,17 @@
 
 ;;;; TODO
 
-;; - Integrate `conns/get-conn` into `with-carmine`, etc.
-;; - Low-level API combo: `get-conn` + `with-conn` + `resp/with-replies`, etc.
-;;
-;; - Confirm pool manager flow, closing data, etc.
-;; - Wrap pool errors? How + where? Keep or retire `try-borrow-conn!`?
-;; - No issue with caching vs opts with metadata?
-;;
-;; - Confirm: :mgr support should just work correctly within
-;;   sentinel-opts/conn-opts, right?
+;; - Add first low-level API tests using conns, conn managers x2, replies, etc.
+;;   - `taoensso.carmine-v4.tests.main`
+;;     - Test `resp/basic-ping!`
+;;     - Confirm pool manager flow, closing data, etc.
+;;     - Test hard & soft shutdown
+;;       - Ability to interrupt long-blocking reqs (grep "v3 conn closing" in this ns)
+;;     - Test Sentinel, resolve changes
+;;     - Confirm :mgr works correctly w/in sentinel-opts/conn-opts
 
 ;; - Investigate Cluster
+;; - Pause v4 work
 
 ;; - Common & core util to parse-?marked-ba -> [<kind> <payload>]
 ;; - Core: new Pub/Sub API
@@ -49,12 +50,6 @@
 ;;     - psubscribe* to Sentinel server
 ;;       - check for `switch-master` channel name
 ;;         - "switch-master" <master-name> <old-ip> <old-port> <new-ip> <new-port>
-
-;; - Test `resp/basic-ping!`
-;; - High-level tests -> `taoensso.carmine-v4.tests.main`
-;;   - Test conn, mgrs, sentinel, resolve changes
-;;     - Ability to interrupt long-blocking reqs (grep "v3 conn closing" in this ns)
-;;     - Hard & soft shutdown
 
 ;; - Polish
 ;;   - Check ns layout + hierarchy, incl. conns, replies, types, tests
@@ -87,27 +82,29 @@
 
 ;;;; CHANGELOG
 ;; - [new] Full RESP3 support, incl. streaming, etc.
-;;   - Enabled by default, requires Redis >= v6 (2020-04-30)
+;;   - Enabled by default, requires Redis >= v6 (2020-04-30).
+;; - [new] Full Redis Sentinel support - incl. auto failover and read replicas.
+;; - [mod] Hugely improved connections API, incl. improved:
+;;   - Flexibility
+;;   - Docs
+;;   - Usability (e.g. opts validation, hard shutdowns,
+;;     closing managed conns, etc.).
+;;   - Transparency (deref stats, cbs, timings for profiling, etc.).
+;;     - Derefs: Conns, ConnManagers, SentinelSpecs.
+;;   - Protocols for extension by advanced users.
+;;
+;; - [new] Common conn utils are now aliased in core Carmine ns for convenience.
+;; - [new] Improved pool efficiency, incl. smarter sub-pool keying.
+;; - [mod] Improved parsing API, incl.:
+;;   - General simplifications.
+;;   - Aggregate parsers, with xform support.
+;;
 ;; - [new] *auto-serialize?*, *auto-deserialize?*
 ;; - [new] Greatly improved `skip-replies` performance
 ;; - [mod] Simplified parsers API
-;; - [new] Aggregate  parsers, with xform support
-;; - [new] New, improved documentation - incl. docstrings & wiki
-;; - [new] Improved error messages, with better debug data
-;; - [new] Improved instrumentation for conns and conn management
-;; - [new] Greatly improved flexibility re: connections and connection management
-;; - [new] Greatly improved usability re: connections, incl. opts validation
-;;         and clear error messages for problems
-;; - [new] Pool efficiency improvements, incl. better sub-pool keying
-;; - [new] Greatly improved instrumentation options for conns and pools
-;; - [new] Pools and conns can now be dereffed for various info, incl.
-;;         detailed pool stats
-;; - [new] SentinelSpec stats
-;; - [new] Improved config: more options, more ways to set options,
-;;         better documentation, better validation, etc.
-;; - [new] Improved transparency (derefs, stats, cbs, timings for profiling, etc.).
-;; - [new] Common conn utils are now aliased in core Carmine ns for convenience.
-;; - [new] Support for Sentinel auto-failover, and read replicas
+;;
+;; - [new] Improvements to docs, error messages, debug data, etc.
+;; - [new] New Wiki with further documentation and examples.
 
 ;;;; Config
 
@@ -186,7 +183,7 @@
            :default opts/default-pool-opts})]
     config))
 
-(enc/defonce default-conn-manager-pooled_
+(def default-conn-manager-pooled_
   "TODO Docstring"
   (delay (conns/conn-manager-pooled {:pool-opts default-pool-opts})))
 
@@ -282,9 +279,80 @@
     (enc/defalias       conn-manager-close!          conns/mgr-close!)
     (enc/defalias       conn-manager-master-changed! conns/mgr-master-changed!)))
 
-;;;; Connections
+;;;; Core API (main entry point to Carmine)
 
-;; TODO `with-car`, `wcar` API, etc.
+(defn with-car
+  "TODO Docstring: `*default-conn-opts*`, `wcar`, etc.
+  body-fn takes [conn]"
+  ([conn-opts                                  body-fn] (with-car conn-opts nil body-fn))
+  ([conn-opts {:keys [as-vec?] :as reply-opts} body-fn]
+   (let [{:keys [natural-reads?]}  reply-opts] ; Undocumented
+     (conns/with-conn
+       (conns/get-conn conn-opts :parse-opts :use-mgr)
+       (fn [conn in out]
+         (resp/with-replies in out natural-reads? as-vec?
+           (fn [] (body-fn conn))))))))
+
+(comment :see-tests)
+(comment
+  (do
+    (def unpooled (conns/conn-manager-unpooled {}))
+    (def   pooled (conns/conn-manager-pooled
+                    {:pool-opts
+                     {:test-on-create? false
+                      :test-on-borrow? false}})))
+
+  (with-car {:mgr        nil} (fn [conn] (resp/ping) (resp/local-echo conn)))
+  (with-car {:mgr #'unpooled} (fn [conn] (resp/ping) (resp/local-echo conn)))
+  (with-car {:mgr   #'pooled} (fn [conn] (resp/ping) (resp/local-echo conn)))
+
+  (->     unpooled deref)
+  (-> (-> pooled   deref) :stats_ deref)
+
+  ;; Benching
+  (let [conn-opts {:mgr #'pooled :init nil}]
+    (enc/qb 1e4 ; [47.49 321.34 1075.16]
+      (with-car conn-opts (fn [_]))
+      (with-car conn-opts (fn [_]                  (resp/ping)))
+      (with-car conn-opts (fn [_] (dotimes [_ 100] (resp/ping)))))))
+
+(defmacro wcar
+  "TODO Docstring: `*default-conn-opts*`, `with-car`, etc."
+
+  {:arglists
+   '([conn-opts                   & body]
+     [conn-opts {:keys [as-vec?]} & body])}
+
+  [conn-opts & body]
+  (let [[reply-opts body] (resp/parse-body-reply-opts body)]
+    `(with-car ~conn-opts ~reply-opts
+       (fn [~'__wcar-conn] ~@body))))
+
+(comment :see-tests)
+(comment
+  (wcar {} (resp/redis-call "PING"))
+  (wcar {} (resp/redis-call "set" "k1" 3))
+  (wcar {} (resp/redis-call "get" "k1"))
+
+  (wcar {}                 (resp/ping))
+  (wcar {} {:as-vec? true} (resp/ping))
+  (wcar {}  :as-vec        (resp/ping))
+
+  (enc/qb 1e4 ; 841.29 (with pool testing)
+    (wcar {} (resp/ping))))
+
+(defmacro with-replies
+  "TODO Docstring
+  Expects to be called within the body of `wcar` or `with-car`."
+  {:arglists '([& body] [{:keys [as-vec?]} & body])}
+  [& body]
+  (let [[reply-opts body] (resp/parse-body-reply-opts body)
+        {:keys [natural-reads? as-vec?]} reply-opts]
+
+    `(resp/with-replies ~natural-reads? ~as-vec?
+       (fn [] ~@body))))
+
+(comment :see-tests)
 
 ;;;; Push API ; TODO
 
@@ -313,98 +381,3 @@
 ;; As with all Carmine Redis command fns: expects to be called within a `wcar`
 ;; body, and returns nil. The server's reply to this command will be included
 ;; in the replies returned by the enclosing `wcar`.
-
-(defn nconn
-  ([    ] (nconn {}))
-  ([opts]
-   (let [{:keys [host port]
-          :or   {host "127.0.0.1"
-                 port 6379}}
-         opts]
-
-     (v3-conns/make-new-connection
-       {:host host :port port}))))
-
-(comment (keys (nconn))) ; (:socket :spec :in :out)
-
-(comment ; TODO Testing v3 conn closing
-  ;; TODO Make a test
-  (def c (nconn))
-
-  ;; Push
-  (let [{:keys [in out]} c]
-    (resp/with-replies in out false false
-      (fn [] (resp/redis-call "lpush" "l1" "x"))))
-
-  ;; Pop
-  (future
-    (let [{:keys [in out]} c
-          reply
-          (try
-            (resp/with-replies in out false false
-              (fn []
-                (resp/redis-call "blpop" "l1" 3)))
-            (catch Throwable t t))]
-      (println "RESPONSE: " reply)))
-
-  (let [{:keys [in out]} c]
-    (resp/with-replies in out false false
-      (fn []
-        (resp/redis-call "blpop" "l1" "3"))))
-
-  (v3-conns/close-conn c))
-
-(defn with-car
-  "TODO Docstring: `*default-conn-opts*`, etc.
-  Low-level util, prefer `wcar` instead."
-  [opts body-fn]
-  (let [{:keys [conn natural-reads? as-vec?]} opts
-        {:keys [in out]} (or conn (nconn opts))]
-
-    (resp/with-replies in out natural-reads? as-vec?
-      body-fn)))
-
-(defmacro wcar
-  "TODO Docstring: `*default-conn-opts`, etc."
-  [opts & body]
-  `(with-carmine ~opts
-     (fn [] ~@body)))
-
-(comment :see-tests)
-
-(defmacro with-replies
-  "TODO Docstring
-  Expects to be called within the body of `wcar` or `with-car`."
-  [& body]
-  (let [[opts body] (let [[b1 & bn] body] (if (map? b1) [b1 bn] [nil body]))
-        {:keys [natural-reads? as-vec?]} opts]
-
-    `(resp/with-replies ~natural-reads? ~as-vec?
-       (fn [] ~@body))))
-
-(comment :see-tests)
-
-(comment
-  (wcar {} (resp/redis-call "set" "k1" 3))
-  (wcar {} (resp/redis-call "get" "k1"))
-  (wcar {}              (resp/ping))
-  (wcar {:as-vec? true} (resp/ping))
-
-  (let [{:keys [in out]} (nconn)]
-    (enc/qb 1e4 (resp/basic-ping! in out))) ; 210.2
-
-  ;; 234.77
-  (let [opts {:conn (nconn)}]
-    (enc/qb 1e4 (wcar opts (resp/redis-call "ping")))))
-
-;;;;
-
-(comment
-  (v3-protocol/with-context (nconn)
-    (v3-protocol/with-replies
-      (v3-cmds/enqueue-request 1 ["SET" "KX" "VY"])
-      (v3-cmds/enqueue-request 1 ["GET" "KX"])))
-
-  (let [c (nconn)] (.read (:in c))) ; Inherently blocking
-  (let [c (nconn)] (v3-conns/close-conn c) (.read (:in c))) ; Closed
-  )
