@@ -332,6 +332,11 @@ sentinel down-after-milliseconds %3$s 60000"
 
                      (inc-stat! sentinel-stats_ reporting-sentinel-addr :n-successes)
                      (inc-stat! resolve-stats_  master-name             :n-successes)
+                     (inc-stat! resolve-stats_  master-name
+                       (case confirmed-role
+                         :master  :n-resolved-to-master
+                         :replica :n-resolved-to-replica))
+
                      (utils/cb-notify!
                        (get core/*conn-cbs* :on-resolve-success)
                        (get       *mgr-cbs* :on-resolve-success)

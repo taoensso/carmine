@@ -578,10 +578,10 @@
   (def as-kw-parser      (fn-parser opts enc/as-kw)))
 
 (do
-  (defmacro ^:public as-?long   [& body] `(binding [*parser* as-?long-parser]   ~@body))
-  (defmacro ^:public as-?double [& body] `(binding [*parser* as-?double-parser] ~@body))
-  (defmacro ^:public as-?kw     [& body] `(binding [*parser* as-?kw-parser]     ~@body))
+  (defmacro ^:public as-?long   [& body] "Establishes reply parser for body: coerce replies to long, or nil."      `(binding [*parser* as-?long-parser]   ~@body))
+  (defmacro ^:public as-?double [& body] "Establishes reply parser for body: coerce replies to double, or nil."    `(binding [*parser* as-?double-parser] ~@body))
+  (defmacro ^:public as-?kw     [& body] "Establishes reply parser for body: coerce replies to keyword, or nil."   `(binding [*parser* as-?kw-parser]     ~@body))
 
-  (defmacro ^:public as-long    [& body] `(binding [*parser* as-long-parser]    ~@body))
-  (defmacro ^:public as-double  [& body] `(binding [*parser* as-double-parser]  ~@body))
-  (defmacro ^:public as-kw      [& body] `(binding [*parser* as-kw-parser]      ~@body)))
+  (defmacro ^:public as-long    [& body] "Establishes reply parser for body: coerce replies to long, or throw."    `(binding [*parser* as-long-parser]    ~@body))
+  (defmacro ^:public as-double  [& body] "Establishes reply parser for body: coerce replies to double, or throw."  `(binding [*parser* as-double-parser]  ~@body))
+  (defmacro ^:public as-kw      [& body] "Estbalishes reply parser for body: coerce replies to keyword, or throw." `(binding [*parser* as-kw-parser]      ~@body)))

@@ -255,13 +255,23 @@
   ;; => Vector for destructuring (undocumented)
   ([ba & more] (mapv to-bytes (cons ba more))))
 
+taoensso.nippy/freeze
 (deftype ToFrozen [arg freeze-opts ?frozen-ba])
 (defn ^:public to-frozen
-  ;; TODO Docstring
-  ;; We do eager freezing here since we can, and we'd prefer to
-  ;; catch freezing errors early (rather than while writing to out).
+  "Wraps given argument to ensure that it'll be written to Redis
+  using Nippy serialization [1].
+
+  Options:
+    See `taoensso.nippy/freeze` for `freeze-opts` docs.
+    By default, `*freeze-opts*` value will be used.
+
+  See also `as-thawed` for thawing (deserialization).
+  [1] Ref. https://github.com/ptaoussanis/nippy"
+
   (^ToFrozen [            x] (to-frozen core/*freeze-opts* x))
   (^ToFrozen [freeze-opts x]
+   ;; We do eager freezing here since we can, and we'd prefer to
+   ;; catch freezing errors early (rather than while writing to out).
    (if (instance? ToFrozen x)
      (let [^ToFrozen x x]
        (if (= freeze-opts (.-freeze-opts x))

@@ -44,8 +44,12 @@
 (defprotocol ^:private IConn
   "Internal protocol, not for public use or extension."
   (^:private -conn-close! [conn clean? force? data] "See `conn-close!`.")
-  (^:public   conn-ready? [conn] "Tests Conn, and returns true iff healthy.")
-  (^:private  conn-init!  [conn] "Initializes Conn auth, protocol, etc. Returns true on success, or throws.")
+  (^:public   conn-ready? [conn]
+   "Returns true iff Conn is healthy (Conn address agrees with current
+   Sentinel resolution cache, and test PING succeeded).")
+
+  (^:private conn-init! [conn]
+   "Initializes Conn auth, protocol, etc. Returns true on success, or throws.")
 
   (^:private  conn-resolved-correctly? [conn use-cache?]
    "Returns true iff Conn doesn't use Sentinel for server address resolution,

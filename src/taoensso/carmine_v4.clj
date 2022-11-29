@@ -152,7 +152,7 @@
   Affects non-(string, keyword, simple long/double) types.
 
   If false, such replies will by default look like malformed strings.
-  TODO: Mention utils, bindings
+  TODO: Mention utils, bindings.
 
   Default: true.
   Compile-time default can be overridden with:
@@ -174,7 +174,7 @@
   nil)
 
 (def default-pool-opts
-  "TODO Docstring, describe edn-config
+  "TODO Docstring: describe `pool-opts`, edn-config.
 
   Ref. https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/GenericKeyedObjectPool.html,
        https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/BaseGenericObjectPool.html"
@@ -193,7 +193,7 @@
 (comment @default-conn-manager-pooled_)
 
 (def ^:dynamic *default-conn-opts*
-  "TODO Docstring, describe conn-opts, edn-config"
+  "TODO Docstring: describe `conn-opts`, edn-config."
   (let [{:keys [config]}
         (enc/load-edn-config
           {:prop "taoensso.carmine.default-conn-opts.edn"
@@ -203,7 +203,7 @@
     (opts/parse-conn-opts false config)))
 
 (def ^:dynamic *default-sentinel-opts*
-  "TODO Docstring, describe sentinel-opts, edn-config"
+  "TODO Docstring: describe `sentinel-opts`, edn-config."
   (let [{:keys [config]}
         (enc/load-edn-config
           {:prop "taoensso.carmine.default-sentinel-opts.edn"
@@ -225,7 +225,7 @@
     :on-changed-replicas
     :on-changed-sentinels
 
-  Values (callbacks) should be unary fns of a single data map."
+  Values should be unary callback fns of a single data map."
 
   nil)
 
@@ -259,10 +259,9 @@
 
   (do ; Write wrapping
     (enc/defalias write/to-bytes)
-    (enc/defalias write/to-frozen) ; TODO Docstring
-    )
+    (enc/defalias write/to-frozen))
 
-  (do
+  (do ; RESP3
     (enc/defalias resp/redis-call)
     (enc/defalias resp/redis-call*)
     (enc/defalias resp/local-echo))
@@ -295,10 +294,10 @@
 (enc/defonce push-agent_
   (delay (agent nil :error-mode :continue)))
 
-(def ^:dynamic *push-fn* ; TODO move to core
-  "?(fn [data-vec]) => ?effects.
+(def ^:dynamic *push-fn*
+  "TODO Docstring: this and push-handler, etc.
+  ?(fn [data-vec]) => ?effects.
   If provided (non-nil), this fn should never throw."
-  ;; TODO Proper docstring for this & push-handler, etc.
   (fn [data-vec]
     (send-off @push-agent_
       (fn [state]
@@ -308,10 +307,9 @@
             ;; TODO Try publish error message?
             ))))))
 
-
 ;;;; Scratch
 
-;; TODO For commands
+;; TODO For command docstrings
 ;; As with all Carmine Redis command fns: expects to be called within a `wcar`
 ;; body, and returns nil. The server's reply to this command will be included
 ;; in the replies returned by the enclosing `wcar`.
@@ -328,7 +326,6 @@
        {:host host :port port}))))
 
 (comment (keys (nconn))) ; (:socket :spec :in :out)
-
 
 (comment ; TODO Testing v3 conn closing
   ;; TODO Make a test
@@ -357,15 +354,9 @@
 
   (v3-conns/close-conn c))
 
-
-
-(defn with-carmine
-  "Low-level util, prefer `wcar` instead."
-
-  ;; todo mention *default-conn-opts*
-  ;; todo alias as with-car
-
-  ;; TODO :sentinel {:spec <spec> :master-name <name> ... <opts>}
+(defn with-car
+  "TODO Docstring: `*default-conn-opts*`, etc.
+  Low-level util, prefer `wcar` instead."
   [opts body-fn]
   (let [{:keys [conn natural-reads? as-vec?]} opts
         {:keys [in out]} (or conn (nconn opts))]
@@ -374,8 +365,7 @@
       body-fn)))
 
 (defmacro wcar
-  "TODO Docstring"
-  ;; todo mention *default-conn-opts*
+  "TODO Docstring: `*default-conn-opts`, etc."
   [opts & body]
   `(with-carmine ~opts
      (fn [] ~@body)))
@@ -384,7 +374,7 @@
 
 (defmacro with-replies
   "TODO Docstring
-  Expects to be called within the body of a `wcar`."
+  Expects to be called within the body of `wcar` or `with-car`."
   [& body]
   (let [[opts body] (let [[b1 & bn] body] (if (map? b1) [b1 bn] [nil body]))
         {:keys [natural-reads? as-vec?]} opts]
