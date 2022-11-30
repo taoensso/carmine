@@ -762,6 +762,9 @@
                        (-mgr-master-changed! this
                          (have (get changed :new))))}]
 
+                ;; Note: when test-on-borrow, `conn-ready?` will be checked
+                ;; before .borrowObject returns. `conn-init!` will be run
+                ;; as part of `makeObject`, which proceeds (first) borrow.
                 (binding [sentinel/*mgr-cbs* cbs] (.borrowObject kop kk)))
               (do                                 (.borrowObject kop kk)))]
 
