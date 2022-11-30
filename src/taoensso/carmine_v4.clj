@@ -18,7 +18,8 @@
    [taoensso.carmine-v4.utils    :as utils]
    [taoensso.carmine-v4.opts     :as opts]
    [taoensso.carmine-v4.conns    :as conns]
-   [taoensso.carmine-v4.sentinel :as sentinel]))
+   [taoensso.carmine-v4.sentinel :as sentinel]
+   [taoensso.carmine-v4.cluster  :as cluster]))
 
 (enc/assert-min-encore-version [3 39 0])
 
@@ -32,8 +33,9 @@
 
 ;;;; TODO
 
-;; - Investigate Cluster
+;; x Investigate Cluster
 ;; - Pause v4 work for now?
+;; - Implement Cluster?
 
 ;; - Common & core util to parse-?marked-ba -> [<kind> <payload>]
 ;; - Core: new Pub/Sub API
@@ -53,7 +55,8 @@
 ;; - Refactor commands, add modules support
 ;; - Refactor pub/sub, etc. (note RESP2 vs RESP3 differences)
 ;; - Refactor helpers API, etc.
-;; - Consider later refactoring mq?
+;; - Modern MQ?
+;; - Modern Tundra?
 
 ;; - Plan for ->v4 upgrade with back compatibility? ^{:deprecated <str>}
 ;; - v4 wiki with changes, migration, new features, examples, etc.
@@ -264,7 +267,10 @@
     (enc/defalias       conn-manager-init!           conns/mgr-init!)
     (enc/defalias       conn-manager-ready?          conns/mgr-ready?)
     (enc/defalias       conn-manager-close!          conns/mgr-close!)
-    (enc/defalias       conn-manager-master-changed! conns/mgr-master-changed!)))
+    (enc/defalias       conn-manager-master-changed! conns/mgr-master-changed!))
+
+  (do ; Cluster
+    (enc/defalias cluster/cluster-key)))
 
 ;;;; Core API (main entry point to Carmine)
 
