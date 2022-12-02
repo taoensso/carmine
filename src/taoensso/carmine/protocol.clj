@@ -34,7 +34,7 @@
   (def  ^:private bs-nil "Carmine nil    data marker" (-byte-str "\u0000_")))
 
 (def ^:private byte-int "Cache common counts, etc."
-  (let [cached (enc/memoize_ (fn [n] (-byte-str (Long/toString n))))]
+  (let [cached (enc/fmemoize (fn [n] (-byte-str (Long/toString n))))]
     (fn [n]
       (if (<= ^long n 32767)
         (cached n)

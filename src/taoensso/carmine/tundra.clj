@@ -124,7 +124,7 @@
 (def fetch-keys-delayed
   "Used to prevent multiple threads from rushing the datastore to get the same
   keys, unnecessarily duplicating work."
-  (enc/memoize* 5000 fetch-keys))
+  (enc/memoize 5000 fetch-keys))
 
 (defn- prep-ks [ks] (vec (distinct (mapv enc/as-qname ks))))
 (comment (prep-ks [nil]) ; Throws

@@ -171,7 +171,7 @@
   pool)
 
 (def conn-pool
-  (enc/memoize_
+  (enc/memoize
     (fn [pool-opts]
 
       (when-let [f (get-in pool-opts [:instrument :on-pool-init])]
@@ -216,7 +216,7 @@
 (comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/7"))
 
 (def conn-spec
-  (enc/memoize_
+  (enc/memoize
    (fn [{:keys [uri host port password timeout-ms db
                conn-setup-fn ; nb must be var-level for fn equality
                ] :as spec-opts}]

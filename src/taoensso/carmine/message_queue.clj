@@ -32,7 +32,7 @@
 
 (comment (mapv #(exp-backoff % {}) (range 5)))
 
-(def ^:private qkey (enc/memoize_ (partial car/key :carmine :mq)))
+(def ^:private qkey (enc/fmemoize (partial car/key :carmine :mq)))
 
 (comment (qkey :foo))
 
