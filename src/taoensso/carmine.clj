@@ -1,15 +1,19 @@
 (ns taoensso.carmine "Clojure Redis client & message queue."
   {:author "Peter Taoussanis (@ptaoussanis)"}
-  (:refer-clojure :exclude [time get set key keys type sync sort eval])
-  (:require [clojure.string       :as str]
-            [taoensso.encore      :as enc]
-            [taoensso.timbre      :as timbre]
-            [taoensso.nippy       :as nippy]
-            [taoensso.nippy.tools :as nippy-tools]
-            [taoensso.carmine
-             (protocol    :as protocol)
-             (connections :as conns)
-             (commands    :as commands)]))
+  (:refer-clojure
+   :exclude [time get set key keys type sync sort eval
+             parse-long parse-double ])
+
+  (:require
+   [clojure.string       :as str]
+   [taoensso.encore      :as enc]
+   [taoensso.timbre      :as timbre]
+   [taoensso.nippy       :as nippy]
+   [taoensso.nippy.tools :as nippy-tools]
+   [taoensso.carmine
+    (protocol    :as protocol)
+    (connections :as conns)
+    (commands    :as commands)]))
 
 (enc/assert-min-encore-version [3 31 0])
 
