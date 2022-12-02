@@ -369,7 +369,7 @@
 
       (.createSocket factory existing-socket ^String ip ^int port true))))
 
-(defn- new-socket ^Socket [ip port socket-opts]
+(defn- new-socket ^Socket [conn-opts socket-opts ip port]
   (let [socket
         (doto (Socket.)
           (.setTcpNoDelay   true)
@@ -393,12 +393,12 @@
 
     (if ssl
       (if (var? ssl)
-        (new-ssl-socket socket ip port ssl)
+        (ssl  conn-opts socket ip port) ; Custom ssl-fn
         (new-ssl-socket socket ip port :default))
 
       socket)))
 
-(comment (.close (new-socket "127.0.0.1" 6379 {:ssl true :connect-timeout-ms 2000})))
+(comment (.close (new-socket nil {:ssl true :connect-timeout-ms 2000} "127.0.0.1" 6379)))
 
 (defn new-conn
   "Low-level implementation detail.
@@ -422,7 +422,7 @@
           init-size-out 1024}} buffer-opts]
 
     (try
-      (let [socket (new-socket ip port socket-opts)
+      (let [socket (new-socket conn-opts socket-opts ip port)
             in     (-> socket .getInputStream  (java.io.BufferedInputStream.  init-size-in) java.io.DataInputStream.)
             out    (-> socket .getOutputStream (java.io.BufferedOutputStream. init-size-out))
             conn   (Conn. socket ip port conn-opts in out false)]
