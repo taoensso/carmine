@@ -19,28 +19,71 @@
 
 (enc/defalias with-replies protocol/with-replies)
 
+(defn connection-pool
+  "Returns a new, stateful connection pool for use with `wcar`.
+  Backed by Apache Commons Pool 2's `GenericKeyedObjectPool`.
+
+  Pool opts include:
+    - :test-on-borrow?   ; Test conn health on acquisition from pool? (Default false)
+    - :test-on-return?   ; Test conn health on returning   to   pool? (Default false)
+    - :test-on-idle?     ; Test conn health while idle in pool?       (Default true)
+
+    - :min-idle-per-key  ; Min num of idle conns to keep per sub-pool (Default 0)
+    - :max-idle-per-key  ; Max num of idle conns to keep per sub-pool (Default 16)
+    - :max-total-per-key ; Max num of idle or active conns <...>      (Default 16)
+
+  Pool can be shutdown with the `java.io.Closeable` `close` method.
+  This will in turn call the `GenericKeyedObjectPool`'s `close` method.
+
+  Example:
+
+    (defonce my-pool (car/connection-pool {:test-on-borrow? true})) ; Create pool
+    (wcar {:pool my-pool} (car/ping)) ; Use pool
+
+    (.close my-pool) ; Initiate permanent shutdown of pool
+    ;; Note: pool shutdown does NOT interrupt active connections.
+    ;; It will prevent any new connections, and will destroy any idle or
+    ;; returned connections."
+
+  [pool-opts] (conns/conn-pool :mem/fresh pool-opts))
+
 (defmacro wcar
-  "Evaluates body in the context of a fresh thread-bound pooled connection to
-  Redis server. Sends Redis commands to server as pipeline and returns the
-  server's response. Releases connection back to pool when done.
+  "Main entry-point for the Carmine API.
+  Does the following:
+    1. Establishes a connection to specified Redis server.
+    2. Sends any Redis commands in body to the server as a pipeline.
+    3. Reads and returns the server's reply.
+    4. Destroys the connection, or returns it to connection pool.
 
-  `conn-opts` arg is a map with connection pool and spec options, e.g.:
-    {:pool {}    :spec {:host \"127.0.0.1\" :port 6379}} ; Default
-    {:pool :none :spec {:host \"127.0.0.1\" :port 6379}} ; No pool
-    {:pool {} :spec {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}}
-    {:pool {} :spec {:host \"127.0.0.1\"
-                     :port 6379
-                     :ssl-fn :default ; [1]
-                     :password \"secret\"
-                     :timeout-ms 6000
-                     :db 3}}
+  `conn-opts` arg is a map of `:spec`, `:pool` keys.
 
-  Note that because of thread-binding, you'll probably want to avoid lazy Redis
-  command calls in `wcar`'s body unless you know what you're doing. Compare:
-  `(wcar {} (for   [k [:k1 :k2]] (car/set k :val))` ; Lazy, NO commands run
-  `(wcar {} (doseq [k [:k1 :k2]] (car/set k :val))` ; Not lazy, commands run
+    `spec` describes the connection details, e.g.:
+      - {:host \"127.0.0.1\" :port 6379} ; Default
+      - {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}
+      - {:host \"127.0.0.1\"
+         :port 6379
+         :ssl-fn :default ; [1]
+         :username \"alice\"
+         :password \"secret\"
+         :timeout-ms 6000
+         :db 3}
 
-  See also `with-replies`.
+    `pool` may be:
+      - The `:none` keyword (=> don't pool connections)
+      - A custom pool you've created manually with `connection-pool`
+      - A map of pool-opts as provided to `connection-pool` (a pool
+        will be automatically created, then reused on subsequent
+        calls with the same opts)
+
+      If no `pool` value is specified, a default pool will be created
+      then reused.
+
+  Note that because of thread-binding, you'll probably want to avoid lazy
+  Redis commands in `wcar`'s body. Compare:
+    `(wcar {} (for   [k [:k1 :k2]] (car/set k :val))` ; Lazy,  0 commands run
+    `(wcar {} (doseq [k [:k1 :k2]] (car/set k :val))` ; Eager, 2 commands run
+
+  See also `connection-pool`, `with-replies`.
 
   [1] Optional `ssl-fn` conn opt takes and returns a `java.net.Socket`:
     (fn [{:keys [^Socket socket host port]}]) -> ^Socket
