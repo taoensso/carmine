@@ -218,7 +218,9 @@
           (#(if username           (assoc % :username username) %))
           (#(if password           (assoc % :password password) %))))))
 
-(comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/7"))
+(comment
+  (parse-uri "redis://user:pwd@foo.bar.com:6379/1")
+  {:host "foo.bar.com", :port 6379, :db 1, :username "user", :password "pwd"})
 
 (def conn-spec
   (enc/memoize

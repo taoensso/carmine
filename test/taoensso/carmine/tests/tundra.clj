@@ -32,7 +32,7 @@
 
 (defn sleep [n]
   (let [n (case n :c1 400 :c2 1200 :c3 8000 n)]
-    (Thread/sleep n) (str "slept " n "msecs")))
+    (Thread/sleep (int n)) (str "slept " n "msecs")))
 
 ;;;;
 

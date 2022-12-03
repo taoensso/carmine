@@ -15,7 +15,7 @@
 (def conn-opts {})
 (def timeout-ms 2000)
 
-(defn sleep [n] (Thread/sleep n) (str "slept " n "msecs"))
+(defn sleep [n] (Thread/sleep (int n)) (str "slept " n "msecs"))
 
 ;;;;
 
