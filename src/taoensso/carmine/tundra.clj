@@ -131,8 +131,8 @@
          (prep-ks [:a "a" :b :foo.bar/baz]))
 
 (defmacro catcht [& body] `(try (do ~@body) (catch Throwable t# t#)))
-(defn >urlsafe-str [s] (URLEncoder/encode s "ISO-8859-1"))
-(defn <urlsafe-str [s] (URLDecoder/decode s "ISO-8859-1"))
+(defn >urlsafe-str [^String s] (URLEncoder/encode s "ISO-8859-1"))
+(defn <urlsafe-str [^String s] (URLDecoder/decode s "ISO-8859-1"))
 (comment (<urlsafe-str (>urlsafe-str "hello f8 8 93#**#\\// !!$")))
 
 (defrecord TundraStore [datastore freezer opts]
