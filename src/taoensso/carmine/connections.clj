@@ -130,7 +130,7 @@
           socket)
 
         conn
-        (let [[in out] (get-streams socket 16384 16384)]
+        (let [[in out] (get-streams socket 8192 8192)]
           (->Connection socket spec in out))
 
         db (when (and db (not (zero? db))) db)]
