@@ -25,7 +25,7 @@
 (defn test-fixture [f] (clear-tkeys!) (f) (clear-tkeys!))
 (test/use-fixtures :once test-fixture)
 
-(defn sleep [n] (Thread/sleep n) (str "slept " n "msecs"))
+(defn sleep [n] (Thread/sleep (int n)) (str "slept " n "msecs"))
 
 ;;;;
 
