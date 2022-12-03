@@ -75,7 +75,7 @@
       ^Socket socket ^String host ^Integer port true)))
 
 (defn make-new-connection
-  [{:keys [host port password db conn-setup-fn
+  [{:keys [host port username password db conn-setup-fn
            conn-timeout-ms read-timeout-ms timeout-ms ssl-fn] :as spec}]
   (let [;; :timeout-ms controls both :conn-timeout-ms and :read-timeout-ms
         ;; unless those are specified individually
@@ -115,11 +115,15 @@
 
     (when-let [f (get-in spec [:instrument :on-conn-open])] (f {:spec spec}))
 
-    (when (or password db conn-setup-fn)
+    (when (or username password db conn-setup-fn)
       (protocol/with-context conn
         (protocol/with-replies ; Discard replies
-          (when password (taoensso.carmine/auth password))
-          (when db       (taoensso.carmine/select (str db)))
+          (when password
+            (if username
+              (taoensso.carmine/auth username password)
+              (taoensso.carmine/auth          password)))
+
+          (when db (taoensso.carmine/select (str db)))
           (when conn-setup-fn
             (conn-setup-fn {:conn conn :spec spec})))))
     conn))
@@ -204,20 +208,21 @@
 (defn- parse-uri [uri]
   (when uri
     (let [^URI uri (if (instance? URI uri) uri (URI. uri))
-          [user password] (.split (str (.getUserInfo uri)) ":")
+          [username password] (.split (str (.getUserInfo uri)) ":")
           port (.getPort uri)
           db (if-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
                (Integer. ^String db-str))]
       (-> {:host (.getHost uri)}
           (#(if (pos? port)        (assoc % :port     port)     %))
           (#(if (and db (pos? db)) (assoc % :db       db)       %))
+          (#(if username           (assoc % :username username) %))
           (#(if password           (assoc % :password password) %))))))
 
 (comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/7"))
 
 (def conn-spec
   (enc/memoize
-   (fn [{:keys [uri host port password timeout-ms db
+   (fn [{:keys [uri host port username password timeout-ms db
                conn-setup-fn ; nb must be var-level for fn equality
                ] :as spec-opts}]
      (let [defaults  {:host "127.0.0.1" :port 6379}
