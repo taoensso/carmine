@@ -99,7 +99,7 @@
   (defn- get-command-spec
     "Given a `clojure/slurp`-able Redis commands.json location (e.g. URL),
     reads the json and returns a cleaned-up Redis command spec map."
-    ([] (get-command-spec (java.net.URL. "https://raw.githubusercontent.com/antirez/redis-doc/master/commands.json")))
+    ([] (get-command-spec (java.net.URL. "https://raw.githubusercontent.com/redis/redis-doc/master/commands.json")))
     ([json]
      (try
        (let [m (clojure.data.json/read-str (slurp json) :key-fn keyword)]
