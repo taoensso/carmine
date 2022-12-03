@@ -1,5 +1,35 @@
 > This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
 
+## v3.2.0 / 2022 Dec 3
+
+```clojure
+[com.taoensso/carmine "3.2.0"]
+```
+
+> This is a major feature + maintenance release. It should be **non-breaking**.  
+> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+
+#### Fixes since `v3.1.0`
+
+* Fix warning of parse var replacements (`parse-long`, `parse-double`)
+
+#### New since `v3.1.0`
+
+* [#201] [#224] [#266] Improve `wcar` documentation, alias pool constructor in main ns
+* [#251] [#257] [#270] Add support for username (ACL) in AUTH (@lsevero @sumeet14)
+* Update to latest commands.json (from 2022-09-22)
+* [#259] [#261] Ring middleware: add `:extend-on-read?` option (@svdo)
+* [Message queue] Print extra debug info on invalid handler status
+
+#### Other improvements since `v3.1.0`
+
+* [#264] Remove unnecessary reflection in Tundra (@frwdrik)
+* Stop using deprecated Encore vars
+* [#271] Refactor tests, fix flakey results
+* Update dependencies
+* Work [underway](https://github.com/users/ptaoussanis/projects/2) on Carmine v4, which'll introduce support for RESP3, Redis Sentinel, Redis Cluster, and more.
+
+
 ## v3.1.0 / 2020 Nov 24
 
 ```clojure
