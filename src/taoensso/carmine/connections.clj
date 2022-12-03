@@ -5,7 +5,6 @@
   (:require [taoensso.encore           :as enc]
             [taoensso.carmine.protocol :as protocol])
   (:import [java.net InetSocketAddress Socket URI]
-           [java.io BufferedInputStream DataInputStream BufferedOutputStream]
            [org.apache.commons.pool2 KeyedPooledObjectFactory]
            [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
 
@@ -74,9 +73,36 @@
     (.createSocket ^javax.net.ssl.SSLSocketFactory @factory_
       ^Socket socket ^String host ^Integer port true)))
 
+(defn- get-streams [^Socket socket init-read-buffer-size init-write-buffer-size]
+  (let [in
+        (->
+          (.getInputStream socket)
+          (java.io.BufferedInputStream. (int init-read-buffer-size))
+          (java.io.DataInputStream.))
+
+        out
+        (->
+          (.getOutputStream socket)
+          (java.io.BufferedOutputStream. (int init-write-buffer-size)))]
+
+    ;; Re: choice of stream types:
+    ;;   We need the following:
+    ;;   - Ability to read & write bytes and byte arrays.
+    ;;   - Ability to read lines (chars up to CRLF) as string
+    ;;     - Note that `java.io.DataInputStream/readLine` is deprecated
+    ;;       due to lack of charset support, but is actually fine for our
+    ;;       purposes since we use `readLine` only for simple ascii strings
+    ;;       from Redis server (i.e. no user content).
+    ;;
+    ;;       Benching also shows ~equal performance to specialised implns.
+    ;;       like `redis.clients.jedis.util.RedisInputStream`.
+
+    [in out]))
+
 (defn make-new-connection
   [{:keys [host port username password db conn-setup-fn
            conn-timeout-ms read-timeout-ms timeout-ms ssl-fn] :as spec}]
+
   (let [;; :timeout-ms controls both :conn-timeout-ms and :read-timeout-ms
         ;; unless those are specified individually
         ;; :or   {conn-timeout-ms (or timeout-ms 4000)
@@ -103,13 +129,9 @@
             (f {:socket socket :host host :port port}))
           socket)
 
-        buff-size 16384 ; Err on the large size since we're pooling
-        conn (->Connection socket spec
-               (-> (.getInputStream socket)
-                   (BufferedInputStream. buff-size)
-                   (DataInputStream.))
-               (-> (.getOutputStream socket)
-                   (BufferedOutputStream. buff-size)))
+        conn
+        (let [[in out] (get-streams socket 8192 8192)]
+          (->Connection socket spec in out))
 
         db (when (and db (not (zero? db))) db)]
 
