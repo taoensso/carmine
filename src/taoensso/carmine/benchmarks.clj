@@ -1,4 +1,4 @@
-(ns taoensso.carmine.benchmarks
+(ns ^:no-doc taoensso.carmine.benchmarks
   {:author "Peter Taoussanis"}
   (:require [taoensso.encore  :as enc]
             [taoensso.carmine :as car :refer (wcar)]))

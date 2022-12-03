@@ -37,8 +37,8 @@
   (->CarmineSessionStore conn-opts key-prefix expiration-secs extend-on-read?))
 
 (enc/deprecated
-  (defn make-carmine-store ; 1.x backwards compatiblity
-  "DEPRECATED. Use `carmine-store` instead."
+  (defn ^:deprecated make-carmine-store ; 1.x backwards compatiblity
+    "DEPRECATED. Use `carmine-store` instead."
     [& [s1 s2 & sn :as args]]
     (if (instance? taoensso.carmine.connections.ConnectionPool s1)
       (carmine-store {:pool s1 :spec s2} (apply hash-map sn))

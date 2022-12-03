@@ -1,4 +1,4 @@
-(ns taoensso.carmine.protocol
+(ns ^:no-doc taoensso.carmine.protocol
   "Core facilities for communicating with Redis servers using the Redis
   request/response protocol, Ref. http://redis.io/topics/protocol."
   (:require [clojure.string       :as str]

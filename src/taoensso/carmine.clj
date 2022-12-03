@@ -27,7 +27,7 @@
 
   Pool opts include:
     - :test-on-borrow?   ; Test conn health on acquisition from pool? (Default false)
-    - :test-on-return?   ; Test conn health on returning   to   pool? (Default false)
+    - :test-on-return?   ; Test conn health on return      to   pool? (Default false)
     - :test-on-idle?     ; Test conn health while idle in pool?       (Default true)
 
     - :min-idle-per-key  ; Min num of idle conns to keep per sub-pool (Default 0)
@@ -136,10 +136,10 @@
 
 ;;;; Misc core
 
-;;; Mostly deprecated; prefer using encore stuff directly
 (defn as-int   [x] (when x (enc/as-int   x)))
 (defn as-float [x] (when x (enc/as-float x)))
 (defn as-bool  [x] (when x (enc/as-bool  x)))
+(defn as-map   [x] (when x (persistent! (enc/reduce-kvs assoc! (transient {}) x))))
 
 (enc/defalias parse       protocol/parse)
 (enc/defalias parser-comp protocol/parser-comp)
@@ -152,6 +152,9 @@
 (defmacro parse-keyword  [& body] `(parse keyword  ~@body))
 (defmacro parse-suppress [& body]
   `(parse (fn [_#] protocol/suppressed-reply-kw) ~@body))
+
+(defmacro parse-map [form & [kf vf]]
+  `(parse #(as-map % ~kf ~vf) ~form))
 
 (comment (wcar {} (parse-suppress (ping)) (ping) (ping)))
 
@@ -254,7 +257,7 @@
   composition, and for executing commands that haven't yet been added to the
   official `commands.json` spec.
 
-  (redis-call [:set \"foo\" \"bar\"] [:get \"foo\"])"
+  (redis-call [\"set\" \"foo\" \"bar\"] [\"get\" \"foo\"])"
   [& requests]
   (enc/run!
     (fn [[cmd & args]]
@@ -1065,45 +1068,40 @@
 ;;;; Deprecated
 
 (enc/deprecated
-  (def as-long   "DEPRECATED: Use `as-int` instead."   as-int)
-  (def as-double "DEPRECATED: Use `as-float` instead." as-float)
-  (defmacro parse-long "DEPRECATED: Use `parse-int` instead."
-    [& body] `(parse as-long   ~@body))
-  (defmacro parse-double "DEPRECATED: Use `parse-float` instead."
-    [& body] `(parse as-double ~@body))
-
-  (def hash-script "DEPRECATED: Use `script-hash` instead." script-hash)
-
-  (defn kname "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
+  (def      ^:deprecated as-long      "DEPRECATED: Use `as-int` instead."      as-int)
+  (def      ^:deprecated as-double    "DEPRECATED: Use `as-float` instead."    as-float)
+  (def      ^:deprecated hash-script  "DEPRECATED: Use `script-hash` instead." script-hash)
+  (defmacro ^:deprecated parse-long   "DEPRECATED: Use `parse-int` instead."   [& body] `(parse as-long   ~@body))
+  (defmacro ^:deprecated parse-double "DEPRECATED: Use `parse-float` instead." [& body] `(parse as-double ~@body))
+  (defn     ^:deprecated kname
+    "DEPRECATED: Use `key` instead. `key` does not filter nil parts."
     [& parts] (apply key (filter identity parts)))
 
   (comment (kname :foo/bar :baz "qux" nil 10))
 
-  (def serialize "DEPRECATED: Use `freeze` instead." freeze)
-  (def preserve  "DEPRECATED: Use `freeze` instead." freeze)
-  (def remember  "DEPRECATED: Use `return` instead." return)
-  (def ^:macro skip-replies "DEPRECATED: Use `with-replies` instead." #'with-replies)
-  (def ^:macro with-reply   "DEPRECATED: Use `with-replies` instead." #'with-replies)
-  (def ^:macro with-parser  "DEPRECATED: Use `parse` instead."        #'parse)
-
-  (defn lua-script "DEPRECATED: Use `lua` instead." [& args] (apply lua args))
-
-  (defn make-keyfn "DEPRECATED: Use `kname` instead."
+  (def  ^:deprecated serialize            "DEPRECATED: Use `freeze` instead."       freeze)
+  (def  ^:deprecated preserve             "DEPRECATED: Use `freeze` instead."       freeze)
+  (def  ^:deprecated remember             "DEPRECATED: Use `return` instead."       return)
+  (def  ^:deprecated ^:macro skip-replies "DEPRECATED: Use `with-replies` instead." #'with-replies)
+  (def  ^:deprecated ^:macro with-reply   "DEPRECATED: Use `with-replies` instead." #'with-replies)
+  (def  ^:deprecated ^:macro with-parser  "DEPRECATED: Use `parse` instead."        #'parse)
+  (defn ^:deprecated lua-script "DEPRECATED: Use `lua` instead." [& args] (apply lua args))
+  (defn ^:deprecated make-keyfn "DEPRECATED: Use `kname` instead."
     [& prefix-parts]
     (let [prefix (when (seq prefix-parts) (str (apply kname prefix-parts) ":"))]
       (fn [& parts] (str prefix (apply kname parts)))))
 
-  (defn make-conn-pool "DEPRECATED: Use `wcar` instead."
+  (defn ^:deprecated make-conn-pool "DEPRECATED: Use `wcar` instead."
     [& opts] (conns/conn-pool (apply hash-map opts)))
 
-  (defn make-conn-spec "DEPRECATED: Use `wcar` instead."
+  (defn ^:deprecated make-conn-spec "DEPRECATED: Use `wcar` instead."
     [& opts] (conns/conn-spec (apply hash-map opts)))
 
-  (defmacro with-conn "DEPRECATED: Use `wcar` instead."
+  (defmacro ^:deprecated with-conn "DEPRECATED: Use `wcar` instead."
     [connection-pool connection-spec & body]
     `(wcar {:pool ~connection-pool :spec ~connection-spec} ~@body))
 
-  (defmacro atomically "DEPRECATED: Use `atomic` instead."
+  (defmacro ^:deprecated atomically "DEPRECATED: Use `atomic` instead."
     [watch-keys & body]
     `(do
        (with-replies ; discard "OK" and "QUEUED" replies
@@ -1117,7 +1115,7 @@
                   (with-meta {:parse-exceptions? true})))
          (exec))))
 
-  (defmacro ensure-atomically "DEPRECATED: Use `atomic` instead."
+  (defmacro ^:deprecated ensure-atomically "DEPRECATED: Use `atomic` instead."
     [{:keys [max-tries] :or {max-tries 100}}
      watch-keys & body]
     `(let [watch-keys# ~watch-keys
@@ -1133,7 +1131,7 @@
                    {:nattempts idx#}))
                (recur (inc idx#))))))))
 
-  (defn hmget* "DEPRECATED: Use `parse-map` instead."
+  (defn ^:deprecated hmget* "DEPRECATED: Use `parse-map` instead."
     [key field & more]
     (let [fields (cons field more)
           inner-parser (when-let [p protocol/*parser*] #(mapv p %))
@@ -1141,7 +1139,7 @@
       (->> (apply hmget key fields)
         (parse (parser-comp outer-parser inner-parser)))))
 
-  (defn hgetall* "DEPRECATED: Use `parse-map` instead."
+  (defn ^:deprecated hgetall* "DEPRECATED: Use `parse-map` instead."
     [key & [keywordize?]]
     (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
           outer-parser (if keywordize?
@@ -1161,8 +1159,4 @@
     (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
     (wcar {} (hmget* "hkey" "a" "b"))
     (wcar {} (hgetall* "hkey"))
-    (wcar {} (parse str/upper-case (hgetall* "hkey"))))
-
-  (defn as-map [x] (enc/as-map x))
-  (defmacro parse-map [form & [kf vf]]
-    `(parse #(enc/as-map % ~kf ~vf) ~form)))
+    (wcar {} (parse str/upper-case (hgetall* "hkey")))))

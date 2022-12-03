@@ -1,4 +1,4 @@
-(ns taoensso.carmine.commands
+(ns ^:no-doc taoensso.carmine.commands
   "Macros to define an up-to-date, fully documented function for every Redis
   command as specified in the official json command spec."
   (:require [clojure.string  :as str]

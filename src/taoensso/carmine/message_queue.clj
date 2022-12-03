@@ -376,7 +376,8 @@
 ;;;; Deprecated
 
 (enc/deprecated
-  (defn make-dequeue-worker "DEPRECATED: Use `worker` instead."
+  (defn ^:deprecated make-dequeue-worker
+    "DEPRECATED: Use `worker` instead."
     [pool spec & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
                          auto-start?]}]
     (worker {:pool pool :spec spec}
