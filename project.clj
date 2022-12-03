@@ -13,9 +13,10 @@
    *unchecked-math*     false #_:warn-on-boxed}
 
   :dependencies
-  [[com.taoensso/encore              "3.40.0"]
-   [com.taoensso/timbre              "6.0.2"]
+  [[com.taoensso/encore              "3.49.0"]
+   [com.taoensso/timbre              "6.1.0"]
    [com.taoensso/nippy               "3.2.0"]
+   [com.taoensso/tukey               "0.7.0"]
    [org.apache.commons/commons-pool2 "2.11.1"]
    [commons-codec/commons-codec      "1.15"]]
 
