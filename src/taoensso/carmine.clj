@@ -15,7 +15,7 @@
     (connections :as conns)
     (commands    :as commands)]))
 
-(enc/assert-min-encore-version [3 39 0])
+(enc/assert-min-encore-version [3 49 0])
 
 ;;;; Connections
 
