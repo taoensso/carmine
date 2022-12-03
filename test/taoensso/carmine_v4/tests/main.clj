@@ -81,7 +81,7 @@
 
     (Thread/sleep 100) ; Wait for future to run
     [(is (true? (car/conn-manager-close! @mgrv {} 0))) ; Interrupt pool conns
-     (is (instance? java.net.SocketException (ex-cause (enc/throws @f)))
+     (is (instance? java.net.SocketException (enc/ex-cause (enc/throws @f)))
        "Hard pool shutdown interrupts blocking blpop")]))
 
 (deftest ^:private _wcar-basics

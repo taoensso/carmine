@@ -152,9 +152,9 @@
   ([msg data cause] (proxy [ExceptionInfo ReplyError] [msg data cause]))
   ([msg data      ] (proxy [ExceptionInfo ReplyError] [msg data]))
   ([ex]
-   (if-let [cause (ex-cause ex)]
-     (proxy [ExceptionInfo ReplyError] [(ex-message ex) (or (ex-data ex) {}) cause])
-     (proxy [ExceptionInfo ReplyError] [(ex-message ex) (or (ex-data ex) {})]))))
+   (if-let [cause (enc/ex-cause ex)]
+     (proxy [ExceptionInfo ReplyError] [(enc/ex-message ex) (or (ex-data ex) {}) cause])
+     (proxy [ExceptionInfo ReplyError] [(enc/ex-message ex) (or (ex-data ex) {})]))))
 
 (comment
   (instance? ExceptionInfo (reply-error "msg" {}))

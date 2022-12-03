@@ -87,7 +87,7 @@
       (fn [error cbid]
         (let [data (assoc (ex-data error) :cbid cbid)
               data
-              (if-let [cause (or (get data :cause) (ex-cause error))]
+              (if-let [cause (or (get data :cause) (enc/ex-cause error))]
                 (assoc data :cause cause)
                 (do    data))]
           (delay data)))]
