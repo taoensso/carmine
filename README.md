@@ -44,35 +44,41 @@ And setup your namespace imports:
   (:require [taoensso.carmine :as car :refer [wcar]]))
 ```
 
-### Connections
-
-You'll usually want to define a single connection pool, and one connection spec for each of your Redis servers.
+You'll usually want to define a single **connection pool**, and one **connection spec** for each of your Redis servers, example:
 
 ```clojure
-(def server1-conn {:pool {<opts>} :spec {<opts>}}) ; See `wcar` docstring for opts
-(defmacro wcar* [& body] `(car/wcar server1-conn ~@body))
+(defonce my-conn-pool   (car/connection-pool {})) ; Create a new stateful pool
+(def     my-conn-spec-1 {:uri "redis://redistogo:pass@panga.redistogo.com:9475/"})
+
+(def my-wcar-opts
+  {:pool my-conn-pool
+   :spec my-conn-spec-1})
 ```
 
-A simple example spec with default pool and one server using redistogo.com would be:
+This `my-wcar-opts` can then be provided to Carmine's `wcar` ("with Carmine") API:
 
 ```clojure
-(def server1-conn {:pool {} :spec {:uri "redis://redistogo:pass@panga.redistogo.com:9475/"}})
+(wcar my-wcar-opts (car/ping)) ; => "PONG"
 ```
 
-### Basic commands
+`wcar` is the main entry-point to Carmine's API, see its [docstring](http://ptaoussanis.github.io/carmine/taoensso.carmine.html#var-wcar) for more info on pool and spec opts, etc.
 
-Executing commands is easy:
+You can create a `wcar` partial for convenience:
 
 ```clojure
-(wcar* (car/ping)) ; => "PONG" (1 command -> 1 reply)
+(defmacro wcar* [& body] `(car/wcar ~my-wcar-opts ~@body))
+```
 
+### Command pipelines
+
+Calling multiple Redis commands in a single `wcar` body uses efficient Redis [pipelining][] under the hood, and returns a pipeline reply (vector) for easy destructuring:
+
+```clojure
 (wcar*
   (car/ping)
   (car/set "foo" "bar")
   (car/get "foo")) ; => ["PONG" "OK" "bar"] (3 commands -> 3 replies)
 ```
-
-Note that executing multiple Redis commands in a single `wcar` request uses efficient Redis [pipelining][] under the hood, and returns a pipeline reply (vector) for easy destructuring, etc.
 
 If the number of commands you'll be calling might vary, it's possible to request that Carmine _always_ return a destructurable pipeline-style reply:
 
@@ -80,7 +86,7 @@ If the number of commands you'll be calling might vary, it's possible to request
 (wcar* :as-pipeline (car/ping)) ; => ["PONG"] ; Note the pipeline-style reply
 ```
 
-If the server responds with an error, an exception is thrown:
+If the server replies with an error, an exception is thrown:
 
 ```clojure
 (wcar* (car/spop "foo"))
@@ -90,9 +96,10 @@ If the server responds with an error, an exception is thrown:
 But what if we're pipelining?
 
 ```clojure
-(wcar* (car/set  "foo" "bar")
-       (car/spop "foo")
-       (car/get  "foo"))
+(wcar*
+  (car/set  "foo" "bar")
+  (car/spop "foo")
+  (car/get  "foo"))
 => ["OK" #<Exception ERR Operation against ...> "bar"]
 ```
 
@@ -101,13 +108,17 @@ But what if we're pipelining?
 The only value type known to Redis internally is the [byte string][]. But Carmine uses [Nippy][] under the hood and understands all of Clojure's [rich datatypes][], letting you use them with Redis painlessly:
 
 ```clojure
-(wcar* (car/set "clj-key" {:bigint (bigint 31415926535897932384626433832795)
-                           :vec    (vec (range 5))
-                           :set    #{true false :a :b :c :d}
-                           :bytes  (byte-array 5)
-                           ;; ...
-                           })
-       (car/get "clj-key"))
+(wcar*
+  (car/set "clj-key"
+    {:bigint (bigint 31415926535897932384626433832795)
+     :vec    (vec (range 5))
+     :set    #{true false :a :b :c :d}
+     :bytes  (byte-array 5)
+     ;; ...
+     })
+
+  (car/get "clj-key"))
+
 => ["OK" {:bigint 31415926535897932384626433832795N
           :vec    [0 1 2 3 4]
           :set    #{true false :a :c :b :d}
@@ -123,15 +134,15 @@ Keywords                 | Redis strings
 Simple numbers           | Redis strings
 Everything else          | Auto de/serialized with [Nippy][]
 
-You can force automatic de/serialization for an argument of any type by wrapping it with `car/serialize`.
+You can force automatic de/serialization for an argument of any type by wrapping it with `car/freeze`.
 
 ### Command coverage and documentation
 
-Carmine uses the [official Redis command spec][commands.json] to generate its own command API and command documentation:
+Carmine uses the [official Redis command spec][commands.json] to generate its own command API and documentation:
 
 ```clojure
-(use 'clojure.repl)
-(doc car/sort)
+(clojure.repl/doc car/sort)
+
 => "SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
 
 Sort the elements in a list, set or sorted set.
@@ -141,7 +152,7 @@ Available since: 1.0.0.
 Time complexity: O(N+M*log(M)) where N is the number of elements in the list or set to sort, and M the number of returned elements. When the elements are not sorted, complexity is currently O(N) as there is a copy step that will be avoided in next releases."
 ```
 
-Each Carmine release will use the latest command spec. But if a new Redis command is available that hasn't yet made it to Carmine, you can always use the `car/redis-call` function to issue **arbitrary commands**.
+Each Carmine release will use the latest command spec. But if a new Redis command is available that hasn't yet made it to Carmine, you can always use the [redis-call](http://ptaoussanis.github.io/carmine/taoensso.carmine.html#var-redis-call) function to issue **arbitrary commands**.
 
 This is also useful for **Redis module** commands, etc.
 
@@ -155,12 +166,13 @@ As an example, let's write our own version of the `set` command:
 (defn my-set
   [key value]
   (car/lua "return redis.call('set', _:my-key, 'lua '.. _:my-val)"
-                  {:my-key key}   ; Named key variables and their values
-                  {:my-val value} ; Named non-key variables and their values
-                  ))
+    {:my-key key}   ; Named     key variables and their values
+    {:my-val value} ; Named non-key variables and their values
+    ))
 
-(wcar* (my-set "foo" "bar")
-       (car/get "foo"))
+(wcar*
+  (my-set  "foo" "bar")
+  (car/get "foo"))
 => ["OK" "lua bar"]
 ```
 
@@ -173,8 +185,8 @@ The `lua` command above is a good example of a Carmine *helper*.
 Carmine will never surprise you by interfering with the standard Redis command API. But there are times when it might want to offer you a helping hand (if you want it). Compare:
 
 ```clojure
-(wcar* (car/zunionstore "dest-key" 3 "zset1" "zset2" "zset3" "WEIGHTS" 2 3 5))
-(wcar* (car/zunionstore* "dest-key" ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
+(wcar* (car/zunionstore  "dest-key" 3 "zset1" "zset2" "zset3"  "WEIGHTS" 2 3 5))
+(wcar* (car/zunionstore* "dest-key"  ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
 ```
 
 Both of these calls are equivalent but the latter counted the keys for us. `zunionstore*` is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
@@ -204,11 +216,12 @@ And since real functions can compose, so can Carmine's. By nesting `wcar` calls,
 
 ```clojure
 (let [hash-key "awesome-people"]
-  (wcar* (car/hmset hash-key "Rich" "Hickey" "Salvatore" "Sanfilippo")
-         (mapv (partial car/hget hash-key)
-               ;; Execute with own connection & pipeline then return result
-               ;; for composition:
-               (wcar* (car/hkeys hash-key)))))
+  (wcar*
+    (car/hmset hash-key "Rich" "Hickey" "Salvatore" "Sanfilippo")
+    (mapv (partial car/hget hash-key)
+      ;; Execute with own connection & pipeline then return result
+      ;; for composition:
+      (wcar* (car/hkeys hash-key)))))
 => ["OK" "Sanfilippo" "Hickey"]
 ```
 
@@ -264,9 +277,10 @@ Note that subscriptions are *connection-local*: you can have three different lis
 Want a little more control over how server replies are parsed? You have all the control you need:
 
 ```clojure
-(wcar* (car/ping)
-       (car/with-parser clojure.string/lower-case (car/ping) (car/ping))
-       (car/ping))
+(wcar*
+  (car/ping)
+  (car/with-parser clojure.string/lower-case (car/ping) (car/ping))
+  (car/ping))
 => ["PONG" "pong" "pong" "PONG"]
 ```
 
@@ -275,8 +289,9 @@ Want a little more control over how server replies are parsed? You have all the 
 Carmine's serializer has no problem handling arbitrary byte[] data. But the serializer involves overhead that may not always be desireable. So for maximum flexibility Carmine gives you automatic, *zero-overhead* read and write facilities for raw binary data:
 
 ```clojure
-(wcar* (car/set "bin-key" (byte-array 50))
-       (car/get "bin-key"))
+(wcar*
+  (car/set "bin-key" (byte-array 50))
+  (car/get "bin-key"))
 => ["OK" #<byte[] [B@7c3ab3b4>]
 ```
 
