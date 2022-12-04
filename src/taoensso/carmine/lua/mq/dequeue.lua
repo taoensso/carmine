@@ -1,81 +1,112 @@
-if redis.call('exists', _:qk-eoq-backoff) == 1 then
-   return 'eoq-backoff';
+-- Return e/o {'sleep' ...}, {'skip' ...}, {'handle' ...}, {'unexpected' ...}
+
+if (redis.call('exists', _:qk-eoq-backoff) == 1) then
+   return {'sleep', 'eoq-backoff', redis.call('pttl', _:qk-eoq-backoff)};
 end
 
--- TODO Waiting for Lua brpoplpush support to get us long polling
 local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle);
 local now = tonumber(_:now);
 
-if (not mid) or (mid == 'end-of-circle') then -- Uninit'd or eoq
+if ((not mid) or (mid == 'end-of-circle')) then -- Uninit'd or eoq
 
    -- Calculate eoq_backoff_ms
-   local ndry_runs = tonumber(redis.call('get', _:qk-ndry-runs) or 0);
-   local eoq_ms_tab = {_:eoq-ms0, _:eoq-ms1, _:eoq-ms2, _:eoq-ms3, _:eoq-ms4};
+   local ndry_runs = tonumber(redis.call('get', _:qk-ndry-runs)) or 0;
+   local eoq_ms_tab = {_:eoq-bo1, _:eoq-bo2, _:eoq-bo3, _:eoq-bo4, _:eoq-bo5};
    local eoq_backoff_ms = tonumber(eoq_ms_tab[math.min(5, (ndry_runs + 1))]);
 
    -- Set queue-wide polling backoff flag
    redis.call('psetex', _:qk-eoq-backoff, eoq_backoff_ms, 'true');
    redis.call('incr',   _:qk-ndry-runs);
 
-   return 'eoq-backoff';
+   return {'sleep', 'end-of-circle', eoq_backoff_ms};
 end
 
 -- From msg_status.lua ---------------------------------------------------------
--- local mid      = _:mid;
-local now         = tonumber(_:now);
-local lock_exp    = tonumber(redis.call('hget', _:qk-locks,    mid)) or 0;
-local backoff_exp = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
-local state       = nil;
+local now = tonumber(_:now);
 
-if redis.call('hexists', _:qk-messages, mid) == 1 then
-   if redis.call('sismember', _:qk-done, mid) == 1 then
-      if (now < backoff_exp) then
-         if redis.call('sismember', _:qk-requeue, mid) == 1 then
-            state = 'done-with-requeue';
-         else
-            state = 'done-with-backoff';
-         end
-      else
-         state = 'done-awaiting-gc';
-      end
-   else
-      if (now < lock_exp) then
-         if redis.call('sismember', _:qk-requeue, mid) == 1 then
-            state = 'locked-with-requeue';
-         else
-            state = 'locked';
-         end
-      elseif (now < backoff_exp) then
-         state = 'queued-with-backoff';
-      else
-         state = 'queued';
-      end
-   end
+local status  = nil; -- base status e/o nil, done, queued, locked
+local is_bo = false; -- backoff flag for: done, queued
+local is_rq = false; -- requeue flag for: done, locked
+-- 8x cases: nil, done(bo/rq), queued(bo), locked(rq)
+-- Describe with: {status, $bo, $rq} with $ prefixes e/o: _, +, -, *
+
+if (redis.call('hexists', _:qk-messages, mid) == 1) then
+   local exp_lock = tonumber(redis.call('hget', _:qk-locks,    mid)) or 0;
+   local exp_bo   = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
+
+   is_bo = (now < exp_bo);
+   is_rq = (redis.call('sismember', _:qk-requeue,     mid) == 1) or -- Deprecated
+           (redis.call('hexists',   _:qk-messages-rq, mid) == 1);
+
+   if (redis.call('sismember', _:qk-done, mid) == 1) then status = 'done';
+   elseif (now < exp_lock)                           then status = 'locked';
+   else                                                   status = 'queued'; end
+else
+   status = 'nx';
 end
-
--- return state;
 --------------------------------------------------------------------------------
 
-if (state == 'locked') or
-   (state == 'locked-with-requeue') or
-   (state == 'queued-with-backoff') or
-   (state == 'done-with-backoff') then
-   return nil;
+if      (status == 'nx')                then return {'skip', 'unexpected'};
+elseif  (status == 'locked')            then return {'skip', 'locked'};
+elseif ((status == 'queued') and is_bo) then return {'skip', 'queued-with-backoff'};
+elseif ((status == 'done')   and is_bo) then return {'skip', 'done-with-backoff'};
 end
 
 redis.call('set', _:qk-ndry-runs, 0); -- Doing useful work
 
-if (state == 'done-awaiting-gc') then
-   redis.call('hdel',  _:qk-messages,   mid);
-   redis.call('hdel',  _:qk-locks,      mid);
-   redis.call('hdel',  _:qk-backoffs,   mid);
-   redis.call('hdel',  _:qk-nattempts,  mid);
-   redis.call('ltrim', _:qk-mid-circle, 1, -1);
-   redis.call('srem',  _:qk-done,       mid);
-   return nil;
+if (status == 'done') then
+   if is_rq then
+      -- {done, -bo, +rq} -> requeue now
+      local mcontent =
+	 redis.call('hget', _:qk-messages-rq, mid) or
+	 redis.call('hget', _:qk-messages,    mid); -- Deprecated (for qk-requeue)
+
+      local lock_ms =
+	 tonumber(redis.call('hget', _:qk-lock-times-rq, mid)) or
+	 tonumber(_:default-lock-ms);
+
+      redis.call('hset', _:qk-messages, mid, mcontent);
+      redis.call('hset', _:qk-udts,     mid, now);
+
+      if lock_ms then
+	 redis.call('hset', _:qk-lock-times, mid, lock_ms);
+      else
+	 redis.call('hdel', _:qk-lock-times, mid);
+      end
+
+      redis.call('hdel', _:qk-messages-rq,   mid);
+      redis.call('hdel', _:qk-lock-times-rq, mid);
+      redis.call('hdel', _:qk-nattempts,     mid);
+      redis.call('srem', _:qk-done,          mid);
+      redis.call('srem', _:qk-requeue,       mid);
+      return {'skip', 'did-requeue'};
+   else
+      -- {done, -bo, -rq} -> full GC now
+      redis.call('hdel',  _:qk-messages,      mid);
+      redis.call('hdel',  _:qk-messages-rq,   mid);
+      redis.call('hdel',  _:qk-lock-times,    mid);
+      redis.call('hdel',  _:qk-lock-times-rq, mid);
+      redis.call('hdel',  _:qk-udts,          mid);
+      redis.call('hdel',  _:qk-locks,         mid);
+      redis.call('hdel',  _:qk-backoffs,      mid);
+      redis.call('hdel',  _:qk-nattempts,     mid);
+      redis.call('srem',  _:qk-done,          mid);
+      redis.call('srem',  _:qk-requeue,       mid);
+      redis.call('ltrim', _:qk-mid-circle, 1, -1);
+      return {'skip', 'did-gc'};
+   end
+elseif (status == 'queued') then
+   -- {queued, -bo, _rq} -> handle now
+   local lock_ms =
+      tonumber(redis.call('hget', _:qk-lock-times, mid)) or
+      tonumber(_:default-lock-ms);
+
+                     redis.call('hset',    _:qk-locks,     mid, now + lock_ms); -- Acquire
+   local mcontent  = redis.call('hget',    _:qk-messages,  mid);
+   local udt       = redis.call('hget',    _:qk-udts,      mid);
+   local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1);
+
+   return {'handle', mid, mcontent, nattempts, lock_ms, tonumber(udt)};
 end
 
-redis.call('hset', _:qk-locks, mid, now + tonumber(_:lock-ms)); -- Acquire
-local mcontent  = redis.call('hget',    _:qk-messages,  mid);
-local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1);
-return {mid, mcontent, nattempts};
+return {'unexpected'};
