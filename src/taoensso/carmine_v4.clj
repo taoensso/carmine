@@ -52,7 +52,9 @@
 ;;   - Complete (esp. high-level / integration) tests
 ;;   - Grep for TODOs
 
-;; - Refactor commands, add modules support
+;; - Refactor commands
+;;   - Add modules support
+;;   - Also support custom (e.g. newer) commands.json or edn
 ;; - Refactor pub/sub, etc. (note RESP2 vs RESP3 differences)
 ;; - Refactor helpers API, etc.
 ;; - Modern MQ?
@@ -61,6 +63,7 @@
 ;; - Plan for ->v4 upgrade with back compatibility? ^{:deprecated <str>}
 ;; - v4 wiki with changes, migration, new features, examples, etc.
 ;;   - Mention `redis-call`, esp. re: modules and new API stuff
+;;   - Incl. new docs for mq.
 ;; - First alpha release
 
 ;;;; CHANGELOG

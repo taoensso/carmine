@@ -152,7 +152,7 @@ sentinel down-after-milliseconds %3$s 60000"
 (defn- get-rand [coll] (if (empty? coll) nil (get coll (rand-int (count coll)))))
 (defn- members= [c1 c2] (or (= c1 c2) (and (= (count c1) (count c2)) (= (set c1) (set c2)))))
 
-(defn- inc-stat! [stats_ k1 k2] (swap! stats_ (fn [m] (enc/update-in m [k1 k2] (fn [?n] (inc (or ?n 0)))))))
+(defn- inc-stat! [stats_ k1 k2] (swap! stats_ (fn [m] (enc/update-in m [k1 k2] (fn [?n] (inc (long (or ?n 0))))))))
 (comment (inc-stat! (atom {}) "foo" :k1))
 
 (deftype SentinelSpec
@@ -485,7 +485,7 @@ sentinel down-after-milliseconds %3$s 60000"
                   (enc/rfirst #(= % addr) (get node-addrs :replicas)))
             :replica))))))
 
-(let [ns *ns*] (defmethod print-method SentinelSpec [^SentinelSpec spec ^java.io.Writer w] (.write w (str "#" ns "." spec))))
+(let [ns *ns*] (defmethod print-method SentinelSpec [x ^java.io.Writer w] (.write w (str "#" ns "." x))))
 
 (defn ^:public sentinel-spec?
   "Returns true iff given argument is a Carmine SentinelSpec."
