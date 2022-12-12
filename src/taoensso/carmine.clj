@@ -1065,6 +1065,23 @@
       {}
       (fn [cursor] (wcar {} (hscan "test:foo" cursor))))))
 
+(defn scan-keys
+  "Returns a set of Redis keys that match the given pattern.
+  Like the Redis `keys` command, but implemented using `scan` so safe to
+  use in production.
+
+    (scan-keys <conn-opts> \"*\")     => Set of all keys
+    (scan-keys <conn-opts> \"foo:*\") => Set of all keys starting with \"foo:\""
+
+  [conn-opts pattern]
+  (persistent!
+    (reduce-scan enc/into!
+      (transient #{})
+      (fn [cursor]
+        (wcar conn-opts (scan cursor "MATCH" pattern))))))
+
+(comment (scan-keys {} "*"))
+
 ;;;; Deprecated
 
 (enc/deprecated
