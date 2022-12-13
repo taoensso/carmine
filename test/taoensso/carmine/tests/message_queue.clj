@@ -30,8 +30,8 @@
 (defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
 
 (def tq :carmine-test-queue)
-(defn clear-tq! [] (mq/clear-queues conn-opts tq))
-(defn tq-status [] (mq/queue-status conn-opts tq))
+(defn clear-tq! [] (mq/clear-queues conn-opts [tq]))
+(defn tq-status [] (mq/queue-status conn-opts  tq))
 
 (defn test-fixture [f] (f) (clear-tq!))
 (test/use-fixtures :once test-fixture) ; Just for final teardown
