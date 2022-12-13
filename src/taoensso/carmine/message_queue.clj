@@ -50,9 +50,17 @@
 
 (comment (mapv #(exp-backoff % {}) (range 5)))
 
-(def ^:private qkey (enc/fmemoize (partial car/key :carmine :mq)))
+(let [cluster-support? false] ; TODO Cluster support
+  (def ^:private qkey
+    (enc/fmemoize
+      (fn [qname k]
+        (car/key :carmine :mq
+          (if cluster-support?
+            (str "{" (enc/as-qname qname) "}")
+            (do                    qname))
+          k)))))
 
-(comment (enc/qb 1e6 (qkey :foo)))
+(comment (enc/qb 1e6 (qkey :qname :qk)))
 
 ;;;; Admin
 
