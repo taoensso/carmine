@@ -61,7 +61,7 @@
     (every? identity
       [(is (= reply ["sleep" "end-of-circle" eoq-backoff-ms]))
        (is (subvec? (handle1 conn-opts tq (fn hf [_] (throw!)) reply nil)
-             [:slept #_eoq-backoff-ms]))
+             [:slept "end-of-circle" #_eoq-backoff-ms]))
        (sleep :eoq)])))
 
 ;;;;
@@ -69,8 +69,7 @@
 (deftest basics
   (testing "Basic enqueue & dequeue"
     (clear-tq!)
-    [(is (=       (wcar* (dequeue tq)) ["sleep" "end-of-circle" eoq-backoff-ms]))
-     (is (subvec? (wcar* (dequeue tq)) ["sleep" "eoq-backoff" #_msecs]))
+    [(is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" eoq-backoff-ms]))
      (sleep :eoq)
 
      (is (= (wcar* (enqueue tq :msg1a {:mid :mid1}))                   {:action :added, :mid :mid1}))

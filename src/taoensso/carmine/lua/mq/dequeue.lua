@@ -1,9 +1,5 @@
 -- Return e/o {'sleep' ...}, {'skip' ...}, {'handle' ...}, {'unexpected' ...}
 
-if (redis.call('exists', _:qk-eoq-backoff) == 1) then
-   return {'sleep', 'eoq-backoff', redis.call('pttl', _:qk-eoq-backoff)};
-end
-
 local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle);
 local now = tonumber(_:now);
 
@@ -13,10 +9,7 @@ if ((not mid) or (mid == 'end-of-circle')) then -- Uninit'd or eoq
    local ndry_runs = tonumber(redis.call('get', _:qk-ndry-runs)) or 0;
    local eoq_ms_tab = {_:eoq-bo1, _:eoq-bo2, _:eoq-bo3, _:eoq-bo4, _:eoq-bo5};
    local eoq_backoff_ms = tonumber(eoq_ms_tab[math.min(5, (ndry_runs + 1))]);
-
-   -- Set queue-wide polling backoff flag
-   redis.call('psetex', _:qk-eoq-backoff, eoq_backoff_ms, 'true');
-   redis.call('incr',   _:qk-ndry-runs);
+   redis.call('incr', _:qk-ndry-runs);
 
    return {'sleep', 'end-of-circle', eoq_backoff_ms};
 end
