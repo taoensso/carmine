@@ -32,8 +32,7 @@
     * requeue       - mid set: awaiting requeue ; Deprecated
 
     * mid-circle    - list: rotating list of mids (next on right)
-    * ndry-runs     - int: num times worker(s) have lapped queue w/o work to do
-    * eoq-backoff?  - ttl flag: for global (every-worker) polling backoff"
+    * ndry-runs     - int: num times worker(s) have lapped queue w/o work to do"
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
@@ -95,8 +94,7 @@
                   (qk :done)
                   (qk :requeue)
                   (qk :mid-circle)
-                  (qk :ndry-runs)
-                  (qk :eoq-backoff?)))))
+                  (qk :ndry-runs)))))
           qnames)))))
 
 (defn clear-all-queues
@@ -149,8 +147,7 @@
            [:messages :messages-rq
             :lock-times :lock-times-rq
             :udts :locks :backoffs :nattempts
-            :done :requeue
-            :mid-circle :eoq-backoff? :ndry-runs]
+            :done :requeue :ndry-runs :mid-circle]
 
            (wcar conn-opts
              (car/parse kvs->map
@@ -163,12 +160,10 @@
                (car/hgetall (qk :backoffs))
                (car/hgetall (qk :nattempts)))
 
-             (->> (car/smembers (qk :done))    (car/parse set))
-             (->> (car/smembers (qk :requeue)) (car/parse set))
-
-             (do  (car/lrange (qk :mid-circle) 0 -1))
-             (->> (car/pttl   (qk :eoq-backoff?)) (car/parse enc/as-?pos-int)) ; ?ttl
-             (->> (car/get    (qk :ndry-runs))    (car/parse-int))))
+             (->> (car/smembers (qk :done))      (car/parse set))
+             (->> (car/smembers (qk :requeue))   (car/parse set))
+             (->> (car/get      (qk :ndry-runs)) (car/parse-int))
+             (do  (car/lrange   (qk :mid-circle) 0 -1))))
 
          {:keys [messages messages-rq
                  lock-times lock-times-rq
@@ -179,7 +174,7 @@
      (assoc
        (if incl-legacy-data?
          (do          m)
-         (select-keys m [:mid-circle :eoq-backoff? :ndry-runs]))
+         (select-keys m [:mid-circle :ndry-runs]))
 
        :last-mid (first mid-circle)
        :next-mid (peek  mid-circle)
@@ -363,7 +358,6 @@
        :qk-done          (qkey qname :done)
        :qk-requeue       (qkey qname :requeue)
        :qk-mid-circle    (qkey qname :mid-circle)
-       :qk-eoq-backoff   (qkey qname :eoq-backoff?)
        :qk-ndry-runs     (qkey qname :ndry-runs)}
 
       {:now              (enc/now-udt)
@@ -379,9 +373,7 @@
   (queue-status {} :q1)
   (wcar {} (enqueue :q1 :msg1 :mid1))
   (wcar {} (message-status :q1 :mid1))
-  (wcar {} (dequeue :q1 {}))
-  ;;(mapv exp-backoff (range 5))
-  (wcar {} (car/pttl (qkey :q1 :eoq-backoff?))))
+  (wcar {} (dequeue :q1 {})))
 
 (defn- inc-stat!
   ([stats_ k1   ] (when stats_ (swap! stats_ (fn [m] (enc/update-in m [k1]    (fn [?n] (inc (long (or ?n 0)))))))))
@@ -470,7 +462,7 @@
 
       (inc-stat! stats_ (keyword "poll" reason))
       (Thread/sleep (int ttl-ms))
-      [:slept ttl-ms])
+      [:slept reason ttl-ms])
 
     :else
     (do
