@@ -79,10 +79,8 @@
      (is (= (wcar* (msg-status tq :mid1)) :queued))
      (is (enc/submap? (tq-status)
            {:messages   {"mid1" :msg1b}
-            :mid-circle ["mid1" "end-of-circle"]}))
-
-     (is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" eoq-backoff-ms]))
-     (sleep :eoq)
+            :mids-ready ["mid1"]
+            :mid-circle ["end-of-circle"]}))
 
      (is (subvec? (wcar* (dequeue    tq)) ["handle" "mid1" :msg1b 1 default-lock-ms #_udt]))
      (is (=       (wcar* (msg-status tq :mid1)) :locked))
@@ -149,7 +147,6 @@
   [(testing "Handler => success"
      (clear-tq!)
      [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
-      (handle-end-of-circle)
 
       (let [[pr ha hr] (test-handler (fn [_m] {:status :success}))]
         [(is (subvec?     pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -166,7 +163,6 @@
    (testing "Handler => throws"
      (clear-tq!)
      [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
-      (handle-end-of-circle)
 
       (let [[pr ha hr] (test-handler (fn [_m] (throw!)))]
         [(is (subvec? pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -180,7 +176,6 @@
    (testing "Handler => success with backoff (dedupe)"
      (clear-tq!)
      [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
-      (handle-end-of-circle)
 
       (let [[pr ha hr] (test-handler (fn [_m] {:status :success :backoff-ms 2000}))]
         [(is (subvec? pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -199,7 +194,6 @@
    (testing "Handler => retry with backoff"
      (clear-tq!)
      [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
-      (handle-end-of-circle)
 
       (let [[pr ha hr] (test-handler (fn [_m] {:status :retry :backoff-ms 2000}))]
         [(is (subvec? pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -220,7 +214,6 @@
      (testing "Default lock time"
        (clear-tq!)
        [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
-        (handle-end-of-circle)
 
         ;; Simulate bad handler
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 1000})) ["handle" "mid1" :msg1 1 1000 #_udt]))
@@ -234,7 +227,6 @@
      (testing "Custom lock time"
        (clear-tq!)
        [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :lock-ms 2000})) {:action :added, :mid :mid1}))
-        (handle-end-of-circle)
 
         ;; Simulate bad handler
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 500})) ["handle" "mid1" :msg1 1 2000 #_udt]))
@@ -249,7 +241,6 @@
   [(testing "Enqueue while :locked"
      (clear-tq!)
      [(is (= (wcar* (enqueue tq :msg1a {:mid :mid1})) {:action :added, :mid :mid1}))
-      (handle-end-of-circle)
 
       (do (test-handler :async (fn [_m] (Thread/sleep 2000) {:status :success})) :async-handler-running)
 
@@ -274,7 +265,6 @@
    (testing "Enqueue while :done-with-backoff"
      (clear-tq!)
      [(is (= (wcar* (enqueue tq :msg1a {:mid :mid1})) {:action :added, :mid :mid1}))
-      (handle-end-of-circle)
 
       (do (test-handler (fn [_m] {:status :success :backoff-ms 2000})) :ran-handler)
 
@@ -313,13 +303,17 @@
         [(is (enc/submap? (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added}))
          (is (enc/submap? (wcar* (enqueue tq :msg2 {:mid :mid2})) {:action :added}))
 
-         (is (= (:mid-circle (queue-status)) ["mid2" "mid1" "end-of-circle"]))
+         (is (enc/submap? (queue-status)
+               {:mids-ready ["mid2" "mid1"]
+                :mid-circle ["end-of-circle"]}))
 
          (is (mq/start   worker))
          (is (:running? @worker))
 
          (sleep 1000)
          (is (= @msgs_ [:msg1 :msg2]))
-         (is (= (:mid-circle (queue-status)) ["end-of-circle"]))
+         (is (enc/submap? (queue-status)
+               {:mids-ready []
+                :mid-circle ["end-of-circle"]}))
 
          (is (mq/stop worker))]))))

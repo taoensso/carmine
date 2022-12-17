@@ -2,8 +2,8 @@
   "Carmine-backed Clojure message queue, v2.
   All heavy lifting by Redis.
 
-  Uses a message circle architecture that is simple, reliable, and
-  has reasonable throughput but only moderate latency [1].
+  Uses an optimized message circle architecture that is simple, reliable,
+  and has pretty good throughput and latency.
 
   See `mq-diagram.svg` in repo for diagram of architecture,
   Ref. http://antirez.com/post/250 for initial inspiration.
@@ -31,7 +31,8 @@
     * done          - mid set: awaiting gc, etc.
     * requeue       - mid set: awaiting requeue ; Deprecated
 
-    * mid-circle    - list: rotating list of mids (next on right)
+    * mids-ready    - list: mids for immediate handling     (push to left, pop from right)
+    * mid-circle    - list: mids for maintenance processing (push to left, pop from right)
     * ndry-runs     - int: num times worker(s) have lapped queue w/o work to do"
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
@@ -102,6 +103,7 @@
                   (qk :nattempts)
                   (qk :done)
                   (qk :requeue)
+                  (qk :mids-ready)
                   (qk :mid-circle)
                   (qk :ndry-runs)))))
           qnames)))))
@@ -156,7 +158,8 @@
            [:messages :messages-rq
             :lock-times :lock-times-rq
             :udts :locks :backoffs :nattempts
-            :done :requeue :ndry-runs :mid-circle]
+            :done :requeue :ndry-runs
+            :mids-ready :mid-circle]
 
            (wcar conn-opts
              (car/parse kvs->map
@@ -172,21 +175,24 @@
              (->> (car/smembers (qk :done))      (car/parse set))
              (->> (car/smembers (qk :requeue))   (car/parse set))
              (->> (car/get      (qk :ndry-runs)) (car/parse-int))
+             (do  (car/lrange   (qk :mids-ready) 0 -1))
              (do  (car/lrange   (qk :mid-circle) 0 -1))))
 
          {:keys [messages messages-rq
                  lock-times lock-times-rq
                  udts locks backoffs nattempts
                  done requeue
-                 mid-circle]} m]
+                 mids-ready mid-circle]} m]
 
      (assoc
        (if incl-legacy-data?
          (do          m)
-         (select-keys m [:mid-circle :ndry-runs]))
+         (select-keys m [:mids-ready :mid-circle :ndry-runs]))
 
-       :last-mid (first mid-circle)
-       :next-mid (peek  mid-circle)
+       :last-mid   (first mid-circle)
+       :next-mid   (or (peek  mids-ready) (peek  mid-circle))
+       :queue-size (+  (count mids-ready) (count mid-circle))
+
        :by-mid ; {<mid> {:keys [message status ...]}}
        (persistent!
          (reduce-kv
@@ -318,6 +324,7 @@
          :qk-nattempts     (qkey qname :nattempts)
          :qk-done          (qkey qname :done)
          :qk-requeue       (qkey qname :requeue)
+         :qk-mids-ready    (qkey qname :mids-ready)
          :qk-mid-circle    (qkey qname :mid-circle)}
 
         {:now      (enc/now-udt)
@@ -330,8 +337,7 @@
          :lock-ms  (or lock-ms        -1)}))))
 
 (defn- dequeue
-  "Rotates queue's mid-circle and processes next mid.
-  Returns:
+  "Processes next mid and returns:
     - [\"skip\"   <reason>]                                   ; Worker thread should skip
     - [\"sleep\"  <reason> <msecs>]                           ; Worker thread should sleep
     - [\"handle\" <mid> <mcontent> <attempt> <lock-ms> <udt>] ; Worker thread should handle"
@@ -362,6 +368,7 @@
        :qk-nattempts     (qkey qname :nattempts)
        :qk-done          (qkey qname :done)
        :qk-requeue       (qkey qname :requeue)
+       :qk-mids-ready    (qkey qname :mids-ready)
        :qk-mid-circle    (qkey qname :mid-circle)
        :qk-ndry-runs     (qkey qname :ndry-runs)}
 
@@ -532,24 +539,31 @@
                 (when @running?_
                   (let [ex
                         (try
-                          (let [[poll-reply ndry-runs mid-circle-size :as -resp]
+                          (let [-resp
                                 (wcar conn-opts
                                   (dequeue qname opts)
                                   (car/get  (qk :ndry-runs))
+                                  (car/llen (qk :mids-ready))
                                   (car/llen (qk :mid-circle)))]
 
-                            (when-let [t (enc/rfirst #(instance? Throwable %) -resp)]
-                              (throw t))
+                            (if-let [t (enc/rfirst #(instance? Throwable %) -resp)]
+                              (throw t)
+                              (let [[poll-reply ndry-runs mids-ready-size mid-circle-size] -resp]
+                                (when monitor
+                                  (let [queue-size
+                                        (+
+                                          (long mids-ready-size)
+                                          (long mid-circle-size))]
 
-                            (when monitor
-                              (monitor
-                                {:mid-circle-size mid-circle-size
-                                 :ndry-runs       (or ndry-runs 0)
-                                 :poll-reply      poll-reply}))
+                                    (monitor
+                                      {:queue-size      queue-size
+                                       :mid-circle-size queue-size ; Back compatibility
+                                       :ndry-runs       (or ndry-runs 0)
+                                       :poll-reply      poll-reply})))
 
-                            (handle1 conn-opts qname handler poll-reply stats_)
-                            nil ; Successful loop
-                            )
+                                (handle1 conn-opts qname handler poll-reply stats_)
+                                nil ; Successful loop
+                                )))
                           (catch Throwable t t))]
 
                     (if ex
@@ -579,19 +593,18 @@
 (defn worker? [x] (instance? CarmineMessageQueueWorker x))
 
 (defn monitor-fn
-  "Returns a worker monitor fn that warns when queue's mid-circle exceeds
-  the prescribed size. A backoff timeout can be provided to rate-limit this
-  warning."
-  [qname max-circle-size warn-backoff-ms]
+  "Returns a worker monitor fn that warns when queue exceeds the prescribed
+  size. A backoff timeout can be provided to rate-limit this warning."
+  [qname max-queue-size warn-backoff-ms]
   (let [udt-last-warning_ (atom 0)]
-    (fn [{:keys [mid-circle-size]}]
-      (when (> (long mid-circle-size) (long max-circle-size))
+    (fn [{:keys [queue-size]}]
+      (when (> (long queue-size) (long max-queue-size))
         (let [instant (enc/now-udt)
               udt-last-warning (long @udt-last-warning_)]
           (when (> (- instant udt-last-warning) (long (or warn-backoff-ms 0)))
             (when (compare-and-set! udt-last-warning_ udt-last-warning instant)
               (timbre/warn "[Carmine/mq] Message queue monitor-fn size warning"
-                {:qname qname, :circle-size {:max max-circle-size, :current mid-circle-size}}))))))))
+                {:qname qname, :queue-size {:max max-queue-size, :current queue-size}}))))))))
 
 (defn worker
   "Returns a stateful threaded CarmineMessageQueueWorker to handle messages
@@ -602,7 +615,7 @@
                       or returns {:status     <#{:success :error :retry}>
                                   :throwable  <Throwable>
                                   :backoff-ms <retry-or-dedupe-backoff-ms}.
-    :monitor        - (fn [{:keys [mid-circle-size ndry-runs poll-reply]}])
+    :monitor        - (fn [{:keys [queue-size ndry-runs poll-reply]}])
                       called on each worker loop iteration. Useful for queue
                       monitoring/logging. See also `monitor-fn`.
     :lock-ms        - Default time that handler may keep a message before handler
