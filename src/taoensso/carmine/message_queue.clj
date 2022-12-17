@@ -495,22 +495,26 @@
   (stop  [this]))
 
 (deftype CarmineMessageQueueWorker
-  [qname opts conn-opts running?_ thread-futures_ nstats_ ssb]
+  [qname worker-opts conn-opts running?_ future-pool worker-futures_ nstats_ ssb]
 
   java.io.Closeable (close [this] (stop this))
   Object
-  (toString [this] ; "CarmineMessageQueueWorker[nthreads=1, running]"
-    (str "CarmineMessageQueueWorker["
-      "nthreads=" (count @thread-futures_) ", "
+  (toString [this] ; "CarmineMessageQueueWorker[nthreads=1w+1h, running]"
+    (str "CarmineMessageQueueWorker[nthreads="
+      (get worker-opts :nthreads-worker)  "w+"
+      (get worker-opts :nthreads-handler) "h, "
       (if @running?_ "running" "shut down") "]"))
 
   clojure.lang.IDeref
   (deref [this]
-    {:qname     qname
-     :nthreads  (count @thread-futures_)
-     :running?  @running?_
+    {:qname    qname
+     :running? @running?_
+     :nthreads
+     {:worker  (get worker-opts :nthreads-worker)
+      :handler (get worker-opts :nthreads-handler)}
+
      :conn-opts conn-opts
-     :opts      opts
+     :opts    worker-opts
      :stats
      {:queue-size (when-let [ss @ssb] @ss)
       :counts     @nstats_}
@@ -524,75 +528,93 @@
   (stop [_]
     (when (compare-and-set! running?_ true false)
       (timbre/info "[Carmine/mq] Queue worker shutting down" {:qname qname})
-      (run! deref @thread-futures_)
+      (run! deref @worker-futures_)
       (timbre/info "[Carmine/mq] Queue worker has shut down" {:qname qname})
       true))
 
   (start [this]
     (when (compare-and-set! running?_ false true)
       (timbre/info "[Carmine/mq] Queue worker starting" {:qname qname})
-      (let [{:keys [handler monitor nthreads throttle-ms]} opts
+      (let [{:keys [handler monitor nthreads-worker throttle-ms]} worker-opts
             qk (partial qkey qname)
             throttle-ms
             (when (and throttle-ms (> (long throttle-ms) 0))
               throttle-ms)
 
+            ;; Count consecutive errors across all loop threads, these may indicate
+            ;; an issue with Redis or handler fn (/ handler's supporting systems)
+            nconsecutive-errors (enc/counter)
+
             start-polling-loop!
             (fn [^long thread-idx]
-              (when (> thread-idx 0)
-                (Thread/sleep (int (thread-desync-ms (or throttle-ms 100)))))
+              (let [;; thread-id (.getId (Thread/currentThread))
+                    loop-error-backoff?_ (atom false)
+                    loop-error!
+                    (fn [throwable]
+                      (let [nce (nconsecutive-errors :+=)]
+                        (timbre/error throwable "[Carmine/mq] Worker error, will backoff & retry."
+                          {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce}))
+                      (reset! loop-error-backoff?_ true))]
 
-              (loop [nloops 0, nconsecutive-errors 0]
-                (when @running?_
-                  (let [ex
-                        (try
-                          (let [-resp
-                                (wcar conn-opts
-                                  (dequeue qname opts)
-                                  (car/get  (qk :ndry-runs))
-                                  (car/llen (qk :mids-ready))
-                                  (car/llen (qk :mid-circle)))]
+                (when (> thread-idx 0)
+                  (Thread/sleep (int (thread-desync-ms (or throttle-ms 100)))))
 
-                            (if-let [t (enc/rfirst #(instance? Throwable %) -resp)]
-                              (throw t)
-                              (let [[poll-reply ndry-runs mids-ready-size mid-circle-size] -resp
-                                    queue-size
-                                    (+
-                                      (long mids-ready-size)
-                                      (long mid-circle-size))]
+                (loop [nloops 0]
+                  (when @running?_
 
-                                (ssb queue-size) ; -> summary-stats-buffered
+                    (when (compare-and-set! loop-error-backoff?_ true false)
+                      (let [nce @nconsecutive-errors]
+                        (when (> nce 0)
+                          (let [backoff-ms
+                                (exp-backoff (min 12 nce)
+                                  {:factor (or throttle-ms 200)})]
 
-                                (when monitor
-                                  (monitor
-                                    {:queue-size      queue-size
-                                     :mid-circle-size queue-size ; Back compatibility
-                                     :ndry-runs       (or ndry-runs 0)
-                                     :poll-reply      poll-reply
-                                     :worker          this}))
+                            (timbre/info "[Carmine/mq] Worker thread backing off due to worker error/s"
+                              {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
+                               :backoff-ms backoff-ms})
+                            (Thread/sleep (int backoff-ms))))))
 
-                                (handle1 conn-opts qname handler poll-reply nstats_)
-                                nil ; Successful loop
-                                )))
-                          (catch Throwable t t))]
+                    (try
+                      (let [resp
+                            (wcar conn-opts
+                              (dequeue qname worker-opts)
+                              (car/get  (qk :ndry-runs))
+                              (car/llen (qk :mids-ready))
+                              (car/llen (qk :mid-circle)))]
 
-                    (if ex
-                      (let [nce        (inc nconsecutive-errors)
-                            backoff-ms (exp-backoff (min 12 nce) {:factor (or throttle-ms 200)})]
-                        (timbre/error ex "[Carmine/mq] Worker error, will backoff & retry."
-                          {:qname qname, :backoff-ms backoff-ms, :nconsecutive-errors nce})
+                        (if-let [t (enc/rfirst #(instance? Throwable %) resp)]
+                          (throw t)
+                          (future-pool
+                            (fn []
+                              (try
+                                (let [[poll-reply ndry-runs mids-ready-size mid-circle-size] resp
+                                      queue-size
+                                      (+
+                                        (long mids-ready-size)
+                                        (long mid-circle-size))]
 
-                        (Thread/sleep (int backoff-ms))
-                        (recur (inc nloops) nce))
+                                  (ssb queue-size) ; -> summary-stats-buffered
 
-                      (do
-                        (when throttle-ms (Thread/sleep (int throttle-ms)))
-                        (recur (inc nloops) nconsecutive-errors)))))))]
+                                  (when monitor
+                                    (monitor
+                                      {:queue-size      queue-size
+                                       :mid-circle-size queue-size ; Back compatibility
+                                       :ndry-runs       (or ndry-runs 0)
+                                       :poll-reply      poll-reply
+                                       :worker          this}))
 
-        (reset! thread-futures_
+                                  (handle1 conn-opts qname handler poll-reply nstats_)
+                                  (nconsecutive-errors :set 0))
+                                (catch Throwable t (loop-error! t)))))))
+                      (catch           Throwable t (loop-error! t)))
+
+                    (when throttle-ms (Thread/sleep (int throttle-ms)))
+                    (recur (inc nloops))))))]
+
+        (reset! worker-futures_
           (enc/reduce-n
             (fn [v idx] (conj v (future (start-polling-loop! idx))))
-            [] nthreads)))
+            [] nthreads-worker)))
 
       true)))
 
@@ -621,47 +643,59 @@
   added to named queue with `enqueue`.
 
   Options:
-    :handler        - (fn [{:keys [qname mid message attempt]}]) that throws
-                      or returns {:status     <#{:success :error :retry}>
-                                  :throwable  <Throwable>
-                                  :backoff-ms <retry-or-dedupe-backoff-ms}.
-    :monitor        - (fn [{:keys [queue-size ndry-runs poll-reply]}])
-                      called on each worker loop iteration. Useful for queue
-                      monitoring/logging. See also `monitor-fn`.
-    :lock-ms        - Default time that handler may keep a message before handler
-                      considered fatally stalled and message is re-queued. Must be
-                      sufficiently high to prevent double handling. Can be
-                      overridden on a per-message basis via `enqueue`.
-    :eoq-backoff-ms - Thread sleep period each time end of queue is reached.
-                      Can be a (fn [ndry-runs]) => msecs for n<=5.
-                      Sleep synchronized for all queue workers.
-    :nthreads       - Number of worker threads to use.
-    :throttle-ms    - Thread sleep period between each poll."
+    :handler          - (fn [{:keys [qname mid message attempt]}]) that throws
+                        or returns {:status     <#{:success :error :retry}>
+                                    :throwable  <Throwable>
+                                    :backoff-ms <retry-or-dedupe-backoff-ms}.
+    :monitor          - (fn [{:keys [queue-size ndry-runs poll-reply]}])
+                        called on each worker loop iteration. Useful for queue
+                        monitoring/logging. See also `monitor-fn`.
+    :lock-ms          - Default time that handler may keep a message before handler
+                        considered fatally stalled and message is re-queued. Must be
+                        sufficiently high to prevent double handling. Can be
+                        overridden on a per-message basis via `enqueue`.
+    :eoq-backoff-ms   - Thread sleep period each time end of queue is reached.
+                        Can be a (fn [ndry-runs]) => msecs for n<=5.
+                        Sleep synchronized for all queue workers.
+    :throttle-ms      - Thread sleep period between each poll.
+
+    :nthreads-worker  - Number of threads to monitor and maintain queue.
+    :nthreads-handler - Number of threads to handle queue messages with handler fn."
 
   ([conn-opts qname] (worker conn-opts qname nil))
   ([conn-opts qname
-    {:keys [handler monitor lock-ms eoq-backoff-ms nthreads
-            throttle-ms auto-start] :as worker-opts
+    {:keys [handler monitor lock-ms eoq-backoff-ms throttle-ms auto-start
+            nthreads-worker nthreads-handler] :as worker-opts
      :or   {handler (fn [m] (timbre/info m) {:status :success})
             monitor (monitor-fn qname 1000 (enc/ms :hours 6))
-            lock-ms        (enc/ms :mins 60)
-            nthreads       1
+            lock-ms (enc/ms :mins 60)
+            nthreads-worker  1
+            nthreads-handler 1
             throttle-ms    200
             eoq-backoff-ms exp-backoff
             auto-start     true}}]
 
-   (let [worker-opts
+   (let [nthreads             (get       worker-opts :nthreads 1) ; Back compatibility
+         nthreads-worker  (if (contains? worker-opts :nthreads-worker)  nthreads-worker  nthreads)
+         nthreads-handler (if (contains? worker-opts :nthreads-handler) nthreads-handler nthreads)
+
+         worker-opts
          (conj (or worker-opts {})
-           {:handler         handler
-            :monitor         monitor
-            :default-lock-ms lock-ms
-            :eoq-backoff-ms  eoq-backoff-ms
-            :nthreads        nthreads
-            :throttle-ms     throttle-ms})
+           {:handler          handler
+            :monitor          monitor
+            :default-lock-ms  lock-ms
+            :eoq-backoff-ms   eoq-backoff-ms
+            :nthreads-worker  nthreads-worker
+            :nthreads-handler nthreads-handler
+            :throttle-ms      throttle-ms})
 
          w
          (CarmineMessageQueueWorker.
-           qname worker-opts conn-opts (atom false) (atom []) (atom {})
+           qname worker-opts conn-opts
+           (atom false)
+           (enc/future-pool nthreads-handler)
+           (atom [])
+           (atom {})
            (let [ssb (tufte-stats/summary-stats-buffered {:buffer-size 10000})]
              (ssb 0)
              ssb))
