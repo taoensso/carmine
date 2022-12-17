@@ -1,7 +1,17 @@
 -- Return e/o {'sleep' ...}, {'skip' ...}, {'handle' ...}, {'unexpected' ...}
 
-local mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle);
-local now = tonumber(_:now);
+-- Prioritize mids from ready list
+local mid_src = nil;
+local mid     = nil;
+mid = redis.call('rpoplpush', _:qk-mids-ready, _:qk-mid-circle);
+if mid then
+   mid_src = 'ready';
+else
+   mid = redis.call('rpoplpush', _:qk-mid-circle, _:qk-mid-circle);
+   if mid then
+      mid_src = 'circle';
+   end
+end
 
 if ((not mid) or (mid == 'end-of-circle')) then -- Uninit'd or eoq
 
@@ -39,7 +49,13 @@ else
 end
 --------------------------------------------------------------------------------
 
-if      (status == 'nx')                then return {'skip', 'unexpected'};
+if (status == 'nx') then
+   if (mid_src == 'circle') then
+      redis.call('ltrim', _:qk-mid-circle, 1, -1); -- Remove from circle
+      return {'skip', 'did-trim'};
+   else
+      return {'skip', 'unexpected'};
+   end
 elseif  (status == 'locked')            then return {'skip', 'locked'};
 elseif ((status == 'queued') and is_bo) then return {'skip', 'queued-with-backoff'};
 elseif ((status == 'done')   and is_bo) then return {'skip', 'done-with-backoff'};
@@ -85,7 +101,11 @@ if (status == 'done') then
       redis.call('hdel',  _:qk-nattempts,     mid);
       redis.call('srem',  _:qk-done,          mid);
       redis.call('srem',  _:qk-requeue,       mid);
-      redis.call('ltrim', _:qk-mid-circle, 1, -1);
+
+      if (mid_src == 'circle') then
+	 redis.call('ltrim', _:qk-mid-circle, 1, -1); -- Remove from circle
+      end
+
       return {'skip', 'did-gc'};
    end
 elseif (status == 'queued') then

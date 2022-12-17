@@ -68,18 +68,20 @@ end
 if (status == 'nx') then
    -- {nil, _bo, _rq} -> add to queue
 
-   -- Set the initial backoff if requested
-   local init_bo = tonumber(_:init-bo);
-   if (init_bo ~= 0) then
-      redis.call('hset', _:qk-backoffs, _:mid, now + init_bo);
-   end
-
-   -- Ensure that mid-circle is initialized
+    -- Ensure that mid-circle is initialized
    if redis.call('exists', _:qk-mid-circle) ~= 1 then
       redis.call('lpush',  _:qk-mid-circle, 'end-of-circle');
    end
 
-   redis.call('lpush', _:qk-mid-circle, _:mid);
+   -- Set the initial backoff if requested
+   local init_bo = tonumber(_:init-bo);
+   if (init_bo ~= 0) then
+      redis.call('hset',  _:qk-backoffs, _:mid, now + init_bo);
+      redis.call('lpush', _:qk-mid-circle, _:mid); -- -> Maintenance queue
+   else
+      redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Handler queue
+   end
+
    reset_in_queue();
    return {'added'};
 
