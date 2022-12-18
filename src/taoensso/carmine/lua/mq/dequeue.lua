@@ -21,7 +21,10 @@ if ((not mid) or (mid == 'end-of-circle')) then -- Uninit'd or eoq
    local eoq_backoff_ms = tonumber(eoq_ms_tab[math.min(5, (ndry_runs + 1))]);
    redis.call('incr', _:qk-ndry-runs);
 
-   return {'sleep', 'end-of-circle', eoq_backoff_ms};
+   local isleep_on = nil;
+   if (redis.call('llen', _:qk-isleep-b) > 0) then isleep_on = 'b'; else isleep_on = 'a'; end
+
+   return {'sleep', 'end-of-circle', isleep_on, eoq_backoff_ms};
 end
 
 -- From msg_status.lua ---------------------------------------------------------

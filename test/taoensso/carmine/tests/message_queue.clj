@@ -48,29 +48,36 @@
     (defn- dequeue [qname & [opts]]
       (#'mq/dequeue qname (conj default-opts opts)))))
 
-(defn sleep [n]
-  (let [n (int (case n :eoq (* 2.5 eoq-backoff-ms) n))]
-    (Thread/sleep n)
-    (str "slept " n "msecs")))
+(defn sleep
+  ([          n] (sleep nil n))
+  ([isleep-on n]
+   (let [n (int (case n :eoq (* 2.5 eoq-backoff-ms) n))]
+     (if-let [on isleep-on]
+       (#'mq/interruptible-sleep conn-opts tq on n)
+       (Thread/sleep                             n))
+
+     (if-let [on isleep-on]
+       (str "islept " n "msecs on " isleep-on)
+       (str  "slept " n "msecs")))))
 
 ;;;;
 
 (defn throw! [] (throw (Exception.)))
-(defn handle-end-of-circle []
+(defn handle-end-of-circle [isleep-on]
   (let [reply (wcar* (dequeue tq))]
     (every? identity
-      [(is (= reply ["sleep" "end-of-circle" eoq-backoff-ms]))
+      [(is (= reply ["sleep" "end-of-circle" isleep-on eoq-backoff-ms]))
        (is (subvec? (handle1 conn-opts tq (fn hf [_] (throw!)) reply nil)
-             [:slept "end-of-circle" #_eoq-backoff-ms]))
-       (sleep :eoq)])))
+             [:slept "end-of-circle" isleep-on #_eoq-backoff-ms]))
+       (sleep isleep-on :eoq)])))
 
 ;;;;
 
 (deftest basics
   (testing "Basic enqueue & dequeue"
     (clear-tq!)
-    [(is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" eoq-backoff-ms]))
-     (sleep :eoq)
+    [(is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))
+     (sleep "a" :eoq)
 
      (is (= (wcar* (enqueue tq :msg1a {:mid :mid1}))                   {:action :added, :mid :mid1}))
      (is (= (wcar* (enqueue tq :msg1b {:mid :mid1}))                   {:error :already-queued}) "Dupe mid")
@@ -84,12 +91,12 @@
 
      (is (subvec? (wcar* (dequeue    tq)) ["handle" "mid1" :msg1b 1 default-lock-ms #_udt]))
      (is (=       (wcar* (msg-status tq :mid1)) :locked))
-     (is (=       (wcar* (dequeue    tq)) ["sleep" "end-of-circle" eoq-backoff-ms]))]))
+     (is (=       (wcar* (dequeue    tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))]))
 
 (deftest init-backoff
   (testing "Enqueue with initial backoff"
     (clear-tq!)
-    [(is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" eoq-backoff-ms]))
+    [(is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))
      (is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 500})) {:action :added, :mid :mid1}))
      (is (= (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 100})) {:action :added, :mid :mid2}))
 
@@ -117,7 +124,7 @@
      (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:error :already-queued}))
      (is (= (wcar* (enqueue tq :msg2 {:mid :mid2})) {:error :already-queued}))
 
-     (handle-end-of-circle)
+     (handle-end-of-circle "b")
 
      (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
      (is (= (wcar* (msg-status tq :mid1)) :locked))
@@ -156,7 +163,7 @@
          (is (= hr [:handled :success]))])
 
       (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
-      (handle-end-of-circle)
+      (handle-end-of-circle "a")
       (is (= (wcar* (dequeue    tq)) ["skip" "did-gc"]))
       (is (= (wcar* (msg-status tq :mid1)) nil))])
 
@@ -169,7 +176,7 @@
          (is (=       hr [:handled :error]))])
 
       (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc ))
-      (handle-end-of-circle)
+      (handle-end-of-circle "a")
       (is (= (wcar* (dequeue    tq)) ["skip" "did-gc"]))
       (is (= (wcar* (msg-status tq :mid1)) nil))])
 
@@ -182,12 +189,12 @@
          (is (=       hr [:handled :success]))])
 
       (is (= (wcar* (msg-status tq :mid1)) :done-with-backoff))
-      (handle-end-of-circle)
+      (handle-end-of-circle "a")
       (is (= (wcar* (dequeue tq)) ["skip" "done-with-backoff"]))
 
       (sleep 2500) ; > handler backoff
       (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
-      (handle-end-of-circle)
+      (handle-end-of-circle "b")
 
       (is (= (wcar* (dequeue tq)) ["skip" "did-gc"]))])
 
@@ -200,12 +207,12 @@
          (is (=       hr [:handled :retry]))])
 
       (is (= (wcar* (msg-status tq :mid1)) :queued-with-backoff))
-      (handle-end-of-circle)
+      (handle-end-of-circle "a")
       (is (= (wcar* (dequeue tq)) ["skip" "queued-with-backoff"]))
 
       (sleep 2500) ; > handler backoff
       (is (= (wcar* (msg-status tq :mid1)) :queued))
-      (handle-end-of-circle)
+      (handle-end-of-circle "b")
 
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1 2 default-lock-ms #_udt]))])
 
@@ -219,7 +226,7 @@
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 1000})) ["handle" "mid1" :msg1 1 1000 #_udt]))
 
         (is (= (wcar* (msg-status tq :mid1)) :locked))
-        (handle-end-of-circle)
+        (handle-end-of-circle "a")
 
         (sleep 1500) ; Wait for lock to expire
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 1000})) ["handle" "mid1" :msg1 2 1000 #_udt]))])
@@ -232,7 +239,7 @@
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 500})) ["handle" "mid1" :msg1 1 2000 #_udt]))
 
         (is (= (wcar* (msg-status tq :mid1)) :locked))
-        (handle-end-of-circle)
+        (handle-end-of-circle "a")
 
         (sleep 2500) ; Wait for lock to expire
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 500})) ["handle" "mid1" :msg1 2 2000 #_udt]))]))])
@@ -255,10 +262,10 @@
       (is (= (wcar* (msg-status tq :mid1)) :locked-with-requeue))
       (sleep 2500) ; > handler lock
       (is (= (wcar* (msg-status tq :mid1)) :done-with-requeue) "Not :done-awaiting-gc")
-      (handle-end-of-circle)
+      (handle-end-of-circle "a")
 
       (is (= (wcar* (dequeue tq)) ["skip" "did-requeue"]))
-      (handle-end-of-circle)
+      (handle-end-of-circle "b")
 
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1e 1 500 #_udt]))])
 
@@ -274,11 +281,11 @@
                                            :lock-ms 500}))                   {:action :added, :mid :mid1}))
       (is (= (wcar* (msg-status tq :mid1)) :done-with-requeue))
 
-      (handle-end-of-circle)
+      (handle-end-of-circle "a")
       (sleep 2500) ; > handler backoff
 
       (is (= (wcar* (dequeue tq)) ["skip" "did-requeue"]))
-      (handle-end-of-circle)
+      (handle-end-of-circle "b")
 
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1c 1 500 #_udt]))])])
 

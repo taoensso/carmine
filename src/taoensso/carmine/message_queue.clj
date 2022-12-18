@@ -33,7 +33,10 @@
 
     * mids-ready    - list: mids for immediate handling     (push to left, pop from right)
     * mid-circle    - list: mids for maintenance processing (push to left, pop from right)
-    * ndry-runs     - int: num times worker(s) have lapped queue w/o work to do"
+    * ndry-runs     - int: num times worker(s) have lapped queue w/o work to do
+
+    * isleep-a      - list: 0/1 sentinel element for `interruptible-sleep`
+    * isleep-b      - list: 0/1 sentinel element for `interruptible-sleep`"
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
@@ -105,7 +108,9 @@
                   (qk :requeue)
                   (qk :mids-ready)
                   (qk :mid-circle)
-                  (qk :ndry-runs)))))
+                  (qk :ndry-runs)
+                  (qk :isleep-a)
+                  (qk :isleep-b)))))
           qnames)))))
 
 (defn clear-all-queues
@@ -330,7 +335,9 @@
          :qk-done          (qkey qname :done)
          :qk-requeue       (qkey qname :requeue)
          :qk-mids-ready    (qkey qname :mids-ready)
-         :qk-mid-circle    (qkey qname :mid-circle)}
+         :qk-mid-circle    (qkey qname :mid-circle)
+         :qk-isleep-a      (qkey qname :isleep-a)
+         :qk-isleep-b      (qkey qname :isleep-b)}
 
         {:now      (enc/now-udt)
          :mid      mid
@@ -374,7 +381,9 @@
        :qk-requeue       (qkey qname :requeue)
        :qk-mids-ready    (qkey qname :mids-ready)
        :qk-mid-circle    (qkey qname :mid-circle)
-       :qk-ndry-runs     (qkey qname :ndry-runs)}
+       :qk-ndry-runs     (qkey qname :ndry-runs)
+       ;;:qk-isleep-a    (qkey qname :isleep-a)
+       :qk-isleep-b      (qkey qname :isleep-b)}
 
       {:now              (enc/now-udt)
        :default-lock-ms  default-lock-ms
@@ -404,6 +413,41 @@
     (int (* r (long ms)))))
 
 (comment (repeatedly 5 #(thread-desync-ms 500)))
+
+(defn- interruptible-sleep
+  "To provide an interruptible thread sleep mechanism, we:
+
+    - On init: create two empty lists (`isleep-a`, `isleep-b`) and
+      push a single sentinel element to `isleep-a`.
+
+    - On enqueue:       move sentinel from non-empty to     empty list.
+    - On dequeue sleep: move sentinel from     empty to non-empty list,
+      via a blocking call with timeout.
+
+  I.e. we're just moving a dummy element back and form between two lists.
+  Doing a blocking move on the empty list then provides a robust
+  interruptible sleep.
+
+  Note that `conn-opts` should allow a read timeout >= msecs, otherwise
+  sleep will be interrupted prematurely by timeout."
+
+  [conn-opts qname isleep-on ms]
+  (let [secs-dbl
+        (let [ms (max (long ms) 10)]
+          (/ (double ms) 1000.0))
+
+        [qk-src qk-dst]
+        (let [qk-a (qkey qname :isleep-a)
+              qk-b (qkey qname :isleep-b)]
+          (case  (keyword isleep-on)
+            :a [qk-a qk-b]
+            :b [qk-b qk-a]))]
+
+    (try ; NB conn's read-timeout may be insufficient!
+      (wcar conn-opts (car/brpoplpush qk-src qk-dst secs-dbl))
+      (catch Throwable _ nil))))
+
+(comment (interruptible-sleep {} :foo :a 2000))
 
 (defn- handle1
   [conn-opts qname handler poll-reply nstats_]
@@ -473,12 +517,13 @@
       [:handled status])
 
     (= kind "sleep")
-    (let [[_kind reason ttl-ms] poll-reply
+    (let [[_kind reason isleep-on ttl-ms] poll-reply
           ttl-ms (thread-desync-ms (long ttl-ms))]
 
-      (inc-nstat! nstats_ (keyword "poll" reason))
-      (Thread/sleep (int ttl-ms))
-      [:slept reason ttl-ms])
+      (inc-nstat! nstats_ (keyword "sleep" reason))
+      ;; (Thread/sleep                          (int ttl-ms))
+      (interruptible-sleep conn-opts qname isleep-on ttl-ms)
+      [:slept reason                       isleep-on ttl-ms])
 
     :else
     (do
@@ -654,10 +699,12 @@
                         considered fatally stalled and message is re-queued. Must be
                         sufficiently high to prevent double handling. Can be
                         overridden on a per-message basis via `enqueue`.
-    :eoq-backoff-ms   - Thread sleep period each time end of queue is reached.
-                        Can be a (fn [ndry-runs]) => msecs for n<=5.
-                        Sleep synchronized for all queue workers.
+
     :throttle-ms      - Thread sleep period between each poll.
+    :eoq-backoff-ms   - Max msecs to sleep thread each time end of queue is reached.
+                        Can be a (fn [ndry-runs]) -> msecs for n<=5.
+                        Sleep may be interrupted when new messages are enqueued.
+                        If present, connection read timeout should be >= max msecs.
 
     :nthreads-worker  - Number of threads to monitor and maintain queue.
     :nthreads-handler - Number of threads to handle queue messages with handler fn."
