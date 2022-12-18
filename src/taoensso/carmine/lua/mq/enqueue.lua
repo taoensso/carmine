@@ -25,6 +25,12 @@ end
 --------------------------------------------------------------------------------
 -- Return {action, error}
 
+local interrupt_sleep = function ()
+   if     redis.call('rpoplpush', _:qk-isleep-a, _:qk-isleep-b) then
+   elseif redis.call('rpoplpush', _:qk-isleep-b, _:qk-isleep-a) then
+   else   redis.call('lpush',     _:qk-isleep-a, '_'); end -- Init
+end
+
 local reset_in_queue = function()
    redis.call('hset',   _:qk-messages, _:mid, _:mcnt);
    redis.call('hsetnx', _:qk-udts,     _:mid, now);
@@ -83,6 +89,7 @@ if (status == 'nx') then
    end
 
    reset_in_queue();
+   interrupt_sleep();
    return {'added'};
 
 elseif (status == 'queued') then
@@ -111,6 +118,7 @@ elseif (status == 'done') then
    else
       -- {done, -bo, *rq} -> ensure/update in requeue
       -- (We're appropriating the requeue mechanism here)
+      interrupt_sleep();
       return ensure_update_in_requeue();
    end
 end
