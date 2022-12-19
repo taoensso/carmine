@@ -86,11 +86,14 @@ if (status == 'done') then
 	 redis.call('hdel', _:qk-lock-times, mid);
       end
 
-      redis.call('hdel', _:qk-messages-rq,   mid);
-      redis.call('hdel', _:qk-lock-times-rq, mid);
-      redis.call('hdel', _:qk-nattempts,     mid);
-      redis.call('srem', _:qk-done,          mid);
-      redis.call('srem', _:qk-requeue,       mid);
+      redis.call('hdel',  _:qk-messages-rq,   mid);
+      redis.call('hdel',  _:qk-lock-times-rq, mid);
+      redis.call('hdel',  _:qk-nattempts,     mid);
+      redis.call('srem',  _:qk-done,          mid);
+      redis.call('srem',  _:qk-requeue,       mid);
+
+      redis.call('lpush', _:qk-mids-ready,    mid); -- -> Priority queue (>once okay)
+
       return {'skip', 'did-requeue'};
    else
       -- {done, -bo, -rq} -> full GC now
