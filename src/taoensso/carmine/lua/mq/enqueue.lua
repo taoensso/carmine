@@ -85,7 +85,7 @@ if (status == 'nx') then
       redis.call('hset',  _:qk-backoffs, _:mid, now + init_bo);
       redis.call('lpush', _:qk-mid-circle, _:mid); -- -> Maintenance queue
    else
-      redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Handler queue
+      redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Priority queue
    end
 
    reset_in_queue();
@@ -118,6 +118,9 @@ elseif (status == 'done') then
    else
       -- {done, -bo, *rq} -> ensure/update in requeue
       -- (We're appropriating the requeue mechanism here)
+
+      redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Priority queue
+
       interrupt_sleep();
       return ensure_update_in_requeue();
    end

@@ -264,9 +264,7 @@
       (is (= (wcar* (msg-status tq :mid1)) :done-with-requeue) "Not :done-awaiting-gc")
       (handle-end-of-circle "a")
 
-      (is (= (wcar* (dequeue tq)) ["skip" "did-requeue"]))
-      (handle-end-of-circle "b")
-
+      (is (=       (wcar* (dequeue tq)) ["skip" "did-requeue"]))
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1e 1 500 #_udt]))])
 
    (testing "Enqueue while :done-with-backoff"
@@ -284,9 +282,7 @@
       (handle-end-of-circle "a")
       (sleep 2500) ; > handler backoff
 
-      (is (= (wcar* (dequeue tq)) ["skip" "did-requeue"]))
-      (handle-end-of-circle "b")
-
+      (is (=       (wcar* (dequeue tq)) ["skip" "did-requeue"]))
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1c 1 500 #_udt]))])])
 
 (deftest workers
