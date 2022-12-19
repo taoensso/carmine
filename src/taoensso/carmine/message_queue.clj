@@ -357,8 +357,8 @@
   (let [;; Precompute 5 backoffs so that `dequeue.lua` can init the backoff atomically
         [bo1 bo2 bo3 bo4 bo5]
         (cond
-          (fn?      eoq-backoff-ms) (mapv     eoq-backoff-ms (range 5))
-          (integer? eoq-backoff-ms) (repeat 5 eoq-backoff-ms)
+          (fn?     eoq-backoff-ms) (mapv           eoq-backoff-ms (range 5))
+          (number? eoq-backoff-ms) (repeat 5 (long eoq-backoff-ms))
           :else
           (throw
             (ex-info
@@ -575,15 +575,21 @@
   (start [this]
     (when (compare-and-set! running?_ false true)
       (timbre/info "[Carmine/mq] Queue worker starting" {:qname qname})
-      (let [{:keys [handler monitor nthreads-worker throttle-ms]} worker-opts
+      (let [{:keys [handler monitor nthreads-worker]} worker-opts
             qk (partial qkey qname)
-            throttle-ms
-            (when (and throttle-ms (> (long throttle-ms) 0))
-              throttle-ms)
 
             ;; Count consecutive errors across all loop threads, these may indicate
             ;; an issue with Redis or handler fn (/ handler's supporting systems)
-            nconsecutive-errors (enc/counter)
+            nconsecutive-errors* (enc/counter 0)
+            queue-size*          (enc/counter 0)
+
+            throttle-ms-fn ; (fn []) -> ?msecs
+            (let [{:keys [throttle-ms]} worker-opts
+                  as-?pos (fn [x] (when x (when (> (long x) 0) x)))]
+
+              (if (fn? throttle-ms)
+                (do                                  (fn [] (as-?pos (throttle-ms @queue-size*))))
+                (when-let [ms (as-?pos throttle-ms)] (fn [] ms))))
 
             start-polling-loop!
             (fn [^long thread-idx]
@@ -591,23 +597,23 @@
                     loop-error-backoff?_ (atom false)
                     loop-error!
                     (fn [throwable]
-                      (let [nce (nconsecutive-errors :+=)]
+                      (let [nce (nconsecutive-errors* :+=)]
                         (timbre/error throwable "[Carmine/mq] Worker error, will backoff & retry."
                           {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce}))
                       (reset! loop-error-backoff?_ true))]
 
                 (when (> thread-idx 0)
-                  (Thread/sleep (int (thread-desync-ms (or throttle-ms 100)))))
+                  (Thread/sleep (int (thread-desync-ms (or (throttle-ms-fn) 100)))))
 
                 (loop [nloops 0]
                   (when @running?_
 
                     (when (compare-and-set! loop-error-backoff?_ true false)
-                      (let [nce @nconsecutive-errors]
+                      (let [^long nce @nconsecutive-errors*]
                         (when (> nce 0)
                           (let [backoff-ms
                                 (exp-backoff (min 12 nce)
-                                  {:factor (or throttle-ms 200)})]
+                                  {:factor (or (throttle-ms-fn) 200)})]
 
                             (timbre/info "[Carmine/mq] Worker thread backing off due to worker error/s"
                               {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
@@ -633,7 +639,8 @@
                                         (long mids-ready-size)
                                         (long mid-circle-size))]
 
-                                  (ssb queue-size) ; -> summary-stats-buffered
+                                  (queue-size* :set queue-size)
+                                  (ssb              queue-size) ; -> summary-stats-buffered
 
                                   (when monitor
                                     (monitor
@@ -644,11 +651,11 @@
                                        :worker          this}))
 
                                   (handle1 conn-opts qname handler poll-reply nstats_)
-                                  (nconsecutive-errors :set 0))
+                                  (nconsecutive-errors* :set 0))
                                 (catch Throwable t (loop-error! t)))))))
                       (catch           Throwable t (loop-error! t)))
 
-                    (when throttle-ms (Thread/sleep (int throttle-ms)))
+                    (when-let [ms (throttle-ms-fn)] (Thread/sleep (int ms)))
                     (recur (inc nloops))))))]
 
         (reset! worker-futures_
@@ -678,6 +685,18 @@
               (timbre/warn "[Carmine/mq] Message queue monitor-fn size warning"
                 {:qname qname, :queue-size {:max max-queue-size, :current queue-size}}))))))))
 
+(defn default-throttle-ms-fn
+  "Default/example (fn [queue-size]) -> ?throttle-msecs"
+  [queue-size]
+  (let [queue-size (long queue-size)]
+    (enc/cond
+      (> queue-size 2048)  50 ;  20/sec * nthreads
+      (> queue-size  512) 100 ;  10/sec * nthreads
+      :else               250 ;   4/sec * nthreads
+      )))
+
+(comment (default-throttle-ms-fn 0))
+
 (defn worker
   "Returns a stateful threaded CarmineMessageQueueWorker to handle messages
   added to named queue with `enqueue`.
@@ -696,6 +715,9 @@
                         overridden on a per-message basis via `enqueue`.
 
     :throttle-ms      - Thread sleep period between each poll.
+                        Can be a (fn [queue-size]) -> ?sleep-msecs,
+                        or :auto (to use `default-throttle-ms-fn`).
+
     :eoq-backoff-ms   - Max msecs to sleep thread each time end of queue is reached.
                         Can be a (fn [ndry-runs]) -> msecs for n<=5.
                         Sleep may be interrupted when new messages are enqueued.
@@ -713,7 +735,7 @@
             lock-ms (enc/ms :mins 60)
             nthreads-worker  1
             nthreads-handler 1
-            throttle-ms    200
+            throttle-ms    :auto #_200
             eoq-backoff-ms exp-backoff
             auto-start     true}}]
 
@@ -729,7 +751,10 @@
             :eoq-backoff-ms   eoq-backoff-ms
             :nthreads-worker  nthreads-worker
             :nthreads-handler nthreads-handler
-            :throttle-ms      throttle-ms})
+            :throttle-ms
+            (if (identical? throttle-ms :auto)
+              default-throttle-ms-fn
+              throttle-ms)})
 
          w
          (CarmineMessageQueueWorker.
