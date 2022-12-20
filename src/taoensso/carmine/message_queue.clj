@@ -127,6 +127,8 @@
     {}
     (persistent! (enc/reduce-kvs assoc! (transient {}) kvs))))
 
+;;;;
+
 (defn- ->message-status
   "[<?base-status-str> <backoff?> <requeue?>] -> <status-kw>"
   ([?base-status-str backoff? requeue?]
@@ -149,100 +151,125 @@
 (comment        (->message-status ["queued" "1" nil]))
 (comment (wcar {} (message-status "qname" "mid1")))
 
-(defn queue-size
-  "Returns current size of given named queue."
-  [conn-opts qname]
-  (let [[n1 n2]
-        (wcar conn-opts
-          (car/llen (qkey qname :mids-ready))
-          (car/llen (qkey qname :mid-circle)))]
-    (+ (long (or n1 0)) (long (or n2 0)))))
+(defn- -queue-status [qname]
+  (let [qk (partial qkey qname)]
+    (car/hlen (qk :locks))
+    (car/hlen (qk :backoffs))
+    (car/llen (qk :mids-ready))
+    (car/llen (qk :mid-circle))))
 
 (defn queue-status
-  "Returns a detailed status map for given named queue.
-  Expensive, O(n-items-in-queue) - avoid use in production."
-  ([conn-opts qname     ] (queue-status conn-opts qname nil))
-  ([conn-opts qname opts]
-   (let [now (enc/now-udt)
-         qk  (partial qkey qname)
-         {:keys [incl-legacy-data?]
-          :or   {incl-legacy-data? true}} opts
+  "Returns in O(1) the approx {:keys [nqueued nlocked nbackoff ntotal]}
+  counts for given named queue."
+  [conn-opts qname]
+  (let [[^long nlocked ^long nbackoff ^long nready ^long ncircle]
+        (wcar conn-opts (-queue-status qname))
 
-         m
-         (zipmap
-           [:messages :messages-rq
-            :lock-times :lock-times-rq
-            :udts :locks :backoffs :nattempts
-            :done :requeue :ndry-runs
-            :mids-ready :mid-circle]
+        ntotal  (dec (+ nready ncircle)) ; -1 for eoq
+        nqueued (- ntotal (+ nlocked nbackoff))]
 
-           (wcar conn-opts
-             (car/parse kvs->map
-               (car/hgetall (qk :messages))
-               (car/hgetall (qk :messages-rq))
-               (car/hgetall (qk :lock-times))
-               (car/hgetall (qk :lock-times-rq))
-               (car/hgetall (qk :udts))
-               (car/hgetall (qk :locks))
-               (car/hgetall (qk :backoffs))
-               (car/hgetall (qk :nattempts)))
+    {:nqueued  nqueued  ; Also called "queue-size"
+     :nlocked  nlocked  ; Approx, may contain expired entries
+     :nbackoff nbackoff ; Approx, may contain expired entries
+     :ntotal   ntotal}))
 
-             (->> (car/smembers (qk :done))      (car/parse set))
-             (->> (car/smembers (qk :requeue))   (car/parse set))
-             (->> (car/get      (qk :ndry-runs)) (car/parse-int))
-             (do  (car/lrange   (qk :mids-ready) 0 -1))
-             (do  (car/lrange   (qk :mid-circle) 0 -1))))
+(comment (queue-status {} "qname"))
 
-         {:keys [messages messages-rq
-                 lock-times lock-times-rq
-                 udts locks backoffs nattempts
-                 done requeue
-                 mids-ready mid-circle]} m]
+(defn queue-size
+  "Returns in O(1) the approx number of messages awaiting handler for
+  given named queue. Same as (:nqueued (queue-status conn-opts qname))."
+  ^long [conn-opts qname]
+  (let [[^long nlocked ^long nbackoff ^long nready ^long ncircle]
+        (wcar conn-opts (-queue-status qname))]
 
-     (assoc
-       (if incl-legacy-data?
-         (do          m)
-         (select-keys m [:mids-ready :mid-circle :ndry-runs]))
+    (- (dec (+ nready ncircle)) (+ nlocked nbackoff))))
 
-       :last-mid   (first mid-circle)
-       :next-mid   (or (peek  mids-ready) (peek  mid-circle))
-       :queue-size (+  (count mids-ready) (count mid-circle))
+(comment (queue-size {} "qname"))
 
-       :by-mid ; {<mid> {:keys [message status ...]}}
-       (persistent!
-         (reduce-kv
-           (fn [m mid mcontent]
-             (assoc! m mid
-               (let [exp-lock    (enc/as-int (get locks    mid 0))
-                     exp-backoff (enc/as-int (get backoffs mid 0))
+(defn queue-content
+  "Returns detailed {<mid> {:keys [message status ...]}} map for every
+  message currently in queue.
 
-                     locked?  (< now exp-lock)
-                     backoff? (< now exp-backoff)
-                     done?    (contains? done mid)
-                     requeue?
-                     (or
-                       (contains? messages-rq mid)
-                       (contains? requeue     mid))
+  O(n_mids) and expensive, avoid use in production."
+  [conn-opts qname]
+  (let [now (enc/now-udt)
+        qk  (partial qkey qname)
 
-                     backoff-ms (when backoff? (- exp-backoff now))
-                     age-ms     (when-let [udt (get udts mid)]
-                                  (- now (enc/as-int udt)))
+        {:keys [messages messages-rq
+                lock-times lock-times-rq
+                udts locks backoffs nattempts
+                done requeue]}
+        (zipmap
+          [:messages :messages-rq
+           :lock-times :lock-times-rq
+           :udts :locks :backoffs :nattempts
+           :done :requeue]
 
-                     base-status
-                     (enc/cond
-                       done?   "done"
-                       locked? "locked"
-                       :else   "queued")]
+          (wcar conn-opts
+            (car/parse kvs->map
+              (car/hgetall (qk :messages))
+              (car/hgetall (qk :messages-rq))
+              (car/hgetall (qk :lock-times))
+              (car/hgetall (qk :lock-times-rq))
+              (car/hgetall (qk :udts))
+              (car/hgetall (qk :locks))
+              (car/hgetall (qk :backoffs))
+              (car/hgetall (qk :nattempts)))
 
-                 (enc/assoc-some
-                   {:message   mcontent
-                    :status    (->message-status base-status backoff? requeue?)
-                    :nattempts (get nattempts mid 0)}
-                   :backoff-ms backoff-ms
-                   :age-ms     age-ms))))
+            (->> (car/smembers (qk :done))    (car/parse set))
+            (->> (car/smembers (qk :requeue)) (car/parse set))))]
 
-           (transient messages)
-           (do        messages)))))))
+    (persistent! ; {<mid> {:keys [message status ...]}}
+      (reduce-kv
+        (fn [m mid mcontent]
+          (assoc! m mid
+            (let [exp-lock    (enc/as-int (get locks    mid 0))
+                  exp-backoff (enc/as-int (get backoffs mid 0))
+
+                  locked?  (< now exp-lock)
+                  backoff? (< now exp-backoff)
+                  done?    (contains? done mid)
+                  requeue?
+                  (or
+                    (contains? messages-rq mid)
+                    (contains? requeue     mid))
+
+                  backoff-ms (when backoff? (- exp-backoff now))
+                  age-ms     (when-let [udt (get udts mid)]
+                               (- now (enc/as-int udt)))
+
+                  base-status
+                  (enc/cond
+                    done?   "done"
+                    locked? "locked"
+                    :else   "queued")]
+
+              (enc/assoc-some
+                {:message   mcontent
+                 :status    (->message-status base-status backoff? requeue?)
+                 :nattempts (get nattempts mid 0)}
+                :backoff-ms backoff-ms
+                :age-ms     age-ms))))
+
+        (transient messages)
+        (do        messages)))))
+
+(comment (queue-content {} "qname"))
+
+(defn- queue-mids
+  "Returns {:ready [<mid> ...], :circle [<mid> ...], :next-mid <?mid>} state
+  for given named queue in O(n_mids). Used mostly for debugging/tests."
+  [conn-opts qname]
+  (let [[ready circle]
+        (wcar conn-opts
+          (car/lrange (qkey qname :mids-ready) 0 -1)
+          (car/lrange (qkey qname :mid-circle) 0 -1))]
+
+    {:ready              ready
+     :circle                          circle
+     :next-mid (or (peek ready) (peek circle))}))
+
+(comment (queue-mids {} "qname"))
 
 ;;;; Implementation
 
@@ -401,7 +428,6 @@
 
 (comment
   (clear-queues {} :q1)
-  (queue-status {} :q1)
   (wcar {} (enqueue :q1 :msg1 :mid1))
   (wcar {} (message-status :q1 :mid1))
   (wcar {} (dequeue :q1 {})))
@@ -570,20 +596,17 @@
      :opts    worker-opts
      :stats
      {:queue-size (when-let [ss @ssb] @ss)
-      :counts     @nstats_}
-
-     :queue-status_
-     (delay
-       (queue-status conn-opts qname
-         {:incl-legacy-data? false}))})
+      :counts     @nstats_}})
 
   clojure.lang.IFn
   (invoke [this cmd]
     (case cmd
-      :queue-size   (queue-size   conn-opts qname)
-      :queue-status (queue-status conn-opts qname {:incl-legacy-data? false})
-      :start        (start this)
-      :stop         (stop  this)
+      :queue-size    (queue-size    conn-opts qname)
+      :queue-status  (queue-status  conn-opts qname)
+      :queue-content (queue-content conn-opts qname)
+      :queue-mids    (queue-mids    conn-opts qname) ; Undocumented
+      :start         (start this)
+      :stop          (stop  this)
       (throw
         (ex-info "[Carmine/mq] Unexpected queue worker command"
           {:command {:value cmd :type (type cmd)}}))))
@@ -648,20 +671,17 @@
                       (let [resp
                             (wcar conn-opts
                               (dequeue qname worker-opts)
-                              (car/get  (qk :ndry-runs))
-                              (car/llen (qk :mids-ready))
-                              (car/llen (qk :mid-circle)))]
+                              (car/get (qk :ndry-runs))
+                              (-queue-status qname))]
 
                         (if-let [t (enc/rfirst #(instance? Throwable %) resp)]
                           (throw t)
                           (future-pool
                             (fn []
                               (try
-                                (let [[poll-reply ndry-runs mids-ready-size mid-circle-size] resp
-                                      queue-size
-                                      (+
-                                        (long mids-ready-size)
-                                        (long mid-circle-size))]
+                                (let [[poll-reply ndry-runs
+                                       ^long nlocked ^long nbackoff ^long nready ^long ncircle] resp
+                                      queue-size (- (dec (+ nready ncircle)) (+ nlocked nbackoff))]
 
                                   (queue-size* :set queue-size)
                                   (ssb              queue-size) ; -> summary-stats-buffered
@@ -716,9 +736,9 @@
   [queue-size]
   (let [queue-size (long queue-size)]
     (enc/cond
-      (> queue-size 2048)  50 ;  20/sec * nthreads
-      (> queue-size  512) 100 ;  10/sec * nthreads
-      :else               250 ;   4/sec * nthreads
+      (> queue-size 256)  50 ; 20/sec * nthreads (~12 secs to clear)
+      (> queue-size 128) 100 ; 10/sec * nthreads (~12 secs to clear)
+      :else              200 ;  5/sec * nthreads (~25 secs to clear)
       )))
 
 (comment (default-throttle-ms-fn 0))
@@ -728,11 +748,12 @@
   added to named queue with `enqueue`.
 
   API:
-    - (deref <worker>)         => Status map, {:keys [running? nthreads stats ...]}.
-    - (<worker> :start)        => Same as (start <worker>).
-    - (<worker> :stop)         => Same as (stop  <worker>).
-    - (<worker> :queue-size)   => Same as calling `queue-size`   for given qname.
-    - (<worker> :queue-status) => Same as calling `queue-status` for given qname.
+    - (deref <worker>)          => Status map, {:keys [running? nthreads stats ...]}.
+    - (<worker> :start)         => Same as calling (start <worker>).
+    - (<worker> :stop)          => Same as calling (stop  <worker>).
+    - (<worker> :queue-size)    => Same as calling `queue-size`    for given qname.
+    - (<worker> :queue-status)  => Same as calling `queue-status`  for given qname.
+    - (<worker> :queue-content) => Same as calling `queue-content` for given qname.
 
   Options:
     :handler          - (fn [{:keys [qname mid message attempt]}]) that throws
