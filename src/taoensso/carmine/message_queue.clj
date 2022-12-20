@@ -459,7 +459,7 @@
 (comment (interruptible-sleep {} :foo :a 2000))
 
 (defn- handle1
-  [conn-opts qname handler poll-reply nstats_]
+  [worker conn-opts qname handler poll-reply queue-size nstats_]
   (enc/cond
     :let [[kind] (when (vector? poll-reply) poll-reply)]
 
@@ -481,7 +481,11 @@
             (handler
               {:qname   qname    :mid     mid
                :message mcontent :attempt attempt
-               :lock-ms lock-ms  :age-ms  age-ms})
+               :lock-ms lock-ms  :age-ms  age-ms
+
+               :worker     worker
+               :queue-size queue-size})
+
             (catch Throwable t
               {:status :error :throwable t}))
 
@@ -675,7 +679,9 @@
                                        :poll-reply      poll-reply
                                        :worker          this}))
 
-                                  (handle1 conn-opts qname handler poll-reply nstats_)
+                                  (handle1 this conn-opts qname handler
+                                    poll-reply queue-size nstats_)
+
                                   (nconsecutive-errors* :set 0))
                                 (catch Throwable t (loop-error! t)))))))
                       (catch           Throwable t (loop-error! t)))

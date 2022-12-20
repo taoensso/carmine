@@ -67,7 +67,7 @@
   (let [reply (wcar* (dequeue tq))]
     (every? identity
       [(is (= reply ["sleep" "end-of-circle" isleep-on eoq-backoff-ms]))
-       (is (subvec? (handle1 conn-opts tq (fn hf [_] (throw!)) reply nil)
+       (is (subvec? (handle1 nil conn-opts tq (fn hf [_] (throw!)) reply -1 nil)
              [:slept "end-of-circle" isleep-on #_eoq-backoff-ms]))
        (sleep isleep-on :eoq)])))
 
@@ -140,8 +140,8 @@
          handler-arg_ (promise)
          handle1
          (fn []
-           (handle1 conn-opts tq
-             (fn [m] (deliver handler-arg_ m) (hf m)) poll-reply nil))
+           (handle1 nil conn-opts tq
+             (fn [m] (deliver handler-arg_ m) (hf m)) poll-reply -1 nil))
 
          handle1-result
          (if async?
