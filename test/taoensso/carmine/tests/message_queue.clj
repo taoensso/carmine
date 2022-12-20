@@ -31,7 +31,6 @@
 
 (def tq :carmine-test-queue)
 (defn clear-tq! [] (mq/clear-queues conn-opts [tq]))
-(defn tq-status [] (mq/queue-status conn-opts  tq))
 
 (defn test-fixture [f] (f) (clear-tq!))
 (test/use-fixtures :once test-fixture) ; Just for final teardown
@@ -84,10 +83,9 @@
      (is (= (wcar* (enqueue tq :msg1b {:mid :mid1 :can-update? true})) {:success? true,  :action :updated, :mid :mid1}))
 
      (is (= (wcar* (msg-status tq :mid1)) :queued))
-     (is (enc/submap? (tq-status)
-           {:messages   {"mid1" :msg1b}
-            :mids-ready ["mid1"]
-            :mid-circle ["end-of-circle"]}))
+     (is (enc/submap? (#'mq/queue-mids conn-opts tq)
+           {:ready  ["mid1"]
+            :circle ["end-of-circle"]}))
 
      (is (subvec? (wcar* (dequeue    tq)) ["handle" "mid1" :msg1b 1 default-lock-ms #_udt]))
      (is (=       (wcar* (msg-status tq :mid1)) :locked))
@@ -100,9 +98,13 @@
      (is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 500})) {:success? true, :action :added, :mid :mid1}))
      (is (= (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 100})) {:success? true, :action :added, :mid :mid2}))
 
-     (is (enc/submap? (tq-status)
-           {:messages   {"mid1" :msg1, "mid2" :msg2}
-            :mid-circle ["mid2" "mid1" "end-of-circle"]}))
+     (is (enc/submap? (#'mq/queue-mids conn-opts tq)
+           {:ready  []
+            :circle ["mid2" "mid1" "end-of-circle"]}))
+
+     (is (enc/submap? (mq/queue-content conn-opts tq)
+           {"mid1" {:message :msg1}
+            "mid2" {:message :msg2}}))
 
      ;; Dupes before the backoff expired
      (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? false, :error :already-queued}))
@@ -292,9 +294,7 @@
           handler-fn
           (fn [{:keys [mid message] :as in}]
             (swap! msgs_ conj message)
-            {:status :success})
-
-          queue-status (fn [] (mq/queue-status conn-opts tq {:incl-legacy-data? false}))]
+            {:status :success})]
 
       (with-open [^java.io.Closeable worker
                   (mq/worker conn-opts tq
@@ -306,17 +306,17 @@
         [(is (enc/submap? (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added}))
          (is (enc/submap? (wcar* (enqueue tq :msg2 {:mid :mid2})) {:success? true, :action :added}))
 
-         (is (enc/submap? (queue-status)
-               {:mids-ready ["mid2" "mid1"]
-                :mid-circle ["end-of-circle"]}))
+         (is (enc/submap? (worker :queue-mids)
+               {:ready  ["mid2" "mid1"]
+                :circle ["end-of-circle"]}))
 
          (is (mq/start   worker))
          (is (:running? @worker))
 
          (sleep 1000)
          (is (= @msgs_ [:msg1 :msg2]))
-         (is (enc/submap? (queue-status)
-               {:mids-ready []
-                :mid-circle ["end-of-circle"]}))
+         (is (enc/submap? (worker :queue-mids)
+               {:ready  []
+                :circle ["end-of-circle"]}))
 
          (is (mq/stop worker))]))))
