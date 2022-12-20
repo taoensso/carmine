@@ -148,6 +148,15 @@
 (comment        (->message-status ["queued" "1" nil]))
 (comment (wcar {} (message-status "qname" "mid1")))
 
+(defn queue-size
+  "Returns current size of given named queue."
+  [conn-opts qname]
+  (let [[n1 n2]
+        (wcar conn-opts
+          (car/llen (qkey qname :mids-ready))
+          (car/llen (qkey qname :mid-circle)))]
+    (+ (long (or n1 0)) (long (or n2 0)))))
+
 (defn queue-status
   "Returns a detailed status map for given named queue.
   Expensive, O(n-items-in-queue) - avoid use in production."
@@ -569,6 +578,17 @@
        (queue-status conn-opts qname
          {:incl-legacy-data? false}))})
 
+  clojure.lang.IFn
+  (invoke [this cmd]
+    (case cmd
+      :queue-size   (queue-size   conn-opts qname)
+      :queue-status (queue-status conn-opts qname {:incl-legacy-data? false})
+      :start        (start this)
+      :stop         (stop  this)
+      (throw
+        (ex-info "[Carmine/mq] Unexpected queue worker command"
+          {:command {:value cmd :type (type cmd)}}))))
+
   IWorker
   (stop [_]
     (when (compare-and-set! running?_ true false)
@@ -705,6 +725,13 @@
 (defn worker
   "Returns a stateful threaded CarmineMessageQueueWorker to handle messages
   added to named queue with `enqueue`.
+
+  API:
+    - (deref <worker>)         => Status map, {:keys [running? nthreads stats ...]}.
+    - (<worker> :start)        => Same as (start <worker>).
+    - (<worker> :stop)         => Same as (stop  <worker>).
+    - (<worker> :queue-size)   => Same as calling `queue-size`   for given qname.
+    - (<worker> :queue-status) => Same as calling `queue-status` for given qname.
 
   Options:
     :handler          - (fn [{:keys [qname mid message attempt]}]) that throws
