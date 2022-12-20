@@ -433,27 +433,25 @@
           (when (map? result) result)
 
           fin
-          (fn [mid status done? backoff-ms]
-            (let [done? (case status (:success :error) true false)]
+          (fn [mid done? backoff-ms]
+            (do              (inc-nstat! nstats_ (keyword "handler" (name status))))
+            (when backoff-ms (inc-nstat! nstats_ :handler/backoff))
 
-              (do              (inc-nstat! nstats_ (keyword "handler" (name status))))
-              (when backoff-ms (inc-nstat! nstats_ :handler/backoff))
+            ;; Don't need atomicity here, simple pipeline sufficient
+            (wcar conn-opts
+              (when backoff-ms ; Possible done/retry backoff
+                (car/hset (qk :backoffs) mid
+                  (+ (enc/now-udt) (long backoff-ms))))
 
-              ;; Don't need atomicity here, simple pipeline sufficient
-              (wcar conn-opts
-                (when backoff-ms ; Possible done/retry backoff
-                  (car/hset (qk :backoffs) mid
-                    (+ (enc/now-udt) (long backoff-ms))))
-
-                (when done? (car/sadd (qk :done)  mid))
-                (do         (car/hdel (qk :locks) mid)))))]
+              (when done? (car/sadd (qk :done)  mid))
+              (do         (car/hdel (qk :locks) mid))))]
 
       (case status
-        :success (fin mid :success true  backoff-ms)
-        :retry   (fin mid :retry   false backoff-ms)
+        :success (fin mid true  backoff-ms)
+        :retry   (fin mid false backoff-ms)
         :error
         (do
-          (fin mid :error true nil)
+          (fin mid true nil)
           (timbre/error
             (ex-info "[Carmine/mq] Handler returned `:error` status"
               {:qname qname, :mid mid, :attempt attempt, :message mcontent}
@@ -462,7 +460,7 @@
             {:qname qname, :mid mid, :backoff-ms backoff-ms}))
 
         (do
-          (fin mid :success true nil) ; For backwards-comp with old API
+          (fin mid true nil) ; For backwards-comp with old API
           (timbre/warn "[Carmine/mq] Handler returned unexpected status"
             {:qname qname, :mid mid, :attempt attempt, :message mcontent,
              :handler-result {:value result :type (type result)}
