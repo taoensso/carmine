@@ -494,45 +494,44 @@
    {:keys [worker queue-size nstats_ ssb-queueing-time-ms ssb-handling-time-ns]
     :or   {queue-size -1}}]
 
-  (enc/cond
-    :let [[kind] (when (vector? poll-reply) poll-reply)]
+  (let [[kind] (when (vector? poll-reply) poll-reply)]
+    (case kind
+      "skip"
+      (let [[_kind reason] poll-reply]
+        #_(inc-nstat! nstats_ (keyword "skip" reason)) ; Noisy
+        [:skipped reason])
 
-    (= kind "skip")
-    (let [[_kind reason] poll-reply]
-      #_(inc-nstat! nstats_ (keyword "skip" reason)) ; Noisy
-      [:skipped reason])
+      "handle"
+      (let [[_kind mid mcontent attempt lock-ms udt] poll-reply
+            qk (partial qkey qname)
 
-    (= kind "handle")
-    (let [[_kind mid mcontent attempt lock-ms udt] poll-reply
-          qk (partial qkey qname)
+            age-ms
+            (when-let [udt (enc/as-?udt udt)]
+              (- (enc/now-udt) ^long udt))
 
-          age-ms
-          (when-let [udt (enc/as-?udt udt)]
-            (- (enc/now-udt) ^long udt))
+            t0 (enc/now-nano*)
+            result
+            (try
+              (let [mq-msg
+                    {:qname   qname    :mid     mid
+                     :message mcontent :attempt attempt
+                     :lock-ms lock-ms  :age-ms  age-ms
 
-          t0 (enc/nano-time*)
-          result
-          (try
-            (handler
-              {:qname   qname    :mid     mid
-               :message mcontent :attempt attempt
-               :lock-ms lock-ms  :age-ms  age-ms
+                     :worker     worker
+                     :queue-size queue-size}]
 
-               :worker     worker
-               :queue-size queue-size})
+                (handler mq-msg))
 
-            (catch Throwable t
-              {:status :error :throwable t}))
+              (catch Throwable t
+                {:status :error :throwable t}))
 
-          handling-time-ns (- (enc/nano-time*) t0)
+            handling-time-ns (- (enc/now-nano*) t0)
 
-          {:keys [status throwable backoff-ms]}
-          (when (map? result) result)
+            {:keys [status throwable backoff-ms]}
+            (when (map? result) result)
 
-          fin
-          (fn [mid status done? backoff-ms]
-            (let [done? (case status (:success :error) true false)]
-
+            fin
+            (fn [mid done? backoff-ms]
               (do              (inc-nstat! nstats_ (keyword "handler" (name status))))
               (when backoff-ms (inc-nstat! nstats_ :handler/backoff))
 
@@ -543,49 +542,49 @@
                     (+ (enc/now-udt) (long backoff-ms))))
 
                 (when done? (car/sadd (qk :done)  mid))
-                (do         (car/hdel (qk :locks) mid)))))]
+                (do         (car/hdel (qk :locks) mid))))]
 
-      (when (== ^long attempt 1)
-        ;; queueing-time => time till handler, not time till successful handling
-        (enc/when-let [ssb ssb-queueing-time-ms, ms age-ms]           (ssb ms)))
-      (enc/when-let   [ssb ssb-handling-time-ns, ns handling-time-ns] (ssb ns))
+        (when (== ^long attempt 1)
+          ;; queueing-time => time till handler, not time till successful handling
+          (enc/when-let [ssb ssb-queueing-time-ms, ms age-ms]           (ssb ms)))
+        (enc/when-let   [ssb ssb-handling-time-ns, ns handling-time-ns] (ssb ns))
 
-      (case status
-        :success (fin mid :success true  backoff-ms)
-        :retry   (fin mid :retry   false backoff-ms)
-        :error
-        (do
-          (fin mid :error true nil)
-          (timbre/error
-            (ex-info "[Carmine/mq] Handler returned `:error` status"
-              {:qname qname, :mid mid, :attempt attempt, :message mcontent}
-              throwable)
-            "[Carmine/mq] Handler returned `:error` status"
-            {:qname qname, :mid mid, :backoff-ms backoff-ms}))
+        (case status
+          :success (fin mid true  backoff-ms)
+          :retry   (fin mid false backoff-ms)
+          :error
+          (do
+            (fin mid true nil)
+            (timbre/error
+              (ex-info "[Carmine/mq] Handler returned `:error` status"
+                {:qname qname, :mid mid, :attempt attempt, :message mcontent}
+                throwable)
+              "[Carmine/mq] Handler returned `:error` status"
+              {:qname qname, :mid mid, :backoff-ms backoff-ms}))
 
-        (do
-          (fin mid :success true nil) ; For backwards-comp with old API
-          (timbre/warn "[Carmine/mq] Handler returned unexpected status"
-            {:qname qname, :mid mid, :attempt attempt, :message mcontent,
-             :handler-result {:value result :type (type result)}
-             :handler-status {:value status :type (type status)}})))
-      [:handled status])
+          (do
+            (fin mid true nil) ; For backwards-comp with old API
+            (timbre/warn "[Carmine/mq] Handler returned unexpected status"
+              {:qname qname, :mid mid, :attempt attempt, :message mcontent,
+               :handler-result {:value result :type (type result)}
+               :handler-status {:value status :type (type status)}})))
+        [:handled status])
 
-    (= kind "sleep")
-    (let [[_kind reason isleep-on ttl-ms] poll-reply
-          ttl-ms (thread-desync-ms (long ttl-ms))]
+      "sleep"
+      (let [[_kind reason isleep-on ttl-ms] poll-reply
+            ttl-ms (thread-desync-ms (long ttl-ms))]
 
-      (inc-nstat! nstats_ (keyword "sleep" reason))
-      ;; (Thread/sleep                          (int ttl-ms))
-      (interruptible-sleep conn-opts qname isleep-on ttl-ms)
-      [:slept reason                       isleep-on ttl-ms])
+        (inc-nstat! nstats_ (keyword "sleep" reason))
+        ;; (Thread/sleep                          (int ttl-ms))
+        (interruptible-sleep conn-opts qname isleep-on ttl-ms)
+        [:slept reason                       isleep-on ttl-ms])
 
-    :else
-    (do
-      (inc-nstat! nstats_ :poll/unexpected)
-      (throw
-        (ex-info "[Carmine/mq] Unexpected poll reply"
-          {:reply {:value poll-reply :type (type poll-reply)}})))))
+      ;; else
+      (do
+        (inc-nstat! nstats_ :poll/unexpected)
+        (throw
+          (ex-info "[Carmine/mq] Unexpected poll reply"
+            {:reply {:value poll-reply :type (type poll-reply)}}))))))
 
 ;;;; Workers
 
