@@ -35,7 +35,11 @@
 
 ;; x Investigate Cluster
 ;; - Pause v4 work for now?
+;; - Add ssb stats to Sentinel, etc.
 ;; - Implement Cluster?
+
+;; - Some way to implement a parser over >1 replies?
+;;   - E.g. fetch two sets, and parser to merge -> single reply
 
 ;; - Common & core util to parse-?marked-ba -> [<kind> <payload>]
 ;; - Core: new Pub/Sub API
