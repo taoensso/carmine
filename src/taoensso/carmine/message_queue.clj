@@ -482,7 +482,10 @@
 (comment (interruptible-sleep {} :foo :a 2000))
 
 (defn- handle1
-  [worker conn-opts qname handler poll-reply queue-size nstats_]
+  [conn-opts qname handler poll-reply
+   {:keys [worker queue-size nstats_ ssb-queueing-time-ms ssb-handling-time-ns]
+    :or   {queue-size -1}}]
+
   (enc/cond
     :let [[kind] (when (vector? poll-reply) poll-reply)]
 
@@ -499,6 +502,7 @@
           (when-let [udt (enc/as-?udt udt)]
             (- (enc/now-udt) ^long udt))
 
+          t0 (enc/nano-time*)
           result
           (try
             (handler
@@ -511,6 +515,8 @@
 
             (catch Throwable t
               {:status :error :throwable t}))
+
+          handling-time-ns (- (enc/nano-time*) t0)
 
           {:keys [status throwable backoff-ms]}
           (when (map? result) result)
@@ -528,6 +534,11 @@
 
               (when done? (car/sadd (qk :done)  mid))
               (do         (car/hdel (qk :locks) mid))))]
+
+      (when (== ^long attempt 1)
+        ;; queueing-time => time till handler, not time till successful handling
+        (enc/when-let [ssb ssb-queueing-time-ms, ms age-ms]           (ssb ms)))
+      (enc/when-let   [ssb ssb-handling-time-ns, ns handling-time-ns] (ssb ns))
 
       (case status
         :success (fin mid true  backoff-ms)
@@ -574,7 +585,8 @@
   (stop  [this]))
 
 (deftype CarmineMessageQueueWorker
-  [qname worker-opts conn-opts running?_ future-pool worker-futures_ nstats_ ssb]
+  [qname worker-opts conn-opts running?_ future-pool worker-futures_
+   nstats_ ssb-queue-size ssb-queueing-time-ms ssb-handling-time-ns]
 
   java.io.Closeable (close [this] (stop this))
   Object
@@ -595,8 +607,10 @@
      :conn-opts conn-opts
      :opts    worker-opts
      :stats
-     {:queue-size (when-let [ss @ssb] @ss)
-      :counts     @nstats_}})
+     {:queue-size       (when-let [ss @ssb-queue-size]       @ss)
+      :queueing-time-ms (when-let [ss @ssb-queueing-time-ms] @ss)
+      :handling-time-ns (when-let [ss @ssb-handling-time-ns] @ss)
+      :counts           @nstats_}})
 
   clojure.lang.IFn
   (invoke [this cmd]
@@ -684,7 +698,7 @@
                                       queue-size (- (dec (+ nready ncircle)) (+ nlocked nbackoff))]
 
                                   (queue-size* :set queue-size)
-                                  (ssb              queue-size) ; -> summary-stats-buffered
+                                  (ssb-queue-size   queue-size)
 
                                   (when monitor
                                     (monitor
@@ -694,8 +708,12 @@
                                        :poll-reply      poll-reply
                                        :worker          this}))
 
-                                  (handle1 this conn-opts qname handler
-                                    poll-reply queue-size nstats_)
+                                  (handle1 conn-opts qname handler poll-reply
+                                    {:worker               this
+                                     :queue-size           queue-size
+                                     :nstats_              nstats_
+                                     :ssb-queueing-time-ms ssb-queueing-time-ms
+                                     :ssb-handling-time-ns ssb-handling-time-ns})
 
                                   (nconsecutive-errors* :set 0))
                                 (catch Throwable t (loop-error! t)))))))
@@ -817,9 +835,9 @@
            (enc/future-pool nthreads-handler)
            (atom [])
            (atom {})
-           (let [ssb (tukey/summary-stats-buffered {:buffer-size 10000})]
-             (ssb 0)
-             ssb))
+           (tukey/summary-stats-buffered {:buffer-size 10000})
+           (tukey/summary-stats-buffered {:buffer-size 10000})
+           (tukey/summary-stats-buffered {:buffer-size 10000}))
 
          ;; Back compatibility
          auto-start (get worker-opts :auto-start? auto-start)]
