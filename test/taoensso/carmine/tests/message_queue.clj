@@ -39,7 +39,6 @@
 (def ^:const eoq-backoff-ms 100)
 
 (do
-  (def handle1  #'mq/handle1)
   (def enqueue    mq/enqueue)
   (def msg-status mq/message-status)
 
@@ -66,7 +65,7 @@
   (let [reply (wcar* (dequeue tq))]
     (every? identity
       [(is (= reply ["sleep" "end-of-circle" isleep-on eoq-backoff-ms]))
-       (is (subvec? (handle1 nil conn-opts tq (fn hf [_] (throw!)) reply -1 nil)
+       (is (subvec? (#'mq/handle1 conn-opts tq (fn hf [_] (throw!)) reply {})
              [:slept "end-of-circle" isleep-on #_eoq-backoff-ms]))
        (sleep isleep-on :eoq)])))
 
@@ -142,8 +141,9 @@
          handler-arg_ (promise)
          handle1
          (fn []
-           (handle1 nil conn-opts tq
-             (fn [m] (deliver handler-arg_ m) (hf m)) poll-reply -1 nil))
+           (#'mq/handle1 conn-opts tq
+             (fn [m] (deliver handler-arg_ m) (hf m))
+             poll-reply {}))
 
          handle1-result
          (if async?
