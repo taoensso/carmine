@@ -79,8 +79,11 @@
 
 (comment (queue-names {}))
 
-(defn clear-queues
-  "Deletes ALL content for the Carmine message queues with given names."
+(defn queues-clear!!
+  "Permanently deletes ALL content for the Carmine message queues with
+  given names.
+
+  Returns nil, or a non-empty vector of the queue names that were cleared."
   {:arglists '([conn-opts qnames])}
   [conn-opts & more]
   (let [qnames ; Back compatibility
@@ -111,15 +114,16 @@
                   (qk :ndry-runs)
                   (qk :isleep-a)
                   (qk :isleep-b)))))
-          qnames)))))
+          qnames))
+      qnames)))
 
-(defn clear-all-queues
-  "Deletes ALL content for ALL Carmine message queues and returns a
-  non-empty vector of the queue names that were cleared, or nil."
+(defn queues-clear-all!!!
+  "**DANGER**!
+  Permanently deletes ALL content for *ALL* Carmine message queues.
+  Returns nil, or a non-empty vector of the queue names that were cleared."
   [conn-opts]
   (when-let [qnames (queue-names conn-opts "*")]
-    (clear-queues conn-opts qnames)
-    (do                     qnames)))
+    (queues-clear!! conn-opts qnames)))
 
 (defn- kvs->map [kvs]
   (if (empty? kvs)
@@ -430,7 +434,7 @@
        :eoq-bo5          bo5})))
 
 (comment
-  (clear-queues {} :q1)
+  (queues-clear!! {} :q1)
   (wcar {} (enqueue :q1 :msg1 :mid1))
   (wcar {} (message-status :q1 :mid1))
   (wcar {} (dequeue :q1 {})))
@@ -606,12 +610,26 @@
   clojure.lang.IFn
   (invoke [this cmd]
     (case cmd
-      :queue-size    (queue-size    conn-opts qname)
-      :queue-status  (queue-status  conn-opts qname)
-      :queue-content (queue-content conn-opts qname)
-      :queue-mids    (queue-mids    conn-opts qname) ; Undocumented
       :start         (start this)
       :stop          (stop  this)
+      :queue-size    (queue-size    conn-opts  qname)
+      :queue-status  (queue-status  conn-opts  qname)
+      :queue-content (queue-content conn-opts  qname)
+      :queue-mids    (queue-mids    conn-opts  qname) ; Undocumented
+      :queue-clear!!                                  ; Undocumented
+      (do
+        (queues-clear!! conn-opts [qname])
+        (this :stats-clear!)
+        nil)
+
+      :stats-clear! ; Undocumented
+      (do
+        (reset! nstats_ {})
+        (tukey/summary-stats-clear! ssb-queue-size)
+        (tukey/summary-stats-clear! ssb-queueing-time-ms)
+        (tukey/summary-stats-clear! ssb-handling-time-ns)
+        nil)
+
       (throw
         (ex-info "[Carmine/mq] Unexpected queue worker command"
           {:command {:value cmd :type (type cmd)}}))))
@@ -839,6 +857,8 @@
 ;;;; Deprecated
 
 (enc/deprecated
+  (enc/defalias clear-queues queues-clear!! {:deprecated "v3.3.0 (2022-12-21)"})
+
   (defn ^:deprecated make-dequeue-worker
     "DEPRECATED: Use `worker` instead."
     [pool spec & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
