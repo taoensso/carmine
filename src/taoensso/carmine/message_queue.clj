@@ -853,9 +853,11 @@
            (enc/future-pool nthreads-handler)
            (atom [])
            (atom {})
-           (tukey/summary-stats-buffered {:buffer-size 10000})
-           (tukey/summary-stats-buffered {:buffer-size 10000})
-           (tukey/summary-stats-buffered {:buffer-size 10000}))
+
+           ;; :sstats-init opts below allow for manual persistent sstats, currently undocumented
+           (tukey/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queue-size)})
+           (tukey/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queueing-time-ms)})
+           (tukey/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/handling-time-ns)}))
 
          ;; Back compatibility
          auto-start (get worker-opts :auto-start? auto-start)]
