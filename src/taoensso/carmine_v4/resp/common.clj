@@ -8,7 +8,7 @@
 
   (:import
    [java.nio.charset StandardCharsets]
-   [java.io DataInputStream]
+   [java.io DataInput DataInputStream]
    [clojure.lang ExceptionInfo]
 
    [taoensso.carmine_v4.classes ReplyError]))
@@ -38,13 +38,13 @@
 
 ;;;;
 
-(defn ba->in ^DataInputStream [^bytes ba]
+(defn ba->in ^DataInput [^bytes ba]
   (-> ba
     java.io.ByteArrayInputStream.
     java.io.BufferedInputStream.
     DataInputStream.))
 
-(defn str->in ^DataInputStream [^String s]
+(defn str->in ^DataInput [^String s]
   (ba->in (.getBytes s StandardCharsets/UTF_8)))
 
 (defmacro with-out
@@ -78,16 +78,16 @@
         (.write out ^bytes ba-crlf)))))
 
 (do ; Variations useful for tests, etc.
-  (defn xs->in+ ^DataInputStream [& xs] (ba->in (xseq->ba true  xs)))
-  (defn xs->in  ^DataInputStream [& xs] (ba->in (xseq->ba false xs)))
-  (defn xs->ba+           ^bytes [& xs]         (xseq->ba true  xs))
-  (defn xs->ba            ^bytes [& xs]         (xseq->ba false xs)))
+  (defn xs->in+ ^DataInput [& xs] (ba->in (xseq->ba true  xs)))
+  (defn xs->in  ^DataInput [& xs] (ba->in (xseq->ba false xs)))
+  (defn xs->ba+     ^bytes [& xs]         (xseq->ba true  xs))
+  (defn xs->ba      ^bytes [& xs]         (xseq->ba false xs)))
 
 (deftest ^:private _xs->ba
   [(is (= (bytes->str (xs->ba  "a" "b" 1 (byte-array [(byte \A) (byte \B)]) \C [\d \e])) "ab1ABCde"))
    (is (= (bytes->str (xs->ba+ "a" "b" 1 (byte-array [(byte \A) (byte \B)]) \C [\d \e])) "a\r\nb\r\n1\r\nAB\r\nC\r\nde\r\n"))])
 
-(defn skip1 ^DataInputStream [^java.io.DataInput in] (.skipBytes in 1) in)
+(defn skip1 ^DataInput [^DataInput in] (.skipBytes in 1) in)
 
 (deftest ^:private _skip1
   [(is (= (.readLine (skip1 (with-out->in (.write out (str->bytes "+hello\r\n"))))) "hello"))])
@@ -102,7 +102,7 @@
 (defn read-blob-?marker
   "Returns e/o {nil :nil :bin :npy}, and possibly advances position
   in stream to skip (consume) any blob markers (`ba-npy`, etc.)."
-  [^DataInputStream in ^long n]
+  [^DataInput in ^long n]
   ;; Won't be called if `*auto-deserialize?*` is false
   (when (>= n 2) ; >= 2 for marker+?payload
     (.mark in 2)
@@ -181,7 +181,7 @@
 
 (let [ref-b (byte \;)]
   (defn discard-stream-separator
-    [^DataInputStream in]
+    [^DataInput in]
     ;; (.skip 1)
     (let [read-b (.readByte in)] ; -1 if nothing to read
       (if (== ref-b read-b)
@@ -194,7 +194,7 @@
 (comment :see-tests-below)
 
 (defn discard-crlf
-  [^DataInputStream in]
+  [^DataInput in]
   ;; (.skip 2)
   (let [s (.readLine in)] ; nil if nothing to read
     (if (= s "")
