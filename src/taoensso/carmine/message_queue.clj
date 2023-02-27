@@ -47,6 +47,8 @@
    [taoensso.tukey   :as tukey]))
 
 ;;;; TODO/later
+;; - Refactor logging, incl. add `set-min-log-level!`, using new `set-min-ns-level!`
+;; - Ensure ^:deprecated meta
 ;; - New docs + examples in v4 Wiki.
 ;; - Support cbs? (Could decouple Timbre)
 
