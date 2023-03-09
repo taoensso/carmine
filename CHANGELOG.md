@@ -9,6 +9,10 @@
 > This is a major feature + maintenance release. It should be **non-breaking**.  
 > See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
 
+#### Changes since `v3.1.0`
+
+* [#279] [#257] Any username in conn-spec URI will now automatically be used for ACL in AUTH
+
 #### Fixes since `v3.1.0`
 
 * Fix warning of parse var replacements (`parse-long`, `parse-double`)
