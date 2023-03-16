@@ -1,4 +1,4 @@
-name: tests
+name: Main tests
 on: [push, pull_request]
 
 jobs:
@@ -29,5 +29,6 @@ jobs:
         with:
           path: ~/.m2/repository
           key: deps-${{ hashFiles('project.clj') }}
+          restore-keys: deps-
 
       - run: lein test-all
