@@ -2,11 +2,12 @@
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Clojure Redis client & message queue"
   :url "https://github.com/ptaoussanis/carmine"
-  :license {:name "Eclipse Public License"
-            :url  "http://www.eclipse.org/legal/epl-v10.html"
-            :distribution :repo
-            :comments "Same as Clojure"}
   :min-lein-version "2.3.3"
+
+  :license
+  {:name "Eclipse Public License 1.0"
+   :url  "http://www.eclipse.org/legal/epl-v10.html"}
+
   :global-vars
   {*warn-on-reflection* true
    *assert*             true
