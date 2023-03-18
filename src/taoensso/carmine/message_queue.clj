@@ -43,8 +43,8 @@
    [clojure.string   :as str]
    [taoensso.encore  :as enc]
    [taoensso.carmine :as car :refer [wcar]]
-   [taoensso.timbre  :as timbre]
-   [taoensso.tukey   :as tukey]))
+   [taoensso.timbre      :as timbre]
+   [taoensso.tufte.stats :as tufte-stats]))
 
 ;;;; TODO/later
 ;; - New docs + examples in v4 Wiki.
@@ -634,9 +634,9 @@
       :stats-clear! ; Undocumented
       (do
         (reset! nstats_ {})
-        (tukey/summary-stats-clear! ssb-queue-size)
-        (tukey/summary-stats-clear! ssb-queueing-time-ms)
-        (tukey/summary-stats-clear! ssb-handling-time-ns)
+        (tufte-stats/summary-stats-clear! ssb-queue-size)
+        (tufte-stats/summary-stats-clear! ssb-queueing-time-ms)
+        (tufte-stats/summary-stats-clear! ssb-handling-time-ns)
         nil)
 
       (throw
@@ -855,9 +855,9 @@
            (atom {})
 
            ;; :sstats-init opts below allow for manual persistent sstats, currently undocumented
-           (tukey/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queue-size)})
-           (tukey/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queueing-time-ms)})
-           (tukey/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/handling-time-ns)}))
+           (tufte-stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queue-size)})
+           (tufte-stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queueing-time-ms)})
+           (tufte-stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/handling-time-ns)}))
 
          ;; Back compatibility
          auto-start (get worker-opts :auto-start? auto-start)]
