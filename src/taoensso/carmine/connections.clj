@@ -210,15 +210,19 @@
     (let [^URI uri (if (instance? URI uri) uri (URI. uri))
           [username password] (.split (str (.getUserInfo uri)) ":")
           port (.getPort uri)
-          db (if-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
-               (Integer. ^String db-str))]
-      (-> {:host (.getHost uri)}
-          (#(if (pos? port)        (assoc % :port     port)     %))
-          (#(if (and db (pos? db)) (assoc % :db       db)       %))
-          (#(if username           (assoc % :username username) %))
-          (#(if password           (assoc % :password password) %))))))
+          db   (when-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
+                 (Integer. ^String db-str))]
 
-(comment (parse-uri "redis://redistogo:pass@panga.redistogo.com:9475/7"))
+      (-> {:host (.getHost uri)}
+          (#(if (pos? port)                (assoc % :port     port)     %))
+          (#(if (and db (pos? (long db)))  (assoc % :db       db)       %))
+          (#(if username (assoc % :username username) %))
+          (#(if password (assoc % :password password) %))))))
+
+(comment
+  [(parse-uri "redis://user:pass@x.y.com:9475/7")
+   (parse-uri "redis://:pass@x.y.com.com:9475/7")
+   (parse-uri "redis://user:@x.y.com:9475/7")])
 
 (def conn-spec
   (enc/memoize
