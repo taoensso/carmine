@@ -216,8 +216,8 @@
       (-> {:host (.getHost uri)}
           (#(if (pos? port)                (assoc % :port     port)     %))
           (#(if (and db (pos? (long db)))  (assoc % :db       db)       %))
-          (#(if username (assoc % :username username) %))
-          (#(if password (assoc % :password password) %))))))
+          (#(if (enc/nempty-str? username) (assoc % :username username) %))
+          (#(if (enc/nempty-str? password) (assoc % :password password) %))))))
 
 (comment
   [(parse-uri "redis://user:pass@x.y.com:9475/7")
