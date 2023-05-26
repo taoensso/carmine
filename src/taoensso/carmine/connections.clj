@@ -2,11 +2,15 @@
   "Handles socket connection lifecycle. Pool is implemented with Apache Commons
   pool. Originally adapted from redis-clojure."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.encore           :as enc]
-            [taoensso.carmine.protocol :as protocol])
-  (:import [java.net InetSocketAddress Socket URI]
-           [org.apache.commons.pool2 KeyedPooledObjectFactory]
-           [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
+  (:require
+   [clojure.string            :as str]
+   [taoensso.encore           :as enc]
+   [taoensso.carmine.protocol :as protocol])
+
+  (:import
+   [java.net InetSocketAddress Socket URI]
+   [org.apache.commons.pool2 KeyedPooledObjectFactory]
+   [org.apache.commons.pool2.impl GenericKeyedObjectPool DefaultPooledObject]))
 
 (enc/declare-remote
   taoensso.carmine/ping
@@ -233,18 +237,25 @@
           [username password] (.split (str (.getUserInfo uri)) ":")
           port (.getPort uri)
           db   (when-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
-                 (Integer. ^String db-str))]
+                 (Integer. ^String db-str))
+
+          ssl-fn
+          (when-let [scheme (.getScheme uri)]
+            (when (contains? #{"rediss" "https"} (str/lower-case scheme))
+              :default))]
 
       (-> {:host (.getHost uri)}
           (#(if (pos? port)                (assoc % :port     port)     %))
           (#(if (and db (pos? (long db)))  (assoc % :db       db)       %))
           (#(if (enc/nempty-str? username) (assoc % :username username) %))
-          (#(if (enc/nempty-str? password) (assoc % :password password) %))))))
+          (#(if (enc/nempty-str? password) (assoc % :password password) %))
+          (#(if ssl-fn                     (assoc % :ssl-fn   ssl-fn)   %))))))
 
 (comment
-  [(parse-uri "redis://user:pass@x.y.com:9475/7")
-   (parse-uri "redis://:pass@x.y.com.com:9475/7")
-   (parse-uri "redis://user:@x.y.com:9475/7")])
+  [(parse-uri  "redis://user:pass@x.y.com:9475/3")
+   (parse-uri  "redis://:pass@x.y.com.com:9475/3")
+   (parse-uri      "redis://user:@x.y.com:9475/3")
+   (parse-uri     "rediss://user:@x.y.com:9475/3")])
 
 (def conn-spec
   (enc/memoize
