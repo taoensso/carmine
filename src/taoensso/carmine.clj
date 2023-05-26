@@ -61,7 +61,7 @@
 
     `spec` describes the connection details, e.g.:
       - {:host \"127.0.0.1\" :port 6379} ; Default
-      - {:uri \"redis://redistogo:pass@panga.redistogo.com:9475/\"}
+      - {:uri \"redis://username:password@host.foo.com:9475/3\" ; /3 for db 3
       - {:host \"127.0.0.1\"
          :port 6379
          :ssl-fn :default ; [1]
