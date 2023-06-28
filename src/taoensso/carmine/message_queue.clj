@@ -47,8 +47,10 @@
    [taoensso.tufte.stats :as tufte-stats]))
 
 ;;;; TODO/later
-;; - New docs + examples in v4 Wiki.
-;; - Support cbs? (Could decouple Timbre)
+;; - Refactor logging, incl. add `set-min-log-level!`, using new `set-min-ns-level!`
+;; - New wiki docs + examples
+;; - Support cbs and/or tap to decouple Timbre?
+;; - Use Redis v7 functions
 
 ;;;; Utils
 
