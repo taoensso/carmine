@@ -9,7 +9,7 @@
   Ref. http://antirez.com/post/250 for initial inspiration.
 
   Message status e/o:
-    :nil                 - Not in queue or already GC'd
+    nil                  - Not in queue or already GC'd
     :queued              - Awaiting handler
     :queued-with-backoff - Awaiting handler, but skip until backoff expired
     :locked              - Currently with handler
@@ -155,38 +155,39 @@
 (comment        (->message-status ["queued" "1" nil]))
 (comment (wcar {} (message-status "qname" "mid1")))
 
-(defn- -queue-status [qname]
+(defn- -queue-counts
+  "[nlocked nbackoff nready ncircle ndone]"
+  [qname]
   (let [qk (partial qkey qname)]
-    (car/hlen (qk :locks))
-    (car/hlen (qk :backoffs))
-    (car/llen (qk :mids-ready))
-    (car/llen (qk :mid-circle))))
+    (car/hlen  (qk :locks))
+    (car/hlen  (qk :backoffs))
+    (car/llen  (qk :mids-ready))
+    (car/llen  (qk :mid-circle))
+    (car/scard (qk :done))))
 
-(defn queue-status
-  "Returns in O(1) the approx {:keys [nqueued nlocked nbackoff ntotal]}
-  counts for given named queue."
-  [conn-opts qname]
-  (let [[^long nlocked ^long nbackoff ^long nready ^long ncircle]
-        (wcar conn-opts (-queue-status qname))
-
-        ntotal  (dec (+ nready ncircle)) ; -1 for eoq
-        nqueued (- ntotal (+ nlocked nbackoff))]
+(defn- -queue-status [queue-counts]
+  (let [[^long nlocked ^long nbackoff ^long nready ^long ncircle ^long ndone] queue-counts
+        ntotal  (max 0 (dec (+ nready ncircle))) ; dec for eoq
+        nqueued (max 0 (- ntotal (+ nlocked nbackoff ndone)))]
 
     {:nqueued  nqueued  ; Also called "queue-size"
      :nlocked  nlocked  ; Approx, may contain expired entries
      :nbackoff nbackoff ; Approx, may contain expired entries
      :ntotal   ntotal}))
 
+(defn queue-status
+  "Returns in O(1) the approx {:keys [nqueued nlocked nbackoff ntotal]}
+  counts for given named queue.
+
+  `nlocked` and `nbackoff` may include expired entries!"
+  [conn-opts qname] (-queue-status (wcar conn-opts (-queue-counts qname))))
+
 (comment (queue-status {} "qname"))
 
 (defn queue-size
   "Returns in O(1) the approx number of messages awaiting handler for
   given named queue. Same as (:nqueued (queue-status conn-opts qname))."
-  ^long [conn-opts qname]
-  (let [[^long nlocked ^long nbackoff ^long nready ^long ncircle]
-        (wcar conn-opts (-queue-status qname))]
-
-    (- (dec (+ nready ncircle)) (+ nlocked nbackoff))))
+  ^long [conn-opts qname] (get (queue-status conn-opts qname) :nqueued))
 
 (comment (queue-size {} "qname"))
 
@@ -704,31 +705,30 @@
                             (wcar conn-opts
                               (dequeue qname worker-opts)
                               (car/get (qk :ndry-runs))
-                              (-queue-status qname))]
+                              (-queue-counts qname))]
 
                         (if-let [t (enc/rfirst #(instance? Throwable %) resp)]
                           (throw t)
                           (future-pool
                             (fn []
                               (try
-                                (let [[poll-reply ndry-runs
-                                       ^long nlocked ^long nbackoff ^long nready ^long ncircle] resp
-                                      queue-size (- (dec (+ nready ncircle)) (+ nlocked nbackoff))]
+                                (let [[poll-reply ndry-runs & queue-counts] resp
+                                      {:keys [nqueued]} (-queue-status queue-counts)]
 
-                                  (queue-size* :set queue-size)
-                                  (ssb-queue-size   queue-size)
+                                  (queue-size* :set nqueued)
+                                  (ssb-queue-size   nqueued)
 
                                   (when monitor
                                     (monitor
-                                      {:queue-size      queue-size
-                                       :mid-circle-size queue-size ; Back compatibility
+                                      {:queue-size      nqueued
+                                       :mid-circle-size nqueued ; Back compatibility
                                        :ndry-runs       (or ndry-runs 0)
                                        :poll-reply      poll-reply
                                        :worker          this}))
 
                                   (handle1 conn-opts qname handler poll-reply
                                     {:worker               this
-                                     :queue-size           queue-size
+                                     :queue-size           nqueued
                                      :nstats_              nstats_
                                      :ssb-queueing-time-ms ssb-queueing-time-ms
                                      :ssb-handling-time-ns ssb-handling-time-ns})
