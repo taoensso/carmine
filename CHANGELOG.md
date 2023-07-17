@@ -1,6 +1,43 @@
-> This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md) as of **Aug 16, 2014**.
+This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md).
 
-## v3.2.0 / 2022 Dec 3
+## `3.3.0-RC1` (2023-07-18)
+
+> 📦 [Available on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.3.0-RC1)
+
+This is a **major feature release** which includes **possible breaking changes** for users of Carmine's message queue.
+
+The main objective is to introduce a rewrite of Carmine's message queue that *significantly* improves **queue performance and observability**.
+
+### If you use Carmine's message queue:
+
+  - Please see the 1804ef97 commit message for important details.
+  - Please **test this release** carefully before deploying to production, and once deployed **monitor for any unexpected behaviour**.
+
+My sincere apologies for the possible breaks. My hope is that:
+
+  - Few users will actually be affected by these breaks.
+  - If affected, migration should be simple.
+  - Ultimately the changes will be positive - and something that all queue users can benefit from.
+
+### Changes since `3.2.0`
+
+* ⚠️ 1804ef97 [mod] [BREAK] [#278] Merge work from message queue v2 branch (**see linked commit message for details**)
+
+### Fixes since `3.2.0`
+
+* 2e6722bf [fix] [#281 #279] `parse-uri`: only provide ACL params when non-empty (@frwdrik)
+* c68c995c [fix] [#283] Support new command.json spec format used for `XTRIM`, etc.
+
+### New since `3.2.0`
+
+* f79a6404 [new] Update commands to match latest `commands.json` spec
+* 19d97ebd [new] [#282] Add support for TLS URIs to URI parser
+* 5cfdbbbd [new] Add `scan-keys` util
+* 37f0030a [new] Add `set-min-log-level!` util
+* GraalVM compatibility is now tested during build
+
+
+## `3.2.0` (2022-12-03)
 
 ```clojure
 [com.taoensso/carmine "3.2.0"]
@@ -9,15 +46,15 @@
 > This is a major feature + maintenance release. It should be **non-breaking**.  
 > See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
 
-#### Changes since `v3.1.0`
+#### Changes since `3.1.0`
 
 * [#279] [#257] Any username in conn-spec URI will now automatically be used for ACL in AUTH
 
-#### Fixes since `v3.1.0`
+#### Fixes since `3.1.0`
 
 * Fix warning of parse var replacements (`parse-long`, `parse-double`)
 
-#### New since `v3.1.0`
+#### New since `3.1.0`
 
 * [#201] [#224] [#266] Improve `wcar` documentation, alias pool constructor in main ns
 * [#251] [#257] [#270] Add support for username (ACL) in AUTH (@lsevero @sumeet14)
@@ -25,7 +62,7 @@
 * [#259] [#261] Ring middleware: add `:extend-on-read?` option (@svdo)
 * [Message queue] Print extra debug info on invalid handler status
 
-#### Other improvements since `v3.1.0`
+#### Other improvements since `3.1.0`
 
 * [#264] Remove unnecessary reflection in Tundra (@frwdrik)
 * Stop using deprecated Encore vars

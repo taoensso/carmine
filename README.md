@@ -4,7 +4,8 @@
 **[CHANGELOG][]** | [API][] | current [Break Version][]:
 
 ```clojure
-[com.taoensso/carmine "3.2.0"] ; See CHANGELOG for details
+[com.taoensso/carmine "3.3.0-RC1"] ; Upcoming, see CHANGELOG for details
+[com.taoensso/carmine "3.2.0"]     ; Stable
 ```
 
 > See [here][backers] if to help support my open-source work, thanks! - [Peter Taoussanis][Taoensso.com]
@@ -33,8 +34,8 @@ An major upcoming (v4) release will include support for RESP3, Redis Sentinel, R
 Add the necessary dependency to your project:
 
 ```clojure
-Leiningen: [com.taoensso/carmine "3.2.0"] ; or
-deps.edn:   com.taoensso/carmine {:mvn/version "3.2.0"}
+Leiningen: [com.taoensso/carmine "3.3.0-RC1"] ; or
+deps.edn:   com.taoensso/carmine {:mvn/version "3.3.0-RC1"}
 ```
 
 And setup your namespace imports:
