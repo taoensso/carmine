@@ -14,16 +14,16 @@
    *unchecked-math*     false #_:warn-on-boxed}
 
   :dependencies
-  [[com.taoensso/encore              "3.40.0"]
-   [com.taoensso/timbre              "6.0.2"]
+  [[com.taoensso/encore              "3.62.1"]
+   [com.taoensso/timbre              "6.2.1"]
    [com.taoensso/nippy               "3.2.0"]
    [org.apache.commons/commons-pool2 "2.11.1"]
-   [commons-codec/commons-codec      "1.15"]]
+   [commons-codec/commons-codec      "1.16.0"]]
 
   :plugins
   [[lein-pprint  "1.3.2"]
    [lein-ancient "0.7.0"]
-   [lein-codox   "0.10.8"]]
+   [com.taoensso.forks/lein-codox "0.10.9"]]
 
   :codox
   {:language #{:clojure #_:clojurescript}
@@ -43,9 +43,9 @@
    [:c1.11 :test :server-jvm :depr
     {:dependencies
      [[org.clojure/data.json "2.4.0"]
-      [com.taoensso/faraday  "1.11.4"]
+      [com.taoensso/faraday  "1.12.0"]
       [clj-aws-s3            "0.3.10"]
-      [ring/ring-core        "1.9.6"]]}]
+      [ring/ring-core        "1.10.0"]]}]
 
    :graal-tests
    {:dependencies [[org.clojure/clojure "1.11.1"]
