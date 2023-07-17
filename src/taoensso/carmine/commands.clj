@@ -153,34 +153,14 @@
                           [fixed (when more? (into fixed '[& args])) (into cmd-args fixed)])
 
                         fn-docstring
-                        (let [arg-descrs
-                              (mapv
-                                (fn [{:keys [command type name enum multiple optional]}]
-                                  (let [name (if (and (coll? name) (not (next name))) (first name) name)
-                                        s
-                                        (cond
-                                          command
-                                          (str command " "
-                                            (cond
-                                              enum         (str/join "|" enum)
-                                              (coll? name) (str/join " " name)
-                                              :else                      name))
-
-                                          enum         (str/join "|" enum)
-                                          (coll? name) (str/join " " name)
-                                          :else                      name)
-
-                                        s (if multiple (str s " [" s " ...]") s)
-                                        s (if optional (str    "[" s     "]") s)]
-                                    s))
-                                arguments)]
-
-                          (str
-                            summary ".\n\n"
-                            cmd-name " "
-                            (str/join " " arg-descrs) "\n\n"
-                            "Available since: " (or since "unspecified") ".\n\n"
-                            (when complexity (str "Time complexity: " complexity))))
+                        (let [docs-url (str "https://redis.io/commands/" fn-name "/")]
+                          (enc/into-str
+                            "`" cmd-name "` - Redis command function.\n"
+                            (when since      ["  Available since: Redis " since      "\n"])
+                            (when complexity ["       Complexity: "       complexity "\n"])
+                            "\n" summary
+                            "\n"
+                            "Ref. " docs-url " for more info."))
 
                         ;; Assuming for now that cluster key always follows
                         ;; right after command args (seems to hold?).
