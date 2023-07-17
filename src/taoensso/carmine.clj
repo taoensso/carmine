@@ -17,6 +17,19 @@
 
 (enc/assert-min-encore-version [3 62 1])
 
+;;;; Logging config
+
+(defn set-min-log-level!
+  "Sets Timbre's minimum log level for internal Carmine namespaces.
+  Possible levels: #{:trace :debug :info :warn :error :fatal :report}.
+  Default level: `:warn`."
+  [level]
+  (timbre/set-ns-min-level! "taoensso.carmine.*" level)
+  (timbre/set-ns-min-level! "taoensso.carmine"   level)
+  nil)
+
+(defonce ^:private __set-default-log-level (set-min-log-level! :warn))
+
 ;;;; Connections
 
 (enc/defalias with-replies protocol/with-replies)
