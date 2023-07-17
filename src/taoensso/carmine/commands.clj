@@ -91,111 +91,124 @@
     (keyslot "hello{world}")) ; [14.69 56.41]
   )
 
-;;;; commands.edn
+;;;; Command specs
 
 (comment ; Generate commands.edn
   (require '[clojure.data.json :as json])
+  (defn- get-redis-command-spec
+    [source]
+    (let [json
+          (case source
+            :online (slurp (java.net.URL. "https://raw.githubusercontent.com/redis/redis-doc/master/commands.json"))
+            :local  (enc/slurp-resource "redis-commands.json"))]
 
-  (defn- get-command-spec
-    "Given a `clojure/slurp`-able Redis commands.json location (e.g. URL),
-    reads the json and returns a cleaned-up Redis command spec map."
-    ([] (get-command-spec (java.net.URL. "https://raw.githubusercontent.com/redis/redis-doc/master/commands.json")))
-    ([json]
-     (try
-       (let [m (clojure.data.json/read-str (slurp json) :key-fn keyword)]
-         (persistent!
-           (reduce-kv
-             (fn [m k v]
-               (let [cmd-name (name k) ; "CONFIG SET"
-                     fn-name ; "config-set"
-                     (-> cmd-name str/lower-case (str/replace #" " "-"))
+      {:as-map  (clojure.data.json/read-str json :key-fn keyword),
+       :as-json json}))
 
-                     {:keys [arguments summary since complexity]} v
+  (comment (= (get-redis-command-spec :local) (get-redis-command-spec :online)))
 
-                     [fn-params-fixed ; '[key value]
-                      fn-params-more?
-                      ]
-                     (let [args arguments
-                           num-non-optional (count (take-while #(not (:optional %)) args))
-                           num-non-multiple (count (take-while #(not (:multiple %)) args))
+  (defn- get-carmine-command-spec
+    [redis-command-spec]
+    (try
+      (let [as-map
+            (persistent!
+              (reduce-kv
+                (fn [m k v]
+                  (let [cmd-name (name k)                                            ; "CONFIG SET"
+                        cmd-args (-> cmd-name (str/split #" "))                      ; ["CONFIG" "SET"]
+                        fn-name  (-> cmd-name str/lower-case (str/replace #" " "-")) ; "config-set"
 
-                           num-fixed
-                           (case cmd-name
-                             ("EVAL" "EVALSHA") 2 ; Patch ~faulty spec, Ref. #204
-                             (min num-non-optional (inc num-non-multiple)))
+                        {:keys [summary since complexity arguments arity _group]} v
 
-                           fixed (->> args (take num-fixed)
-                                   (map :name) flatten (map symbol) vec)
+                        [fn-params-fixed fn-params-more req-args-fixed]
+                        (let [args arguments
+                              num-non-optional (count (take-while #(not (:optional %)) args))
+                              num-non-multiple (count (take-while #(not (:multiple %)) args))
+                              num-fixed        (min num-non-optional (inc num-non-multiple))
+                              fixed (->> args (take num-fixed) (map :name) flatten (map symbol) vec)
+                              more? (seq (filter #(or (:optional %) (:multiple %)) args))]
+                          [fixed
+                           (when more? (when more? (into fixed '[& args])))
+                           (into cmd-args fixed)])
 
-                           more? (seq (filter #(or (:optional %) (:multiple %)) args))]
-                       [fixed more?])
+                        fn-docstring
+                        (let [arg-descrs
+                              (mapv
+                                (fn [{:keys [command type name enum multiple optional]}]
+                                  (let [name (if (and (coll? name) (not (next name))) (first name) name)
+                                        s
+                                        (cond
+                                          command
+                                          (str command " "
+                                            (cond
+                                              enum         (str/join "|" enum)
+                                              (coll? name) (str/join " " name)
+                                              :else                      name))
 
-                     fn-docstring
-                     (let [arg-descrs
-                           (mapv
-                             (fn [{:keys [command type name enum multiple optional] :as in}]
-                               (let [name (if (and (coll? name) (not (next name))) (first name) name)
-                                     s
-                                     (cond
-                                       command
-                                       (str command " "
-                                         (cond
-                                           enum         (str/join "|" enum)
-                                           (coll? name) (str/join " " name)
-                                           :else                      name))
+                                          enum         (str/join "|" enum)
+                                          (coll? name) (str/join " " name)
+                                          :else                      name)
 
-                                       enum         (str/join "|" enum)
-                                       (coll? name) (str/join " " name)
-                                       :else                      name)
+                                        s (if multiple (str s " [" s " ...]") s)
+                                        s (if optional (str    "[" s     "]") s)]
+                                    s))
+                                arguments)]
 
-                                     s (if multiple (str s " [" s " ...]") s)
-                                     s (if optional (str    "[" s     "]") s)]
-                                 s))
-                             arguments)]
+                          (str
+                            summary ".\n\n"
+                            cmd-name " "
+                            (str/join " " arg-descrs) "\n\n"
+                            "Available since: " (or since "unspecified") ".\n\n"
+                            (when complexity (str "Time complexity: " complexity))))
 
-                       (str
-                         summary ".\n\n"
-                         cmd-name " "
-                         (str/join " " arg-descrs) "\n\n"
-                         "Available since: " (or since "unspecified") ".\n\n"
-                         (when complexity
-                           (str "Time complexity: " complexity))))
+                        ;; Assuming for now that cluster key always follows
+                        ;; right after command args (seems to hold?).
+                        ;; Can adjust later if needed.
+                        cluster-key-idx (count cmd-args)]
 
-                     cmd-args (str/split cmd-name #" ") ; ["CONFIG" "SET"]
+                    (enc/have? pos? cluster-key-idx)
+                    (assoc! m cmd-name
+                      {:fn-name         fn-name
+                       :cluster-key-idx cluster-key-idx
+                       :fn-params-more  fn-params-more
+                       :fn-params-fixed fn-params-fixed
+                       :req-args-fixed  req-args-fixed ; ["CONFIG" "SET" 'key 'value]
+                       :fn-docstring    fn-docstring})))
 
-                     ;; Assuming for now that cluster key always follows
-                     ;; right after command args (seems to hold?). Can adjust
-                     ;; later if we need to:
-                     cluster-key-idx (count cmd-args)]
+                (transient {})
+                (get redis-command-spec :as-map)))]
 
-                 (enc/have? pos? cluster-key-idx)
+        {:as-map as-map
+         :as-edn
+         (str
+           "{\n"
+           (reduce
+             (fn [acc k]
+               (let [v (get as-map k)]
+                 (str acc (enc/pr-edn k) " " (enc/pr-edn v) "\n")))
+             ""
+             (sort (keys as-map)))
+           "}")})
 
-                 (assoc! m
-                   cmd-name
-                   {:fn-name fn-name ; "config-set"
-                    :fn-docstring fn-docstring
-                    :fn-params-fixed fn-params-fixed ; '[key value]
-                    :fn-params-more ; ?'[key value & args]
-                    (when fn-params-more?
-                      (into fn-params-fixed '[& args]))
-                    ;; :cmd-args cmd-args ; ["CONFIG" "SET"]
-                    :req-args-fixed ; ["CONFIG" "SET" 'key 'value]
-                    (into cmd-args fn-params-fixed)
+      (catch Throwable t
+        (throw
+          (ex-info "Failed to generate Carmine command spec"
+            {:redis-command-spec redis-command-spec}
+            t)))))
 
-                    :cluster-key-idx cluster-key-idx})))
-
-             (transient {})
-             m)))
-
-       (catch Exception e
-         (ex-info "Failed to read Carmine commands json" {} e)))))
-
-  (comment (get (get-command-spec) "SET"))
   (comment
-    (spit "commands.edn"
-      (str/replace
-      (enc/pr-edn (get-command-spec))
-      #"}, " "}\n"))))
+    (get-in                           (get-redis-command-spec :local)  [:as-map :XTRIM])
+    (get-in (get-carmine-command-spec (get-redis-command-spec :local)) [:as-map "XTRIM"]))
+
+  (defn update-commands! [json-source]
+    (let [redis-command-spec   (get-redis-command-spec   json-source)
+          carmine-command-spec (get-carmine-command-spec redis-command-spec)]
+
+      (spit "resources/redis-commands.json"  (enc/have (:as-json redis-command-spec)))
+      (spit "resources/carmine-commands.edn" (enc/have (:as-edn  carmine-command-spec)))))
+
+  (update-commands! :local)
+  (update-commands! :online))
 
 ;;;;
 
@@ -265,7 +278,7 @@
         :cluster-key-idx 1})))
 
 (defonce ^:private command-spec
-  (if-let [edn (enc/slurp-resource "taoensso/carmine/commands.edn")]
+  (if-let [edn (enc/slurp-resource "carmine-commands.edn")]
     (try
       (enc/read-edn edn)
       (catch Exception e
