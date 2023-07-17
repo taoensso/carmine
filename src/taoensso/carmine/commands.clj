@@ -107,6 +107,25 @@
 
   (comment (= (get-redis-command-spec :local) (get-redis-command-spec :online)))
 
+  (defn- get-fixed-params [^long n-min arguments]
+    (let [simple-params
+          (reduce
+            (fn [acc in]
+              (let [{:keys [optional multiple arguments name]} (enc/have map? in)]
+                (cond
+                  optional  (reduced       acc)
+                  arguments (reduced       acc)
+                  multiple  (reduced (conj acc (symbol name)))
+                  :else              (conj acc (symbol name)))))
+            []
+            arguments)
+
+          n-additional (- n-min (count simple-params))]
+
+      (if (pos? n-additional)
+        (into simple-params (mapv #(symbol (str "arg" %)) (range 1 (inc n-additional))))
+        (do   simple-params))))
+
   (defn- get-carmine-command-spec
     [redis-command-spec]
     (try
@@ -120,16 +139,18 @@
 
                         {:keys [summary since complexity arguments arity _group]} v
 
+                        ;; Ref. https://redis.io/commands/command/
                         [fn-params-fixed fn-params-more req-args-fixed]
-                        (let [args arguments
-                              num-non-optional (count (take-while #(not (:optional %)) args))
-                              num-non-multiple (count (take-while #(not (:multiple %)) args))
-                              num-fixed        (min num-non-optional (inc num-non-multiple))
-                              fixed (->> args (take num-fixed) (map :name) flatten (map symbol) vec)
-                              more? (seq (filter #(or (:optional %) (:multiple %)) args))]
-                          [fixed
-                           (when more? (when more? (into fixed '[& args])))
-                           (into cmd-args fixed)])
+                        (let [n     (long arity)
+                              more? (neg?     n)
+                              n
+                              (if more?
+                                (+ n (count cmd-args))
+                                (- n (count cmd-args)))
+
+                              n-min (Math/abs n)
+                              fixed (get-fixed-params n-min arguments)]
+                          [fixed (when more? (into fixed '[& args])) (into cmd-args fixed)])
 
                         fn-docstring
                         (let [arg-descrs
