@@ -79,9 +79,9 @@
     [(is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))
      (sleep "a" :eoq)
 
-     (is (= (wcar* (enqueue tq :msg1a {:mid :mid1}))                   {:action :added, :mid :mid1}))
-     (is (= (wcar* (enqueue tq :msg1b {:mid :mid1}))                   {:error :already-queued}) "Dupe mid")
-     (is (= (wcar* (enqueue tq :msg1b {:mid :mid1 :can-update? true})) {:action :updated, :mid :mid1}))
+     (is (= (wcar* (enqueue tq :msg1a {:mid :mid1}))                   {:success? true,  :action :added, :mid :mid1}))
+     (is (= (wcar* (enqueue tq :msg1b {:mid :mid1}))                   {:success? false, :error :already-queued}) "Dupe mid")
+     (is (= (wcar* (enqueue tq :msg1b {:mid :mid1 :can-update? true})) {:success? true,  :action :updated, :mid :mid1}))
 
      (is (= (wcar* (msg-status tq :mid1)) :queued))
      (is (enc/submap? (tq-status)
@@ -97,16 +97,16 @@
   (testing "Enqueue with initial backoff"
     (clear-tq!)
     [(is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))
-     (is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 500})) {:action :added, :mid :mid1}))
-     (is (= (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 100})) {:action :added, :mid :mid2}))
+     (is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 500})) {:success? true, :action :added, :mid :mid1}))
+     (is (= (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 100})) {:success? true, :action :added, :mid :mid2}))
 
      (is (enc/submap? (tq-status)
            {:messages   {"mid1" :msg1, "mid2" :msg2}
             :mid-circle ["mid2" "mid1" "end-of-circle"]}))
 
      ;; Dupes before the backoff expired
-     (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:error :already-queued}))
-     (is (= (wcar* (enqueue tq :msg2 {:mid :mid2})) {:error :already-queued}))
+     (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? false, :error :already-queued}))
+     (is (= (wcar* (enqueue tq :msg2 {:mid :mid2})) {:success? false, :error :already-queued}))
 
      ;; Both should be queued with backoff before the backoff expires
      (is (= (wcar* (msg-status tq :mid1)) :queued-with-backoff))
@@ -121,8 +121,8 @@
      (is (= (wcar* (msg-status tq :mid2)) :queued))
 
      ;; Dupes after backoff expired
-     (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:error :already-queued}))
-     (is (= (wcar* (enqueue tq :msg2 {:mid :mid2})) {:error :already-queued}))
+     (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? false, :error :already-queued}))
+     (is (= (wcar* (enqueue tq :msg2 {:mid :mid2})) {:success? false, :error :already-queued}))
 
      (handle-end-of-circle "b")
 
@@ -153,7 +153,7 @@
 (deftest handlers
   [(testing "Handler => success"
      (clear-tq!)
-     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
+     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
 
       (let [[pr ha hr] (test-handler (fn [_m] {:status :success}))]
         [(is (subvec?     pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -169,7 +169,7 @@
 
    (testing "Handler => throws"
      (clear-tq!)
-     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
+     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
 
       (let [[pr ha hr] (test-handler (fn [_m] (throw!)))]
         [(is (subvec? pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -182,7 +182,7 @@
 
    (testing "Handler => success with backoff (dedupe)"
      (clear-tq!)
-     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
+     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
 
       (let [[pr ha hr] (test-handler (fn [_m] {:status :success :backoff-ms 2000}))]
         [(is (subvec? pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -200,7 +200,7 @@
 
    (testing "Handler => retry with backoff"
      (clear-tq!)
-     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
+     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
 
       (let [[pr ha hr] (test-handler (fn [_m] {:status :retry :backoff-ms 2000}))]
         [(is (subvec? pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
@@ -220,7 +220,7 @@
 
      (testing "Default lock time"
        (clear-tq!)
-       [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added, :mid :mid1}))
+       [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
 
         ;; Simulate bad handler
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 1000})) ["handle" "mid1" :msg1 1 1000 #_udt]))
@@ -233,7 +233,7 @@
 
      (testing "Custom lock time"
        (clear-tq!)
-       [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :lock-ms 2000})) {:action :added, :mid :mid1}))
+       [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :lock-ms 2000})) {:success? true, :action :added, :mid :mid1}))
 
         ;; Simulate bad handler
         (is (subvec? (wcar* (dequeue tq {:default-lock-ms 500})) ["handle" "mid1" :msg1 1 2000 #_udt]))
@@ -247,17 +247,17 @@
 (deftest requeue
   [(testing "Enqueue while :locked"
      (clear-tq!)
-     [(is (= (wcar* (enqueue tq :msg1a {:mid :mid1})) {:action :added, :mid :mid1}))
+     [(is (= (wcar* (enqueue tq :msg1a {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
 
       (do (test-handler :async (fn [_m] (Thread/sleep 2000) {:status :success})) :async-handler-running)
 
       (is (= (wcar* (msg-status tq :mid1)) :locked))
-      (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1})) {:error :locked}))
+      (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1})) {:success? false, :error :locked}))
 
-      (is (= (wcar* (enqueue    tq :msg1c {:mid :mid1, :can-requeue? true}))  {:action :added, :mid :mid1}))
-      (is (= (wcar* (enqueue    tq :msg1d {:mid :mid1, :can-requeue? true}))  {:error :already-queued}))
+      (is (= (wcar* (enqueue    tq :msg1c {:mid :mid1, :can-requeue? true}))  {:success? true,  :action :added, :mid :mid1}))
+      (is (= (wcar* (enqueue    tq :msg1d {:mid :mid1, :can-requeue? true}))  {:success? false, :error :already-queued}))
       (is (= (wcar* (enqueue    tq :msg1e {:mid :mid1, :can-requeue? true,
-                                           :can-update? true, :lock-ms 500})) {:action :updated, :mid :mid1}))
+                                           :can-update? true, :lock-ms 500})) {:success? true,  :action :updated, :mid :mid1}))
 
       (is (= (wcar* (msg-status tq :mid1)) :locked-with-requeue))
       (sleep 2500) ; > handler lock
@@ -269,14 +269,14 @@
 
    (testing "Enqueue while :done-with-backoff"
      (clear-tq!)
-     [(is (= (wcar* (enqueue tq :msg1a {:mid :mid1})) {:action :added, :mid :mid1}))
+     [(is (= (wcar* (enqueue tq :msg1a {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
 
       (do (test-handler (fn [_m] {:status :success :backoff-ms 2000})) :ran-handler)
 
       (is (= (wcar* (msg-status tq :mid1)) :done-with-backoff))
-      (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1}))                     {:error :backoff}))
+      (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1}))                     {:success? false, :error :backoff}))
       (is (= (wcar* (enqueue    tq :msg1c {:mid :mid1, :can-requeue? true,
-                                           :lock-ms 500}))                   {:action :added, :mid :mid1}))
+                                           :lock-ms 500}))                   {:success? true,  :action :added, :mid :mid1}))
       (is (= (wcar* (msg-status tq :mid1)) :done-with-requeue))
 
       (handle-end-of-circle "a")
@@ -303,8 +303,8 @@
                      :throttle-ms    10
                      :eoq-backoff-ms 10})]
 
-        [(is (enc/submap? (wcar* (enqueue tq :msg1 {:mid :mid1})) {:action :added}))
-         (is (enc/submap? (wcar* (enqueue tq :msg2 {:mid :mid2})) {:action :added}))
+        [(is (enc/submap? (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added}))
+         (is (enc/submap? (wcar* (enqueue tq :msg2 {:mid :mid2})) {:success? true, :action :added}))
 
          (is (enc/submap? (queue-status)
                {:mids-ready ["mid2" "mid1"]
