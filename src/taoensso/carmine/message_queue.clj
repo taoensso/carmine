@@ -39,8 +39,9 @@
   (:require
    [clojure.string   :as str]
    [taoensso.encore  :as enc]
+   [taoensso.carmine :as car :refer [wcar]]
    [taoensso.timbre  :as timbre]
-   [taoensso.carmine :as car :refer [wcar]]))
+   [taoensso.tufte.stats :as tufte-stats]))
 
 ;;;; TODO/later
 ;; - Use Redis v7 functions instead of lua?
@@ -390,11 +391,11 @@
   (wcar {} (message-status :q1 :mid1))
   (wcar {} (dequeue :q1 {})))
 
-(defn- inc-stat!
-  ([stats_ k1   ] (when stats_ (swap! stats_ (fn [m] (enc/update-in m [k1]    (fn [?n] (inc (long (or ?n 0)))))))))
-  ([stats_ k1 k2] (when stats_ (swap! stats_ (fn [m] (enc/update-in m [k1 k2] (fn [?n] (inc (long (or ?n 0))))))))))
+(defn- inc-nstat!
+  ([nstats_ k1   ] (when nstats_ (swap! nstats_ (fn [m] (enc/update-in m [k1]    (fn [?n] (inc (long (or ?n 0)))))))))
+  ([nstats_ k1 k2] (when nstats_ (swap! nstats_ (fn [m] (enc/update-in m [k1 k2] (fn [?n] (inc (long (or ?n 0))))))))))
 
-(comment (inc-stat! (atom {}) :k1))
+(comment (inc-nstat! (atom {}) :k1))
 
 (defn- thread-desync-ms
   "Returns ms ± 20%"
@@ -405,13 +406,13 @@
 (comment (repeatedly 5 #(thread-desync-ms 500)))
 
 (defn- handle1
-  [conn-opts qname handler poll-reply stats_]
+  [conn-opts qname handler poll-reply nstats_]
   (enc/cond
     :let [[kind] (when (vector? poll-reply) poll-reply)]
 
     (= kind "skip")
     (let [[_kind reason] poll-reply]
-      #_(inc-stat! stats_ (keyword "skip" reason)) ; Noisy
+      #_(inc-nstat! nstats_ (keyword "skip" reason)) ; Noisy
       [:skipped reason])
 
     (= kind "handle")
@@ -438,8 +439,8 @@
           (fn [mid status done? backoff-ms]
             (let [done? (case status (:success :error) true false)]
 
-              (do              (inc-stat! stats_ (keyword "handler" (name status))))
-              (when backoff-ms (inc-stat! stats_ :handler/backoff))
+              (do              (inc-nstat! nstats_ (keyword "handler" (name status))))
+              (when backoff-ms (inc-nstat! nstats_ :handler/backoff))
 
               ;; Don't need atomicity here, simple pipeline sufficient
               (wcar conn-opts
@@ -475,13 +476,13 @@
     (let [[_kind reason ttl-ms] poll-reply
           ttl-ms (thread-desync-ms (long ttl-ms))]
 
-      (inc-stat! stats_ (keyword "poll" reason))
+      (inc-nstat! nstats_ (keyword "poll" reason))
       (Thread/sleep (int ttl-ms))
       [:slept reason ttl-ms])
 
     :else
     (do
-      (inc-stat! stats_ :poll/unexpected)
+      (inc-nstat! nstats_ :poll/unexpected)
       (throw
         (ex-info "[Carmine/mq] Unexpected poll reply"
           {:reply {:value poll-reply :type (type poll-reply)}})))))
@@ -494,7 +495,7 @@
   (stop  [this]))
 
 (deftype CarmineMessageQueueWorker
-  [qname opts conn-opts running?_ thread-futures_ stats_]
+  [qname opts conn-opts running?_ thread-futures_ nstats_ ssb]
 
   java.io.Closeable (close [this] (stop this))
   Object
@@ -510,7 +511,10 @@
      :running?  @running?_
      :conn-opts conn-opts
      :opts      opts
-     :stats     @stats_
+     :stats
+     {:queue-size (when-let [ss @ssb] @ss)
+      :counts     @nstats_}
+
      :queue-status_
      (delay
        (queue-status conn-opts qname
@@ -524,7 +528,7 @@
       (timbre/info "[Carmine/mq] Queue worker has shut down" {:qname qname})
       true))
 
-  (start [_]
+  (start [this]
     (when (compare-and-set! running?_ false true)
       (timbre/info "[Carmine/mq] Queue worker starting" {:qname qname})
       (let [{:keys [handler monitor nthreads throttle-ms]} opts
@@ -551,20 +555,23 @@
 
                             (if-let [t (enc/rfirst #(instance? Throwable %) -resp)]
                               (throw t)
-                              (let [[poll-reply ndry-runs mids-ready-size mid-circle-size] -resp]
+                              (let [[poll-reply ndry-runs mids-ready-size mid-circle-size] -resp
+                                    queue-size
+                                    (+
+                                      (long mids-ready-size)
+                                      (long mid-circle-size))]
+
+                                (ssb queue-size) ; -> summary-stats-buffered
+
                                 (when monitor
-                                  (let [queue-size
-                                        (+
-                                          (long mids-ready-size)
-                                          (long mid-circle-size))]
+                                  (monitor
+                                    {:queue-size      queue-size
+                                     :mid-circle-size queue-size ; Back compatibility
+                                     :ndry-runs       (or ndry-runs 0)
+                                     :poll-reply      poll-reply
+                                     :worker          this}))
 
-                                    (monitor
-                                      {:queue-size      queue-size
-                                       :mid-circle-size queue-size ; Back compatibility
-                                       :ndry-runs       (or ndry-runs 0)
-                                       :poll-reply      poll-reply})))
-
-                                (handle1 conn-opts qname handler poll-reply stats_)
+                                (handle1 conn-opts qname handler poll-reply nstats_)
                                 nil ; Successful loop
                                 )))
                           (catch Throwable t t))]
@@ -654,7 +661,10 @@
 
          w
          (CarmineMessageQueueWorker.
-           qname worker-opts conn-opts (atom false) (atom []) (atom {}))
+           qname worker-opts conn-opts (atom false) (atom []) (atom {})
+           (let [ssb (tufte-stats/summary-stats-buffered {:buffer-size 10000})]
+             (ssb 0)
+             ssb))
 
          ;; Back compatibility
          auto-start (get worker-opts :auto-start? auto-start)]
