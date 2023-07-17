@@ -49,6 +49,18 @@
 ;;;; TODO/later
 ;; - Use Redis v7 functions instead of lua?
 
+;;;; Logging config
+
+(defn set-min-log-level!
+  "Sets Timbre's minimum log level for internal Carmine message queue namespaces.
+  Possible levels: #{:trace :debug :info :warn :error :fatal :report}.
+  Default level: `:info`."
+  [level]
+  (timbre/set-ns-min-level! "taoensso.carmine.message-queue" level)
+  nil)
+
+(defonce ^:private __set-default-log-level (set-min-log-level! :info))
+
 ;;;; Utils
 
 (enc/defalias exp-backoff enc/exp-backoff)
