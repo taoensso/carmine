@@ -16,7 +16,7 @@
 (def mqname (format "tundra:%s" (name tqname))) ; Nb has prefix
 
 (defn clean-up! []
-  (mq/clear-queues {} mqname)
+  (mq/queues-clear!! {} mqname)
   (when-let [ks (seq (wcar* (car/keys (tkey :*))))]
     (wcar* (apply car/del ks)
            (apply car/srem @#'tundra/k-evictable ks)))

@@ -2,7 +2,7 @@
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:refer-clojure
    :exclude [time get set key keys type sync sort eval
-             parse-long parse-double ])
+             parse-long parse-double])
 
   (:require
    [clojure.string       :as str]

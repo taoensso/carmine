@@ -888,7 +888,7 @@
 ;;;; Deprecated
 
 (enc/deprecated
-  (enc/defalias clear-queues queues-clear!! {:deprecated "v3.3.0 (2022-12-21)"})
+  (enc/defalias clear-queues queues-clear!! {:deprecated "v3.3.0-RC1 (2023-07-18)"})
 
   (defn ^:deprecated make-dequeue-worker
     "DEPRECATED: Use `worker` instead."
