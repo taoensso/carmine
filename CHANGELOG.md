@@ -1,4 +1,4 @@
-This project uses [Break Versioning](https://github.com/ptaoussanis/encore/blob/master/BREAK-VERSIONING.md).
+ This project uses Break Versioning (https://www.taoensso.com/break-versioning)
 
 ## `3.3.0-RC1` (2023-07-18)
 
