@@ -44,7 +44,7 @@ My sincere apologies for the possible breaks. My hope is that:
 ```
 
 > This is a major feature + maintenance release. It should be **non-breaking**.  
-> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+> See [here](https://github.com/taoensso/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
 
 #### Changes since `3.1.0`
 
@@ -91,13 +91,13 @@ My sincere apologies for the possible breaks. My hope is that:
 ```
 
 > This is a major feature + security release. It may be **BREAKING**.  
-> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+> See [here](https://github.com/taoensso/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
 
 #### Changes since `v2.20.0`
 
   - **[BREAKING]** Bumped minimum Clojure version from `v1.5` to `v1.7`.
-  - **[BREAKING]** Bump Nippy to [v3](https://github.com/ptaoussanis/nippy/releases/tag/v3.0.0) for an **important security fix**. See [here](https://github.com/ptaoussanis/nippy/issues/130) for details incl. **necessary upgrade instructions** for folks using Carmine's automatic de/serialization feature.
-  - Bump Timbre to [v5](https://github.com/ptaoussanis/timbre/releases/tag/v5.0.0).
+  - **[BREAKING]** Bump Nippy to [v3](https://github.com/taoensso/nippy/releases/tag/v3.0.0) for an **important security fix**. See [here](https://github.com/taoensso/nippy/issues/130) for details incl. **necessary upgrade instructions** for folks using Carmine's automatic de/serialization feature.
+  - Bump Timbre to [v5](https://github.com/taoensso/timbre/releases/tag/v5.0.0).
 
 #### New since `v2.20.0`
 
@@ -118,12 +118,12 @@ My sincere apologies for the possible breaks. My hope is that:
 ```
 
 > This is a maintenance + security release. It may be **BREAKING**.  
-> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+> See [here](https://github.com/taoensso/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
 
 #### Changes since `v2.20.0`
 
   - **[BREAKING]** Bumped minimum Clojure version from `v1.5` to `v1.7`.
-  - **[BREAKING]** Bump Nippy to `v3`, see Nippy `CVE-2020-24164` [issue #130](https://github.com/ptaoussanis/nippy/issues/130) for details, incl. **upgrade instructions**. This will affect you iff you use Carmine's automatic de/serialization feature.
+  - **[BREAKING]** Bump Nippy to `v3`, see Nippy `CVE-2020-24164` [issue #130](https://github.com/taoensso/nippy/issues/130) for details, incl. **upgrade instructions**. This will affect you iff you use Carmine's automatic de/serialization feature.
 
 #### New since `v2.20.0`
 
@@ -138,7 +138,7 @@ My sincere apologies for the possible breaks. My hope is that:
 
 Same as `v2.20.0-RC1`.
 
-> See [here](https://github.com/ptaoussanis/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
+> See [here](https://github.com/taoensso/encore#recommended-steps-after-any-significant-dependency-update) for recommended steps when updating any Clojure/Script dependencies.
 
 
 ## v2.20.0-RC1 / 2019 Dec 21
@@ -240,9 +240,9 @@ Same as `v2.20.0-RC1`.
 [com.taoensso/carmine "2.16.0"]
 ```
 
-> This is a maintenance release that should generally be non-breaking, but please note a [potential serialization-compatibility issue](https://github.com/ptaoussanis/carmine/issues/216) if you upgrade in a mixed-version environment. 
+> This is a maintenance release that should generally be non-breaking, but please note a [potential serialization-compatibility issue](https://github.com/taoensso/carmine/issues/216) if you upgrade in a mixed-version environment. 
 
-* **New**: Update Nippy to [v2.13.0](https://github.com/ptaoussanis/nippy/releases/tag/v2.13.0)
+* **New**: Update Nippy to [v2.13.0](https://github.com/taoensso/nippy/releases/tag/v2.13.0)
 * **New**: Update to latest Redis commands spec
 * [#192] **Fix**: `protocol/get-parsed-reply` fn (@firesofmay)
 * [#193] **Impl**: Migrate unit tests from Expectations to clojure.test (@firesofmay)
@@ -417,7 +417,7 @@ Same as `v2.20.0-RC1`.
 
 > This is a major but backwards-compatible update focused on performance tuning + general housekeeping.
 
- * **CHANGE** **NB**: Upgraded to Nippy v2.7.0 for serialized data perf+size improvements. See Nippy's [changelog](https://github.com/ptaoussanis/nippy/releases/tag/v2.7.0-RC1) for details.
+ * **CHANGE** **NB**: Upgraded to Nippy v2.7.0 for serialized data perf+size improvements. See Nippy's [changelog](https://github.com/taoensso/nippy/releases/tag/v2.7.0-RC1) for details.
  * **CHANGE**: Lua scripts are now separated from Clojure code for syntax highlighting + easier debugging.
  * **CHANGE** [#108]: result stashing (notably Lua scripts) now uses one less TCP roundtrip.
  * **CHANGE**: `compare-and-set` optimization: now uses hashing for all arg types.
@@ -582,8 +582,8 @@ Same as `v2.20.0-RC1`.
 ## v1.12.0 → v2.0.0
 
   * Refactored a bunch of code for simplicity+performance (~20% improved roundtrip times).
-  * Upgraded to [Nippy v2](https://github.com/ptaoussanis/nippy) for pluggable compression+crypto. See the [Nippy CHANGELOG](https://github.com/ptaoussanis/carmine/commits/master) for details.
-  * Added early (alpha) Tundra API for semi-automatic cold data archiving. See the [README](https://github.com/ptaoussanis/carmine#tundra) for details.
+  * Upgraded to [Nippy v2](https://github.com/taoensso/nippy) for pluggable compression+crypto. See the [Nippy CHANGELOG](https://github.com/taoensso/carmine/commits/master) for details.
+  * Added early (alpha) Tundra API for semi-automatic cold data archiving. See the [README](https://github.com/taoensso/carmine#tundra) for details.
 
   * **DEPRECATED**: `with-conn`, `make-conn-pool`, `make-conn-spec` -> `wcar`:
   ```clojure

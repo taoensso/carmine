@@ -17,10 +17,10 @@
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
-   :provided {:dependencies [[org.clojure/clojure    "1.11.1"]]}
-   :c1.11    {:dependencies [[org.clojure/clojure    "1.11.1"]]}
-   :c1.10    {:dependencies [[org.clojure/clojure    "1.10.1"]]}
-   :c1.9     {:dependencies [[org.clojure/clojure    "1.9.0"]]}
+   :provided {:dependencies [[org.clojure/clojure "1.11.1"]]}
+   :c1.11    {:dependencies [[org.clojure/clojure "1.11.1"]]}
+   :c1.10    {:dependencies [[org.clojure/clojure "1.10.1"]]}
+   :c1.9     {:dependencies [[org.clojure/clojure "1.9.0"]]}
 
    :test
    {:jvm-opts ["-Dtaoensso.elide-deprecated=true"]
