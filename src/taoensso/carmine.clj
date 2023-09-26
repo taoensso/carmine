@@ -15,7 +15,7 @@
     (connections :as conns)
     (commands    :as commands)]))
 
-(enc/assert-min-encore-version [3 62 1])
+(enc/assert-min-encore-version [3 68 0])
 
 ;;;; Logging config
 
@@ -239,9 +239,7 @@
 
   Ref. https://github.com/ptaoussanis/carmine/issues/83 for more info."
 
-  (enc/get-sys-bool true
-    "taoensso.carmine.issue-83-workaround"
-    "TAOENSSO_CARMINE_ISSUE_83_WORKAROUND"))
+  (enc/get-sys-bool* true :taoensso.carmine.issue-83-workaround))
 
 (defn thaw-if-possible-nippy-bytes
   "If given agrgument is a byte-array starting with apparent NPY header,
