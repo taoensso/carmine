@@ -8,11 +8,11 @@
    :url  "https://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies
-  [[com.taoensso/encore              "3.62.1"]
-   [com.taoensso/timbre              "6.2.1"]
-   [com.taoensso/nippy               "3.2.0"]
-   [com.taoensso/tufte               "2.5.0"]
-   [org.apache.commons/commons-pool2 "2.11.1"]
+  [[com.taoensso/encore              "3.68.0"]
+   [com.taoensso/nippy               "3.3.0"]
+   [com.taoensso/timbre              "6.3.1"]
+   [com.taoensso/tufte               "2.6.3"]
+   [org.apache.commons/commons-pool2 "2.12.0"]
    [commons-codec/commons-codec      "1.16.0"]]
 
   :profiles
@@ -34,7 +34,7 @@
 
    :graal-tests
    {:dependencies [[org.clojure/clojure "1.11.1"]
-                   [com.github.clj-easy/graal-build-time "0.1.4"]]
+                   [com.github.clj-easy/graal-build-time "1.0.5"]]
     :main taoensso.graal-tests
     :aot [taoensso.graal-tests]
     :uberjar-name "graal-tests.jar"}
