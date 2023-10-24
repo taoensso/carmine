@@ -4,7 +4,7 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 # `v3.3.2` (2023-10-24)
 
-> 📦 [Available on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.3.1), this project uses [Break Versioning](https://www.taoensso.com/break-versioning).
+> 📦 [Available on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.3.2), this project uses [Break Versioning](https://www.taoensso.com/break-versioning).
 
 This is a **minor hotfix release** and should be a safe upgrade for users of `v3.3.0`.
 
