@@ -152,7 +152,17 @@
 (defn as-int   [x] (when x (enc/as-int   x)))
 (defn as-float [x] (when x (enc/as-float x)))
 (defn as-bool  [x] (when x (enc/as-bool  x)))
-(defn as-map   [x] (when x (persistent! (enc/reduce-kvs assoc! (transient {}) x))))
+(defn as-map
+  ([x          ] (if (empty? x) {} (persistent! (enc/reduce-kvs assoc! (transient {}) x))))
+  ([x & [kf vf]]
+   (if (empty? x)
+     {}
+     (let [kf (case kf nil (fn [_ v] v)                                    kf)
+           vf (case vf nil (fn [k _] k) :keywordize (fn [k _] (keyword k)) vf)]
+       (persistent!
+         (enc/reduce-kvs
+           (fn [m k v] (assoc! m (kf k v) (vf k v)))
+           (transient {}) x))))))
 
 (enc/defalias parse       protocol/parse)
 (enc/defalias parser-comp protocol/parser-comp)
