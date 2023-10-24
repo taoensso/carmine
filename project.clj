@@ -1,4 +1,4 @@
-(defproject com.taoensso/carmine "3.3.0"
+(defproject com.taoensso/carmine "3.3.1"
   :author "Peter Taoussanis <https://www.taoensso.com>"
   :description "Redis client + message queue for Clojure"
   :url "https://github.com/taoensso/carmine"

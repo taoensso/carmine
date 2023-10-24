@@ -2,6 +2,18 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.3.1` (2023-10-24)
+
+> 📦 [Available on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.3.1), this project uses [Break Versioning](https://www.taoensso.com/break-versioning).
+
+This is a **minor hotfix release** and should be a safe upgrade for users of `v3.3.0`.
+
+## Fixes since `v3.3.0`
+
+* [#289] [fix] >1 arity `parse-map` broken since v3.3.0
+
+---
+
 # `v3.3.0` (2023-10-12)
 
 > 📦 [Available on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.3.0), this project uses [Break Versioning](https://www.taoensso.com/break-versioning).
