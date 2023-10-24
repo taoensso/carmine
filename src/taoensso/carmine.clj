@@ -157,12 +157,16 @@
   ([x & [kf vf]]
    (if (empty? x)
      {}
-     (let [kf (case kf nil (fn [_ v] v)                                    kf)
-           vf (case vf nil (fn [k _] k) :keywordize (fn [k _] (keyword k)) vf)]
+     (let [kf (case kf nil (fn [k _] k) :keywordize (fn [k _] (keyword k)) kf)
+           vf (case vf nil (fn [_ v] v)                                    vf)]
        (persistent!
          (enc/reduce-kvs
            (fn [m k v] (assoc! m (kf k v) (vf k v)))
            (transient {}) x))))))
+
+(comment
+  (as-map ["k1" "v1" "k2" "v2"] :keywordize nil)
+  (as-map ["k1" "v1" "k2" "v2"] nil (fn [_ v] (str/upper-case v))))
 
 (enc/defalias parse       protocol/parse)
 (enc/defalias parser-comp protocol/parser-comp)
