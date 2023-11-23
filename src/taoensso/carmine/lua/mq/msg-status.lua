@@ -1,4 +1,4 @@
--- Careful! Logic here is subtle, see mq-diagram.svg for assistance.
+-- Careful! Logic here is subtle, see mq-architecture.svg for assistance.
 local mid = _:mid;
 local now = tonumber(_:now);
 
