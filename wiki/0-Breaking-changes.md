@@ -90,5 +90,5 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
   Actions [include](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-worker): `:start`, `:stop`, `:queue-size`, `:queue-status`.
 
 - Various improvements to docstrings, error messages, and logging output.
-- Improved message queue [state diagram](https://github.com/taoensso/carmine/blob/master/mq-diagram.svg).
+- Improved message queue [state diagram](https://github.com/taoensso/carmine/blob/master/mq-architecture.svg).
 - General improvements to implementation, observability, and tests.

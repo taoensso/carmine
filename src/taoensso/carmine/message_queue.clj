@@ -5,7 +5,7 @@
   Uses an optimized message circle architecture that is simple, reliable,
   and has pretty good throughput and latency.
 
-  See `mq-diagram.svg` in repo for diagram of architecture,
+  See `mq-architecture.svg` in repo for diagram of architecture,
   Ref. http://antirez.com/post/250 for initial inspiration.
 
   Message status e/o:
