@@ -23,7 +23,7 @@ See [here][GitHub releases] for earlier releases.
 - High-performance **pure-Clojure** library
 - [Fully documented API](#documentation) with support for the **latest Redis commands and features**
 - Easy-to-use, production-ready **connection pooling**
-- Auto **de/serialization** of Clojure data types via [Nippy](https://www.taoensso/nippy)
+- Auto **de/serialization** of Clojure data types via [Nippy](https://www.taoensso.com/nippy)
 - Fast, simple **message queue** API
 - Fast, simple **distributed lock** API
 
