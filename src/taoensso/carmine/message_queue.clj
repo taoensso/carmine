@@ -476,7 +476,7 @@
     - On dequeue sleep: move sentinel from     empty to non-empty list,
       via a blocking call with timeout.
 
-  I.e. we're just moving a dummy element back and form between two lists.
+  I.e. we're just moving a dummy element back and forth between two lists.
   Doing a blocking move on the empty list then provides a robust
   interruptible sleep.
 
