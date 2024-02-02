@@ -280,7 +280,7 @@
 (defn redis-call
   "Sends low-level requests to Redis. Useful for DSLs, certain kinds of command
   composition, and for executing commands that haven't yet been added to the
-  official `commands.json` spec.
+  official `commands.json` spec, Redis module commands, etc.
 
   (redis-call [\"set\" \"foo\" \"bar\"] [\"get\" \"foo\"])"
   [& requests]
@@ -680,7 +680,8 @@
        :handler-fn
        (if-let [msg-handler-fns ?msg-handler-fns] ; {<chan-or-pattern> (fn [msg])}
          (fn [msg _state]
-           (let [{:keys [channel pattern]} (parse-listener-msg msg)]
+           (let [{:keys [channel pattern] :as parsed-msg} (parse-listener-msg msg)]
+             ;; TODO (v4) Provide `parsed-msg` to handlers instead
              (enc/cond
                :if-let [hf (clojure.core/get msg-handler-fns channel)] (hf msg)
                :if-let [hf (clojure.core/get msg-handler-fns pattern)] (hf msg)
@@ -711,7 +712,7 @@
 
   [1] You probably do *NOT* want a :timeout for your `conn-spec` here.
   `conn-spec` can include `:ping-ms`, which'll test conn every given msecs.
-  0
+
   [2] See also `parse-listener-msg`."
   ;; [{:keys []} & body] ; TODO Future release
   [conn-spec handler-fn init-state & body]

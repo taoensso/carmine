@@ -419,7 +419,7 @@
           (throw
             (ex-info
               (str "[Carmine/mq] Unexpected `eoq-backoff-ms` arg: " eoq-backoff-ms)
-              {:arg {:value eoq-backoff-ms :type (type eoq-backoff-ms)}})))]
+              {:arg (enc/typed-val eoq-backoff-ms)})))]
 
     (car/lua @lua-dequeue_
       {:qk-messages      (qkey qname :messages)
@@ -513,6 +513,14 @@
         #_(inc-nstat! nstats_ (keyword "skip" reason)) ; Noisy
         [:skipped reason])
 
+      "sleep"
+      (let [[_kind reason isleep-on ttl-ms] poll-reply
+            ttl-ms (thread-desync-ms (long ttl-ms))]
+
+        (inc-nstat! nstats_ (keyword "sleep" reason))
+        (interruptible-sleep conn-opts qname isleep-on ttl-ms)
+        [:slept reason                       isleep-on ttl-ms])
+
       "handle"
       (let [[_kind mid mcontent attempt lock-ms udt] poll-reply
             qk (partial qkey qname)
@@ -561,42 +569,35 @@
           (enc/when-let [ssb ssb-queueing-time-ms, ms age-ms]           (ssb ms)))
         (enc/when-let   [ssb ssb-handling-time-ns, ns handling-time-ns] (ssb ns))
 
+        ;; Effects
         (case status
           :success (fin mid true  backoff-ms)
           :retry   (fin mid false backoff-ms)
           :error
           (do
             (fin mid true nil)
-            (timbre/error
-              (ex-info "[Carmine/mq] Handler returned `:error` status"
-                {:qname qname, :mid mid, :attempt attempt, :message mcontent}
-                throwable)
-              "[Carmine/mq] Handler returned `:error` status"
-              {:qname qname, :mid mid, :backoff-ms backoff-ms}))
+            (let [msg  "[Carmine/mq] Handler returned `:error` status"
+                  data {:qname qname, :mid mid, :attempt attempt, :message mcontent}]
 
+              (timbre/error (ex-info msg data) msg
+                (dissoc data :message))))
+
+          ;; else
           (do
             (fin mid true nil) ; For backwards-comp with old API
             (timbre/warn "[Carmine/mq] Handler returned unexpected status"
               {:qname qname, :mid mid, :attempt attempt, :message mcontent,
-               :handler-result {:value result :type (type result)}
-               :handler-status {:value status :type (type status)}})))
+               :handler-result (enc/typed-val result)
+               :handler-status (enc/typed-val status)})))
+
         [:handled status])
-
-      "sleep"
-      (let [[_kind reason isleep-on ttl-ms] poll-reply
-            ttl-ms (thread-desync-ms (long ttl-ms))]
-
-        (inc-nstat! nstats_ (keyword "sleep" reason))
-        ;; (Thread/sleep                          (int ttl-ms))
-        (interruptible-sleep conn-opts qname isleep-on ttl-ms)
-        [:slept reason                       isleep-on ttl-ms])
 
       ;; else
       (do
         (inc-nstat! nstats_ :poll/unexpected)
         (throw
           (ex-info "[Carmine/mq] Unexpected poll reply"
-            {:reply {:value poll-reply :type (type poll-reply)}}))))))
+            {:reply (enc/typed-val poll-reply)}))))))
 
 ;;;; Workers
 
@@ -658,7 +659,7 @@
 
       (throw
         (ex-info "[Carmine/mq] Unexpected queue worker command"
-          {:command {:value cmd :type (type cmd)}}))))
+          {:command (enc/typed-val cmd)}))))
 
   IWorker
   (stop [_]

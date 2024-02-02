@@ -256,11 +256,10 @@
 ;;; Pub/sub
 
 (deftest pubsub-single-channel-test
-  (let [_ (clear-tkeys!)
-        received_ (atom [])
+  (let [received_ (atom [])
         listener
-        (car/with-new-pubsub-listener
-          {} {"ps-foo" #(swap! received_ conj %)}
+        (car/with-new-pubsub-listener (:spec conn-opts)
+          {"ps-foo" #(swap! received_ conj %)}
           (car/subscribe "ps-foo"))]
 
     (sleep 200)
@@ -280,12 +279,11 @@
            @received_))]))
 
 (deftest pubsub-multi-channels-test
-  (let [_ (clear-tkeys!)
-        received_ (atom [])
+  (let [received_ (atom [])
         listener
-        (car/with-new-pubsub-listener
-          {} {"ps-foo" #(swap! received_ conj %)
-              "ps-baz" #(swap! received_ conj %)}
+        (car/with-new-pubsub-listener (:spec conn-opts)
+          {"ps-foo" #(swap! received_ conj %)
+           "ps-baz" #(swap! received_ conj %)}
           (car/subscribe "ps-foo" "ps-baz"))]
 
     (sleep 200)
@@ -304,10 +302,9 @@
            @received_))]))
 
 (deftest pubsub-unsubscribe-test
-  (let [_ (clear-tkeys!)
-        received_ (atom [])
+  (let [received_ (atom [])
         listener
-        (car/with-new-pubsub-listener {}
+        (car/with-new-pubsub-listener (:spec conn-opts)
           {"ps-*"   #(swap! received_ conj %)
            "ps-foo" #(swap! received_ conj %)})]
 
@@ -348,12 +345,11 @@
            @received_))]))
 
 (deftest pubsub-ping-and-errors-test
-  (let [_ (clear-tkeys!)
-        received_  (atom [])
+  (let [received_       (atom [])
         received-pong?_ (atom false)
         listener
         (car/with-new-pubsub-listener
-          {:ping-ms 1000} ^:parse
+          (assoc (:spec conn-opts) :ping-ms 1000) ^:parse
           (fn [msg _]
             (let [{:keys [kind channel pattern payload raw]} msg]
               (cond
