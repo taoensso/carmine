@@ -11,7 +11,7 @@ Carmine is a mature Redis client for Clojure that offers an idiomatic Clojure AP
 
 ## Latest release/s
 
-- `2023-10-24` `3.3.2` (stable): [changes](../../releases/tag/v3.3.1) (incl. **breaking changes** to message queue API!)
+- `2023-10-24` `3.3.2` (stable): [release info](../../releases/tag/v3.3.1) (incl. **breaking changes** to message queue API!)
 
 [![Main tests][Main tests SVG]][Main tests URL]
 [![Graal tests][Graal tests SVG]][Graal tests URL]
