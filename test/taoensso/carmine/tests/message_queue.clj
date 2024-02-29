@@ -29,7 +29,7 @@
 (def conn-opts {})
 (defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
 
-(def tq :carmine-test-queue)
+(def tq "carmine-test-queue")
 (defn clear-tq! [] (mq/queues-clear!! conn-opts [tq]))
 
 (defn test-fixture [f] (f) (clear-tq!))
@@ -89,7 +89,7 @@
      (is (subvec? (wcar* (dequeue    tq)) ["handle" "mid1" :msg1b 1 default-lock-ms #_udt]))
      (is (=       (wcar* (msg-status tq :mid1)) :locked))
      (is (=       (wcar* (dequeue    tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))
-     (is (contains? (mq/queue-names conn-opts) (name tq)))]))
+     (is (contains? (mq/queue-names conn-opts) tq))]))
 
 (deftest init-backoff
   (testing "Enqueue with initial backoff"
@@ -161,7 +161,7 @@
       (let [[pr ha hr] (test-handler (fn [_m] {:status :success}))]
         [(is (subvec?     pr ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
          (is (enc/submap? ha
-               {:qname :carmine-test-queue, :mid "mid1", :message :msg1,
+               {:qname "carmine-test-queue", :mid "mid1", :message :msg1,
                 :attempt 1, :lock-ms default-lock-ms}))
          (is (= hr [:handled :success]))])
 
