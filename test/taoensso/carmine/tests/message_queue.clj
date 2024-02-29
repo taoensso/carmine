@@ -88,7 +88,8 @@
 
      (is (subvec? (wcar* (dequeue    tq)) ["handle" "mid1" :msg1b 1 default-lock-ms #_udt]))
      (is (=       (wcar* (msg-status tq :mid1)) :locked))
-     (is (=       (wcar* (dequeue    tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))]))
+     (is (=       (wcar* (dequeue    tq)) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))
+     (is (contains? (mq/queue-names conn-opts) (name tq)))]))
 
 (deftest init-backoff
   (testing "Enqueue with initial backoff"

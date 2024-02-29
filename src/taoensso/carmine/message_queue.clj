@@ -81,13 +81,15 @@
 
 ;;;; Admin
 
-(defn queue-names
-  "Returns a non-empty set of existing queue names, or nil."
-  ([conn-opts        ] (queue-names conn-opts "*"))
-  ([conn-opts pattern]
-   (when-let [qks (not-empty (car/scan-keys conn-opts (qkey pattern)))]
-     (let [qk-prefix-len (inc (count (qkey)))] ; "carmine:mq:", etc.
-       (into #{} (map #(enc/get-substr-by-idx % qk-prefix-len)) qks)))))
+(let [idx-qname-start (inc (count (car/key :carmine :mq))) ; "carmine:mq:"
+      idx-qname-end     (- (count ":messages"))]
+
+  (defn queue-names
+    "Returns a non-empty set of existing queue names, or nil."
+    ([conn-opts        ] (queue-names conn-opts "*"))
+    ([conn-opts pattern]
+     (when-let [qks (not-empty (car/scan-keys conn-opts (qkey pattern :messages)))]
+       (into #{} (map #(enc/get-substr-by-idx % idx-qname-start idx-qname-end)) qks)))))
 
 (comment (queue-names {}))
 
