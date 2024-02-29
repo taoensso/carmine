@@ -280,7 +280,7 @@
 
   See `ensure-ks`, `dirty`, `worker` for TundraStore API."
   [datastore & [{:keys [tqname freezer redis-ttl-ms]
-                 :or   {tqname :default freezer nippy-freezer}}]]
+                 :or   {tqname "default" freezer nippy-freezer}}]]
   {:pre [;; (satisfies? IDataStore datastore)
          ;; (or (nil? freezer) (satisfies? IFreezer freezer))
          (or (nil? redis-ttl-ms) (>= redis-ttl-ms (* 1000 60 60 10)))]}

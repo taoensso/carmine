@@ -508,7 +508,9 @@
    {:keys [worker queue-size nstats_ ssb-queueing-time-ms ssb-handling-time-ns]
     :or   {queue-size -1}}]
 
-  (let [[kind] (when (vector? poll-reply) poll-reply)]
+  (let [[kind] (when (vector? poll-reply) poll-reply)
+        qname  (enc/as-qname qname)]
+
     (case kind
       "skip"
       (let [[_kind reason] poll-reply]
@@ -614,7 +616,7 @@
   java.io.Closeable (close [this] (stop this))
   Object
   (toString [this] ; "CarmineMessageQueueWorker[nthreads=1w+1h, running]"
-    (str "CarmineMessageQueueWorker[nthreads="
+    (str "CarmineMessageQueueWorker[qname=" qname ", nthreads="
       (get worker-opts :nthreads-worker)  "w+"
       (get worker-opts :nthreads-handler) "h, "
       (if @running?_ "running" "shut down") "]"))
@@ -775,7 +777,8 @@
   "Returns a worker monitor fn that warns when queue exceeds the prescribed
   size. A backoff timeout can be provided to rate-limit this warning."
   [qname max-queue-size warn-backoff-ms]
-  (let [udt-last-warning_ (atom 0)]
+  (let [qname (enc/as-qname qname)
+        udt-last-warning_ (atom 0)]
     (fn [{:keys [queue-size]}]
       (when (> (long queue-size) (long max-queue-size))
         (let [instant (enc/now-udt)
@@ -851,6 +854,7 @@
          nthreads-worker  (if (contains? worker-opts :nthreads-worker)  nthreads-worker  nthreads)
          nthreads-handler (if (contains? worker-opts :nthreads-handler) nthreads-handler nthreads)
 
+         qname (enc/as-qname qname)
          worker-opts
          (conj (or worker-opts {})
            {:handler          handler
