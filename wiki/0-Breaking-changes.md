@@ -8,7 +8,7 @@ Thanks for your understanding - [Peter Taoussanis](https://www.taoensso.com)
 
 There are **breaking changes** to the **Carmine message queue API** that **may affect** a small proportion of message queue users.
 
-- If you **DO NOT** use Carmine's [message queue API](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html).
+- If you **DO NOT** use Carmine's [message queue API](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html), no migration should be necessary.
 - If you **DO** use Carmine's message queue API, **please read the below checklist carefully**!!
 
 ## Migration checklist for message queue users
@@ -42,7 +42,7 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
    If you want the detailed map of all queue content in O(queue-size),
    use the new [`queue-content`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queue-content) util.
    
-4. The **definition of "queue-size" has changed**.
+4. **The definition of "queue-size" has changed**.
    
    The old definition: total size of queue.  
    The new definition: total size of queue, LESS mids that may be locked or in backoff.
@@ -51,13 +51,19 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
    
    Most users won't be negatively affected by this change since the new definition better corresponds to how most users actually understood the term before.
    
-5. [`clear-queues`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-clear-queues) has been deprecated.
+5. [`clear-queues`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-clear-queues) **has been deprecated**.
 
    This utility is now called [`queues-clear!!`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queues-clear.21.21) to better match the rest of the API.
+   
+6. **Handling order of queued messages has changed**.
+
+   To improve latency, queue workers now prioritize handling of **newly queued** messages before **re-visiting old messages** for queue maintenance (re-handling, GC, etc.).
+   
+   Most users shouldn't be negatively affected by this change since Carmine's message queue has never given any specific ordering guarantees (and cannot, for various reasons).
 
 ## Architectural improvements
 
-- **Significantly improved latency** (esp. worst-case latency) of handling new messages. Workers will now always prioritise handling of **newly queued** messages when available, and otherwise fall back to maintaining the mid circle.
+- **Significantly improved latency** (esp. worst-case latency) of handling new messages.
   
 - **Decouple threads for handling and queue maintenance**. Thread counts can now be individually customized.
   
