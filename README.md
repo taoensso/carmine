@@ -30,7 +30,7 @@ See [here][GitHub releases] for earlier releases.
 ## Documentation
 
 - [Wiki][GitHub wiki] (getting started, usage, etc.)
-- API reference: [Codox][Codox docs], [clj-doc][clj-doc docs]
+- API reference: [cljdoc][cljdoc docs], [Codox][Codox docs]
 
 ## Funding
 
@@ -53,7 +53,7 @@ Licensed under [EPL 1.0](LICENSE.txt) (same as Clojure).
 <!-- Project -->
 
 [Codox docs]:   https://taoensso.github.io/carmine/
-[clj-doc docs]: https://cljdoc.org/d/com.taoensso/carmine/
+[cljdoc docs]: https://cljdoc.org/d/com.taoensso/carmine/
 
 [Clojars SVG]: https://img.shields.io/clojars/v/com.taoensso/carmine.svg
 [Clojars URL]: https://clojars.org/com.taoensso/carmine
