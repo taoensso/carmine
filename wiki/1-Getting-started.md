@@ -36,7 +36,7 @@ This `my-wcar-opts` can then be provided to Carmine's `wcar` ("with Carmine") AP
 You can create a `wcar` partial for convenience:
 
 ```clojure
-(defmacro wcar* [& body] `(car/wcar ~my-wcar-opts ~@body))
+(defmacro wcar* [& body] `(car/wcar my-wcar-opts ~@body))
 ```
 
 # Usage
