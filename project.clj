@@ -34,7 +34,7 @@
      [com.github.clj-easy/graal-build-time "1.0.5"]]}
 
    :dev
-   {:jvm-opts ["-server" "-Dtaoensso.elide-deprecated=true"]
+   {:jvm-opts ["-server" #_"-Dtaoensso.elide-deprecated=true"]
     :global-vars
     {*warn-on-reflection* true
      *assert*             true
