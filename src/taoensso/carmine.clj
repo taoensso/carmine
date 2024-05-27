@@ -683,11 +683,12 @@
            (let [{:keys [channel pattern] :as parsed-msg} (parse-listener-msg msg)]
              ;; TODO (v4) Provide `parsed-msg` to handlers instead
              (enc/cond
-               :if-let [hf (clojure.core/get msg-handler-fns channel)] (hf msg)
+               ;; Nb check for pattern match before channel match
                :if-let [hf (clojure.core/get msg-handler-fns pattern)] (hf msg)
+               :if-let [hf (clojure.core/get msg-handler-fns channel)] (hf msg)
 
                ;; Useful for "carmine"-kind messages
-               :if-let [hf (clojure.core/get msg-handler-fns "*")]     (hf msg))))
+               :if-let [hf (clojure.core/get msg-handler-fns "*")] (hf msg))))
 
          handler)})))
 

@@ -397,6 +397,28 @@
               ["pmessage" "a/3"]
               ["carmine" :conn-closed]])))]))
 
+(deftest pubsub-handler-selection
+  (let [f1_ (atom [])
+        f2_ (atom [])
+        f3_ (atom [])
+        listener
+        (car/with-new-pubsub-listener (:spec conn-opts)
+          {"channel1" (fn f1 [msg] (swap! f1_ conj (into [:f1 msg])))
+           "channel*" (fn f2 [msg] (swap! f2_ conj (into [:f2 msg])))
+           "chan*"    (fn f3 [msg] (swap! f3_ conj (into [:f3 msg])))}
+          (car/subscribe  "channel1" "channel2")
+          (car/psubscribe "channel*" "chan*" "other*"))]
+
+    (wcar* (car/publish "channel1" "Message to `channel1`"))
+    (Thread/sleep 1000)
+    (car/close-listener listener)
+
+    [(is (= @f1_ [[:f1 [ "subscribe" "channel1" 1]] [:f1 [ "message"            "channel1" "Message to `channel1`"]]]))
+     (is (= @f2_ [[:f2 ["psubscribe" "channel*" 3]] [:f2 ["pmessage" "channel*" "channel1" "Message to `channel1`"]]]))
+     (is (= @f3_ [[:f3 ["psubscribe" "chan*"    4]] [:f3 ["pmessage" "chan*"    "channel1" "Message to `channel1`"]]]))]))
+
+;;;
+
 (deftest bin-safety-test
   (let [_  (clear-tkeys!)
         k  (tkey "binary-safety")
