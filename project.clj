@@ -10,19 +10,19 @@
   :test-paths ["test" #_"src"]
 
   :dependencies
-  [[com.taoensso/encore              "3.68.0"]
-   [com.taoensso/nippy               "3.3.0"]
-   [com.taoensso/timbre              "6.3.1"]
+  [[com.taoensso/encore              "3.112.0"]
+   [com.taoensso/nippy               "3.4.2"]
+   [com.taoensso/timbre              "6.5.0"]
    [com.taoensso/tufte               "2.6.3"]
    [org.apache.commons/commons-pool2 "2.12.0"]
-   [commons-codec/commons-codec      "1.16.0"]]
+   [commons-codec/commons-codec      "1.17.0"]]
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
-   :provided {:dependencies [[org.clojure/clojure "1.11.1"]]}
-   :c1.12    {:dependencies [[org.clojure/clojure "1.12.0-alpha9"]]}
-   :c1.11    {:dependencies [[org.clojure/clojure "1.11.1"]]}
-   :c1.10    {:dependencies [[org.clojure/clojure "1.10.1"]]}
+   :provided {:dependencies [[org.clojure/clojure "1.11.3"]]}
+   :c1.12    {:dependencies [[org.clojure/clojure "1.12.0-alpha12"]]}
+   :c1.11    {:dependencies [[org.clojure/clojure "1.11.3"]]}
+   :c1.10    {:dependencies [[org.clojure/clojure "1.10.3"]]}
    :c1.9     {:dependencies [[org.clojure/clojure "1.9.0"]]}
 
    :graal-tests
@@ -43,10 +43,10 @@
 
     :dependencies
     [[org.clojure/test.check "1.1.1"]
-     [org.clojure/data.json  "2.4.0"]
-     [com.taoensso/faraday   "1.12.0"]
+     [org.clojure/data.json  "2.5.0"]
+     [com.taoensso/faraday   "1.12.2"]
      [clj-aws-s3             "0.3.10"]
-     [ring/ring-core         "1.10.0"]]
+     [ring/ring-core         "1.12.1"]]
 
     :plugins
     [[lein-pprint  "1.3.2"]
