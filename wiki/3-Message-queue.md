@@ -1,31 +1,57 @@
 Carmine includes a simple **distributed message queue** originally inspired by a [post](http://oldblog.antirez.com/post/250) by Redis's original author Salvatore Sanfilippo.
 
-> **Note**: [Carmine 3.3](../releases/tag/v3.3.0-RC1) is introducing major improvements to Carmine's message queue. I plan to update and expand this documentation before the final 3.3 release. - [Peter](https://www.taoensso.com)
+# API
 
-# Example usage
+See linked docstrings below for features and usage:
+
+| Name                                                                                                                            | Description                                                              |
+| :------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| [`worker`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#worker)                         | Returns a worker for named queue. Deref worker for detailed status info! |
+| [`enqueue`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#enqueue)                       | Enqueues given message for processing by active worker/s.                |
+| [`set-min-log-level!`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#set-min-log-level!) | Sets minimum log level for message queue logs.                           |
+
+# Example
+
 
 ```clojure
-(:require [taoensso.carmine.message-queue :as car-mq]) ; Add to `ns` macro
+(def my-conn-opts {:pool {<opts>} :spec {<opts>}})
 
 (def my-worker
-  (car-mq/worker {:pool {<opts>} :spec {<opts>}} "my-queue"
-   {:handler (fn [{:keys [message attempt]}]
-               (println "Received" message)
-               {:status :success})}))
+  (car-mq/worker my-conn-opts "my-queue"
+    {:handler
+     (fn [{:keys [message attempt]}]
+       (try
+         (println "Received" message)
+         {:status :success}
+         (catch Throwable _
+           (println "Handler error!")
+           {:status :retry})))}))
 
 (wcar* (car-mq/enqueue "my-queue" "my message!"))
-%> Received my message!
 
-(car-mq/stop my-worker)
+@my-worker =>
+{:qname     "my-queue"
+ :opts      <opts-map>
+ :conn-opts <my-conn-opts>
+ :running?  true
+ :nthreads  {:worker 1, :handler 1}
+ :stats
+ {:queue-size        {:last 1332, :max 1352, :p90 1323, ...}
+  :queueing-time-ms  {:last 203,  :max 4774, :p90 300,  ...}
+  :handling-time-ms  {:last 11,   :max 879,  :p90 43,   ...}
+  :counts
+  {:handler/success     5892
+   :handler/retry       808
+   :handler/error       2
+   :handler/backoff     2034
+   :sleep/end-of-circle 350}}}
 ```
+
+# Guarantees
 
 The following guarantees are provided:
 
-- Messages are persistent (durable) as per Redis config.
-- Each message will be handled once and only once.
-- Handling is fault-tolerant: a message cannot be lost due to handler crash.
-- Message de-duplication can be requested on an ad hoc (per message) basis.
-
-   In these cases, the same message cannot ever be entered into the queue more than once simultaneously or within a (per message) specifiable post-handling backoff period.
-
-See the [message queue API](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html) for more info.
+- Messages are **persistent** (durable as per Redis config).
+- Each message will be handled **once and only once**.
+- Handling is **fault-tolerant** (messages won't be lost due to crashed handlers).
+- Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a specifiable backoff period.
