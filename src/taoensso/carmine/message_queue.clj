@@ -498,7 +498,7 @@
             :a [qk-a qk-b]
             :b [qk-b qk-a]))]
 
-    (try ;  NB conn's read-timeout may be insufficient!
+    (try ; NB conn's read-timeout may be insufficient!
       (wcar conn-opts (car/brpoplpush qk-src qk-dst secs-dbl))
       (catch Throwable _ nil))))
 
