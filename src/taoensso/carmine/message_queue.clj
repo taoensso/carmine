@@ -85,7 +85,8 @@
       idx-qname-end     (- (count ":messages"))]
 
   (defn queue-names
-    "Returns a non-empty set of existing queue names, or nil."
+    "Returns a non-empty set of existing queue names, or nil.
+    Executes a Redis scan command, so O(n) of the number of keys in db."
     ([conn-opts        ] (queue-names conn-opts "*"))
     ([conn-opts pattern]
      (when-let [qks (not-empty (car/scan-keys conn-opts (qkey pattern :messages)))]
@@ -292,9 +293,9 @@
 ;;;; Implementation
 
 (do ; Lua scripts
-  (def lua-msg-status_ (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
-  (def lua-enqueue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
-  (def lua-dequeue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua")))))
+  (def ^:private lua-msg-status_ (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
+  (def ^:private lua-enqueue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
+  (def ^:private lua-dequeue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua")))))
 
 (defn message-status
   "Returns current message status, e/o:
@@ -607,7 +608,7 @@
 ;;;; Workers
 
 (defprotocol IWorker
-  "Implementation detail."
+  "Private, please don't use this."
   (^:no-doc start [this])
   (^:no-doc stop  [this]))
 
