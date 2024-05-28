@@ -6,7 +6,7 @@
   and has pretty good throughput and latency.
 
   See `mq-architecture.svg` in repo for diagram of architecture,
-  Ref. http://antirez.com/post/250 for initial inspiration.
+  Ref. <http://antirez.com/post/250> for initial inspiration.
 
   Message status e/o:
     nil                  - Not in queue or already GC'd
