@@ -31,7 +31,7 @@ This `my-wcar-opts` can then be provided to Carmine's `wcar` ("with Carmine") AP
 (wcar my-wcar-opts (car/ping)) ; => "PONG"
 ```
 
-`wcar` is the main entry-point to Carmine's API. See its [docstring](https://taoensso.github.io/carmine/taoensso.carmine.html#var-wcar) for **lots more info** on connection options!
+`wcar` is the main entry-point to Carmine's API. See its [docstring](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#wcar) for **lots more info** on connection options!
 
 You can create a `wcar` partial for convenience:
 
@@ -106,7 +106,7 @@ Keywords | Redis strings
 Simple numbers | Redis strings
 Everything else | Auto de/serialized with [Nippy](https://www.taoensso.com/nippy)
 
-You can force automatic de/serialization for an argument of any type by wrapping it with [`car/freeze`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-freeze).
+You can force automatic de/serialization for an argument of any type by wrapping it with [`car/freeze`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#freeze).
 
 ## Command coverage
 
@@ -127,7 +127,7 @@ Time complexity: O(N+M*log(M)) where N is the number of elements in the list or 
 
 Each Carmine release will always use the latest Redis command spec.
 
-But if a new Redis command hasn't yet made it to Carmine, or if you want to use a Redis command not in the official spec (a [Redis module](https://redis.io/resources/modules/) command for example) - you can always use Carmine's [`redis-call`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-redis-call) function to issue **arbitrary Redis commands**.
+But if a new Redis command hasn't yet made it to Carmine, or if you want to use a Redis command not in the official spec (a [Redis module](https://redis.io/resources/modules/) command for example) - you can always use Carmine's [`redis-call`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#redis-call) function to issue **arbitrary Redis commands**.
 
 So you're **not constrained** by the commands provided by Carmine.
 

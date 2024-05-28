@@ -1,9 +1,10 @@
 (ns taoensso.carmine.ring
   "Carmine-backed Ring session store."
   {:author "Peter Taoussanis"}
-  (:require [ring.middleware.session]
-            [taoensso.encore  :as enc]
-            [taoensso.carmine :as car :refer (wcar)]))
+  (:require
+   [ring.middleware.session]
+   [taoensso.encore  :as enc]
+   [taoensso.carmine :as car :refer [wcar]]))
 
 (defrecord CarmineSessionStore [conn-opts prefix ttl-secs extend-on-read?]
   ring.middleware.session.store/SessionStore
@@ -24,12 +25,13 @@
       k)))
 
 (defn carmine-store
-  "Creates and returns a Carmine-backed Ring SessionStore.
+  "Creates and returns a Carmine-backed Ring `SessionStore`.
+
   Options include:
-    :expiration-secs - How long session data should persist after last
-                       write. nil => persist forever.
-    :extend-on-read? - If true, expiration will also be extended by
-                       session reads."
+    `:expiration-secs` - How long session data should persist after last
+                         write. nil => persist forever.
+    `:extend-on-read?` - If true, expiration will also be extended by
+                         session reads."
   [conn-opts & [{:keys [key-prefix expiration-secs extend-on-read?]
                  :or   {key-prefix      "carmine:session"
                         expiration-secs (enc/secs :days 30)
@@ -37,8 +39,8 @@
   (->CarmineSessionStore conn-opts key-prefix expiration-secs extend-on-read?))
 
 (enc/deprecated
-  (defn ^:deprecated make-carmine-store ; 1.x backwards compatiblity
-    "DEPRECATED. Use `carmine-store` instead."
+  (defn ^:no-doc ^:deprecated make-carmine-store ; 1.x backwards compatiblity
+    "Prefer `carmine-store`."
     [& [s1 s2 & sn :as args]]
     (if (instance? taoensso.carmine.connections.ConnectionPool s1)
       (carmine-store {:pool s1 :spec s2} (apply hash-map sn))

@@ -11,7 +11,6 @@ pom.xml*
 /checkouts/
 /logs/
 /docs/
-/doc/
 .idea/
 *.iml
 /wiki/.git

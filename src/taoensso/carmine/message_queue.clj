@@ -6,7 +6,7 @@
   and has pretty good throughput and latency.
 
   See `mq-architecture.svg` in repo for diagram of architecture,
-  Ref. http://antirez.com/post/250 for initial inspiration.
+  Ref. <http://antirez.com/post/250> for initial inspiration.
 
   Message status e/o:
     nil                  - Not in queue or already GC'd
@@ -85,7 +85,8 @@
       idx-qname-end     (- (count ":messages"))]
 
   (defn queue-names
-    "Returns a non-empty set of existing queue names, or nil."
+    "Returns a non-empty set of existing queue names, or nil.
+    Executes a Redis scan command, so O(n) of the number of keys in db."
     ([conn-opts        ] (queue-names conn-opts "*"))
     ([conn-opts pattern]
      (when-let [qks (not-empty (car/scan-keys conn-opts (qkey pattern :messages)))]
@@ -292,9 +293,9 @@
 ;;;; Implementation
 
 (do ; Lua scripts
-  (def lua-msg-status_ (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
-  (def lua-enqueue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
-  (def lua-dequeue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua")))))
+  (def ^:private lua-msg-status_ (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
+  (def ^:private lua-enqueue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
+  (def ^:private lua-dequeue_    (delay (enc/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua")))))
 
 (defn message-status
   "Returns current message status, e/o:
@@ -498,7 +499,7 @@
             :a [qk-a qk-b]
             :b [qk-b qk-a]))]
 
-    (try ;  NB conn's read-timeout may be insufficient!
+    (try ; NB conn's read-timeout may be insufficient!
       (wcar conn-opts (car/brpoplpush qk-src qk-dst secs-dbl))
       (catch Throwable _ nil))))
 
@@ -607,7 +608,7 @@
 ;;;; Workers
 
 (defprotocol IWorker
-  "Implementation detail."
+  "Private, please don't use this."
   (^:no-doc start [this])
   (^:no-doc stop  [this]))
 
@@ -861,12 +862,11 @@
 
       Can be overridden on a per-message basis via `enqueue`.
 
-    `:throttle-ms` (default `:auto`)
+    `:throttle-ms` (default `default-throttle-ms-fn`)
       Thread sleep period (in milliseconds) between each poll.
-      Can be a (fn [queue-size]) -> ?sleep-msecs,
-      or `:auto` (to use `default-throttle-ms-fn`).
+      Can be a (fn [queue-size]) -> ?sleep-msecs.
 
-    `:eoq-backoff-ms` (default `exp-backoff` fn)
+    `:eoq-backoff-ms` (default `exp-backoff`)
       Max time (in milliseconds) to sleep thread each time end of queue is reached.
       Can be a (fn [ndry-runs]) -> msecs for n<=5.
       Sleep may be interrupted when new messages are enqueued.
@@ -886,7 +886,7 @@
       lock-ms (enc/ms :mins 60)
       nthreads-worker  1
       nthreads-handler 1
-      throttle-ms    :auto #_200
+      throttle-ms    default-throttle-ms-fn
       eoq-backoff-ms exp-backoff
       auto-start     true}}]
 
@@ -904,7 +904,7 @@
             :nthreads-worker  nthreads-worker
             :nthreads-handler nthreads-handler
             :throttle-ms
-            (if (identical? throttle-ms :auto)
+            (if (identical? throttle-ms :auto) ; Back compatibility
               default-throttle-ms-fn
               throttle-ms)})
 

@@ -1,14 +1,15 @@
 (ns taoensso.carmine.locks
   "Alpha - subject to change.
-  Distributed lock implementation for Carmine based on work by Ronen Narkis
-  and Josiah Carlson. Redis 2.6+.
+  Distributed lock implementation for Carmine.
+  Based on work by Ronen Narkis and Josiah Carlson.
 
   Redis keys:
     * carmine:lock:<lock-name> -> ttl str, lock owner's UUID.
 
-  Ref. http://goo.gl/5UalQ for implementation details."
-  (:require [taoensso.timbre  :as timbre]
-            [taoensso.carmine :as car :refer (wcar)]))
+  Ref. <http://goo.gl/5UalQ> for implementation details."
+  (:require
+   [taoensso.timbre  :as timbre]
+   [taoensso.carmine :as car :refer (wcar)]))
 
 (def ^:private lkey (partial car/key :carmine :lock))
 
