@@ -37,50 +37,54 @@ Helpers currently include: [`atomic`](https://taoensso.github.io/carmine/taoenss
 
 # Pub/Sub and Listeners
 
-Carmine has a flexible **listener API** to support persistent-connection features like [monitoring](https://redis.io/commands/monitor/) and Redis's fantastic [Pub/Sub](https://redis.io/docs/interact/pubsub/) facility:
+Carmine has a flexible **listener API** to support persistent-connection features like [monitoring](https://redis.io/commands/monitor/) and Redis's [Pub/Sub](https://redis.io/docs/interact/pubsub/) facility:
 
 ```clojure
-(def listener
+(def my-listener
   (car/with-new-pubsub-listener (:spec server1-conn)
-    {"foobar" (fn f1 [msg] (println "Channel match: " msg))
-     "foo*"   (fn f2 [msg] (println "Pattern match: " msg))}
-   (car/subscribe  "foobar" "foobaz")
-   (car/psubscribe "foo*")))
+    {"channel1" (fn f1 [msg] (println "f1:" msg))
+     "channel*" (fn f2 [msg] (println "f2:" msg))
+     "ch*"      (fn f3 [msg] (println "f3:" msg))}
+   (car/subscribe  "channel1")
+   (car/psubscribe "channel*" "ch*)))
 ```
 
-Note the map of message handlers. `f1` will trigger when a message is published to channel `foobar`. `f2` will trigger when a message is published to `foobar`, `foobaz`, `foo Abraham Lincoln`, etc.
+Exactly 1 handler fn will trigger per published message *exactly* matching each active subscription:
 
-Publish messages:
+  - `channel1` handler (`f1`) will trigger for messages to `channel1`.
+  - `channel*` handler (`f2`) will trigger for messages to `channel1`, `channel2`, etc.
+  - `ch*` handler (`f3`) will trigger for messages to `channel1`, `channel2`, etc.
 
-```clojure
-(wcar* (car/publish "foobar" "Hello to foobar!"))
-```
-
-Which will trigger:
+So publishing to "channel1" in this example will trigger all 3x handlers:
 
 ```clojure
-(f1 '("message" "foobar" "Hello to foobar!"))
-;; AND ALSO
-(f2 '("pmessage" "foo*" "foobar" "Hello to foobar!"))
+(wcar* (car/publish "channel1" "Hello to channel1!"))
+
+;; Will trigger:
+
+(f1 [ "message" "channel1"            "Hello to channel1!"])
+(f2 ["pmessage" "channel*" "channel1" "Hello to channel1!"])
+(f3 ["pmessage" "ch*"      "channel1" "Hello to channel1!"])
 ```
 
 You can adjust subscriptions and/or handlers:
 
 ```clojure
-(with-open-listener listener
-  (car/unsubscribe) ; Unsubscribe from every channel (leave patterns alone)
-  (car/psubscribe "an-extra-channel"))
+(with-open-listener my-listener
+  (car/unsubscribe) ; Unsubscribe from every channel (leaving patterns alone)
+  (car/subscribe "channel3"))
 
-(swap! (:state listener) assoc "*extra*" (fn [x] (println "EXTRA: " x)))
+(swap! (:state my-listener) ; {<channel-or-pattern-string> (fn [msg])}
+  assoc "channel3" (fn [x] (println "do something")))
 ```
 
-**Remember to close the listener** when you're done with it:
+**Remember to close listeners** when you're done with them:
 
 ```clojure
-(car/close-listener listener)
+(car/close-listener my-listener)
 ```
 
-Note that subscriptions are **connection-local**: you can have three different listeners each listening for different messages, using different handlers.
+Note that subscriptions are **connection-local**: you can have three different listeners each listening for different messages and using different handlers.
 
 # Reply parsing
 

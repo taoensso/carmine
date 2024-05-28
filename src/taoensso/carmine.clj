@@ -724,20 +724,30 @@
       :body-fn    (fn [] ~@body)}))
 
 (defmacro with-new-pubsub-listener
-  "Like `with-new-listener` but `handler` is:
-  {<channel-or-pattern> (fn handler [msg])}.
+  "Like `with-new-listener` but `handler` should be a map of form:
+    {<channel-or-pattern-string> (fn handler [msg])}.
 
   Example:
 
     (with-new-pubsub-listener
       {} ; Connection spec, as per `wcar` docstring [1]
 
-      {\"channel1\" (fn [msg] (println \"Channel match: \" msg))
-       \"user*\"    (fn [msg] (println \"Pattern match: \" msg))}
+      {\"channel1\" (fn f1 [msg] (println \"f1:\" msg))
+       \"channel*\" (fn f2 [msg] (println \"f2:\" msg))
+       \"ch*\"      (fn f3 [msg] (println \"f3:\" msg))}
 
-      (subscribe \"foobar\") ; Subscribe thread conn to \"foobar\" channel
-      (psubscribe \"foo*\")  ; Subscribe thread conn to \"foo*\"   channel pattern
+      (subscribe  \"channel1\")         ; Subscribe to 1x channel
+      (psubscribe \"channel*\" \"ch*\") ; Subscribe to 2x channel patterns
       )
+
+    Exactly 1 handler fn will trigger per published message exactly matching
+    each active subscription:
+
+      - `channel1` handler (`f1`) will trigger for messages to `channel1`.
+      - `channel*` handler (`f2`) will trigger for messages to `channel1`, `channel2`, etc.
+      - `ch*`      handler (`f3`) will trigger for messages to `channel1`, `channel2`, etc.
+
+    So publishing to \"channel1\" in this example will trigger all 3x handlers.
 
   See `with-new-listener` for more info."
   ;; [{:keys []} & body] ; TODO Future release
