@@ -40,11 +40,11 @@
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
-   [clojure.string   :as str]
-   [taoensso.encore  :as enc]
-   [taoensso.carmine :as car :refer [wcar]]
-   [taoensso.timbre  :as timbre]
-   [taoensso.tufte.stats :as tufte-stats]))
+   [clojure.string        :as str]
+   [taoensso.encore       :as enc]
+   [taoensso.encore.stats :as stats]
+   [taoensso.carmine      :as car :refer [wcar]]
+   [taoensso.timbre       :as timbre]))
 
 ;;;; TODO/later
 ;; - Use Redis v7 functions instead of lua?
@@ -657,9 +657,9 @@
       :stats-clear! ; Undocumented
       (do
         (reset! nstats_ {})
-        (tufte-stats/summary-stats-clear! ssb-queue-size)
-        (tufte-stats/summary-stats-clear! ssb-queueing-time-ms)
-        (tufte-stats/summary-stats-clear! ssb-handling-time-ns)
+        (stats/summary-stats-clear! ssb-queue-size)
+        (stats/summary-stats-clear! ssb-queueing-time-ms)
+        (stats/summary-stats-clear! ssb-handling-time-ns)
         nil)
 
       (throw
@@ -917,9 +917,9 @@
            (atom {})
 
            ;; :sstats-init opts below allow for manual persistent sstats, currently undocumented
-           (tufte-stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queue-size)})
-           (tufte-stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queueing-time-ms)})
-           (tufte-stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/handling-time-ns)}))
+           (stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queue-size)})
+           (stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queueing-time-ms)})
+           (stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/handling-time-ns)}))
 
          ;; Back compatibility
          auto-start (get worker-opts :auto-start? auto-start)]

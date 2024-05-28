@@ -13,7 +13,6 @@
   [[com.taoensso/encore              "3.112.0"]
    [com.taoensso/nippy               "3.4.2"]
    [com.taoensso/timbre              "6.5.0"]
-   [com.taoensso/tufte               "2.6.3"]
    [org.apache.commons/commons-pool2 "2.12.0"]
    [commons-codec/commons-codec      "1.17.0"]]
 
