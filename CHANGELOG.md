@@ -2,6 +2,37 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.4.0` (2024-05-28)
+
+> **Dep**: Carmine is [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.4.0).  
+> **Versioning**: Carmine uses [Break Versioning](https://www.taoensso.com/break-versioning).
+
+This is a **maintenance release** that should be **non-breaking** for most users.
+
+The release **updates Carmine's Nippy version** from `v3.3.0` to `v3.4.2`. Please review the [relevant Nippy release info](https://github.com/taoensso/nippy/releases/tag/v3.4.2), and **ensure adequate testing** in your environment before updating production data.
+
+And as always **please report any unexpected problems** - thank you! 🙏
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Changes since `v3.3.2` (2023-10-24)
+
+- Updated to [latest stable Nippy](https://github.com/taoensso/nippy/releases/tag/v3.4.2). This should be a non-breaking change for most users, but **please ensure adequate testing** in your environment before updating production data.
+
+## Fixes since `v3.3.2` (2023-10-24)
+
+* 105cecb7 [fix] [mq] [#299] Fix `queue-names` and `queues-clear-all!!!` typos
+* 95c52aaa [fix] [mq] [#301] Document behaviour on handler errors
+* 9c8b9963 [fix] [#307] Fix Pub/Sub channel handlers masking pattern handlers
+* Fixed several typos in docs/README (@chage, @J0sueTM, @mohammedamarnah)
+
+## New since `v3.3.2` (2023-10-24)
+
+* 8196415f [new] Update Redis command spec (2024-05-27)
+* Several wiki and docstring improvements
+
+---
+
 # `v3.3.2` (2023-10-24)
 
 > 📦 [Available on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.3.2), this project uses [Break Versioning](https://www.taoensso.com/break-versioning).
