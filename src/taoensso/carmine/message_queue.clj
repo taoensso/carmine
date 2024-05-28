@@ -840,11 +840,18 @@
 
     `:handler`
       (fn [{:keys [qname mid message attempt]}]) called for each worker message.
-      Should throw or return a map with possible keys:
+      Should return a map with possible keys:
+        `:status`     - ∈ {:success :error :retry}
+        `:throwable`  - Optional Throwable when relevant
+        `:backoff-ms` - Optional time (in milliseconds) to backoff
+                        for dedupe or before retrying
 
-    `:monitor`
-      (fn [{:keys [queue-size ndry-runs poll-reply]}]) called on each worker
-      worker loop iteration. Useful for queue monitoring/logging.
+      If handler throws ANY `Throwable`, will assume `:error` status and NOT retry.
+      For custom error handling, make sure to use an appropriate try/catch
+      within your handler fn!
+
+    `:monitor` - (fn [{:keys [queue-size ndry-runs poll-reply]}])
+      Called on each worker loop iteration. Useful for queue monitoring/logging.
       See also `monitor-fn`.
 
     `:lock-ms` (default 60 minutes)
