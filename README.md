@@ -1,4 +1,4 @@
-<a href="https://www.taoensso.com/clojure" title="More stuff by @ptaoussanis at www.taoensso.com"><img src="https://www.taoensso.com/open-source.png" alt="Taoensso open source" width="340"/></a>
+<a href="https://www.taoensso.com/clojure" title="More stuff by @ptaoussanis at www.taoensso.com"><img src="https://www.taoensso.com/open-source.png" alt="Taoensso open source" width="340"/></a>  
 [**API**][cljdoc docs] | [**Wiki**][GitHub wiki] | [Latest releases](#latest-releases) | [Slack channel][]
 
 # Carmine
@@ -11,7 +11,7 @@ Carmine is a mature Redis client for Clojure that offers an idiomatic Clojure AP
 
 ## Latest release/s
 
-- `2023-10-24` `3.3.2` (stable): [release info](../../releases/tag/v3.3.1) (incl. **breaking changes** to message queue API!)
+- `2024-05-28` `v3.4.0`: [release info](../../releases/tag/v3.4.0)
 
 [![Main tests][Main tests SVG]][Main tests URL]
 [![Graal tests][Graal tests SVG]][Graal tests URL]
