@@ -8,7 +8,7 @@ Thanks for your understanding - [Peter Taoussanis](https://www.taoensso.com)
 
 There are **breaking changes** to the **Carmine message queue API** that **may affect** a small proportion of message queue users.
 
-- If you **DO NOT** use Carmine's [message queue API](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html), no migration should be necessary.
+- If you **DO NOT** use Carmine's [message queue API](https://github.com/taoensso/carmine/wiki/3-Message-queue), no migration should be necessary.
 - If you **DO** use Carmine's message queue API, **please read the below checklist carefully**!!
 
 ## Migration checklist for message queue users
@@ -29,9 +29,9 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
    
    The fn now **always returns a map** with `{:keys [success? mid action error]}`.
    
-   See the updated `enqueue` [docstring](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-enqueue) for details.
+   See the updated `enqueue` [docstring](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#enqueue) for details.
    
-3. [`queue-status`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queue-status) **return value has changed**.
+3. [`queue-status`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queue-status) **return value has changed**.
    
    This change is relevant to you iff you use the `queue-status` util.
    
@@ -40,7 +40,7 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
    The fn now returns a small map in O(1) with `{:keys [nwaiting nlocked nbackoff ntotal]}`.
    
    If you want the detailed map of all queue content in O(queue-size),
-   use the new [`queue-content`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queue-content) util.
+   use the new [`queue-content`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queue-content) util.
    
 4. **The definition of "queue-size" has changed**.
    
@@ -51,9 +51,9 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
    
    Most users won't be negatively affected by this change since the new definition better corresponds to how most users actually understood the term before.
    
-5. [`clear-queues`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-clear-queues) **has been deprecated**.
+5. `clear-queues` **has been deprecated**.
 
-   This utility is now called [`queues-clear!!`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queues-clear.21.21) to better match the rest of the API.
+   This utility is now called [`queues-clear!!`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queues-clear!!) to better match the rest of the API.
    
 6. **Handling order of queued messages has changed**.
 
@@ -75,7 +75,7 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
   
   The default `:throttle-ms` value is now `:auto`, which uses such a function.
   
-  See the updated `worker` [docstring](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-worker) for details.
+  See the updated `worker` [docstring](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#worker) for details.
 
 - **Worker threads are now auto desynchronized** to reduce contention.
 
@@ -85,7 +85,7 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
 - Added `enqueue` option: `:can-update?` to support **message updating**.
 - Handler fn data now includes `:worker`, `:queue-size` keys.
 - Handler fn data now includes `:age-ms` key, enabling **easy integration with Tufte or other profiling tools**.
-- Added utils: [`queue-size`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queue-size), [`queue-names`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queue-names), [`queue-content`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queue-content), [`queues-clear!!`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queues-clear.21.21), [`queues-clear-all!!!`](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-queues-clear-all.21.21.21).
+- Added utils: [`queue-size`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queue-size), [`queue-names`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queue-names), [`queue-content`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queue-content), [`queues-clear!!`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queues-clear!!), [`queues-clear-all!!!`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queues-clear-all!!!).
 - `Worker` object's string/pprint representation is now more useful.
 - `Worker` object can now be derefed to get **state and stats useful for monitoring**.
   
@@ -93,7 +93,7 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
 
 - `Worker` objects can now be invoked as fns to execute common actions.
   
-  Actions [include](https://taoensso.github.io/carmine/taoensso.carmine.message-queue.html#var-worker): `:start`, `:stop`, `:queue-size`, `:queue-status`.
+  Actions [include](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#worker): `:start`, `:stop`, `:queue-size`, `:queue-status`.
 
 - Various improvements to docstrings, error messages, and logging output.
 - Improved message queue [state diagram](https://github.com/taoensso/carmine/blob/master/mq-architecture.svg).

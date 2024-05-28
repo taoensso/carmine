@@ -28,7 +28,7 @@ And as always **please report any unexpected problems** - thank you! 🙏
 
 ## New since `v3.3.2` (2023-10-24)
 
-* 8196415f [new] Update Redis command spec (2024-05-27)
+* 12c4100d [new] Update Redis command spec (2024-05-27)
 * Several wiki and docstring improvements
 
 ---

@@ -21,11 +21,11 @@ See [here][GitHub releases] for earlier releases.
 ## Why Carmine?
 
 - High-performance **pure-Clojure** library
-- [Fully documented API](#documentation) with support for the **latest Redis commands and features**
+- [Fully documented API](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine) with support for the **latest Redis commands and features**
 - Easy-to-use, production-ready **connection pooling**
 - Auto **de/serialization** of Clojure data types via [Nippy](https://www.taoensso.com/nippy)
-- Fast, simple **message queue** API
-- Fast, simple **distributed lock** API
+- Fast, simple [message queue](../../wiki/3-Message-queue) API
+- Fast, simple [distributed lock](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.locks) API
 
 ## Documentation
 

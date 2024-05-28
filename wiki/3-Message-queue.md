@@ -29,6 +29,7 @@ See linked docstrings below for features and usage:
 
 (wcar* (car-mq/enqueue "my-queue" "my message!"))
 
+;; Deref your worker to get detailed status info
 @my-worker =>
 {:qname     "my-queue"
  :opts      <opts-map>
@@ -55,4 +56,4 @@ The following semantics are provided:
 - Messages are **handled once and only once**.
 - Messages are **handled in loose order** (exact order may be affected by the number of concurrent handler threads, and retry/backoff features, etc.).
 - Messages are **fault-tolerant** (preserved until acknowledged as handled).
-- Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a specifiable backoff period.
+- Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a configurable per-message backoff period.

@@ -18,11 +18,11 @@ As an example, let's write our own version of the `set` command:
 => ["OK" "lua bar"]
 ```
 
-Script primitives are also provided: [`eval`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-eval), [`eval-sha`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-evalsha), [`eval*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-eval*), [`eval-sha*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-evalsha*).
+Script primitives are also provided: [`eval`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#eval), [`eval-sha`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-evalsha), [`eval*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-eval*), [`eval-sha*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-evalsha*).
 
 # Helpers
 
-The [`lua`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-lua) command above is a good example of a Carmine "helper".
+The [`lua`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#lua) command above is a good example of a Carmine "helper".
 
 Carmine will never surprise you by interfering with the standard Redis command API. But there are times when it might want to offer you a helping hand (if you want it). Compare:
 
@@ -31,9 +31,9 @@ Carmine will never surprise you by interfering with the standard Redis command A
 (wcar* (car/zunionstore* "dest-key"  ["zset1" "zset2" "zset3"] "WEIGHTS" 2 3 5))
 ```
 
-Both of these calls are equivalent but the latter counted the keys for us. [`zunionstore*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-zunionstore*) is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
+Both of these calls are equivalent but the latter counted the keys for us. [`zunionstore*`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#zunionstore*) is another helper: a slightly more convenient version of a standard command, suffixed with a `*` to indicate that it's non-standard.
 
-Helpers currently include: [`atomic`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-atomic), [`eval*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-eval*), [`evalsha*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-evalsha*), [`info*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-info*), [`lua`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-lua), [`sort*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-sort*), [`zinterstore*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-zinterstore*), and [`zunionstore*`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-zunionstore*).
+Helpers currently include: [`atomic`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#atomic), [`eval*`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#eval*), [`evalsha*`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#evalsha*), [`info*`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#info*), [`lua`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#lua), [`sort*`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#sort*), [`zinterstore*`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#zinterstore*), and [`zunionstore*`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#zunionstore*).
 
 # Pub/Sub and Listeners
 
@@ -88,7 +88,7 @@ Note that subscriptions are **connection-local**: you can have three different l
 
 # Reply parsing
 
-Want a little more control over how server replies are parsed? See [`parse`](https://taoensso.github.io/carmine/taoensso.carmine.html#var-parse):
+Want a little more control over how server replies are parsed? See [`parse`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine#parse):
 
 ```clojure
 (wcar*
@@ -100,7 +100,7 @@ Want a little more control over how server replies are parsed? See [`parse`](htt
 
 # Distributed locks
 
-See the [`locks`](https://taoensso.github.io/carmine/taoensso.carmine.locks.html) namespace for a simple distributed lock API:
+See the [`locks`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.locks) namespace for a simple distributed lock API:
 
 ```clojure
 (:require [taoensso.carmine.locks :as locks]) ; Add to `ns` macro
@@ -119,21 +119,21 @@ See the [`locks`](https://taoensso.github.io/carmine/taoensso.carmine.locks.html
 
 Redis is a beautifully designed datastore that makes some explicit engineering tradeoffs. Probably the most important: your data _must_ fit in memory. Tundra helps relax this limitation: only your **hot** data need fit in memory. How does it work?
 
- 1. Use Tundra's [`dirty`](https://taoensso.github.io/carmine/taoensso.carmine.tundra.html#var-dirty) command **any time you modify/create evictable keys**
- 2. Use [`worker`](https://taoensso.github.io/carmine/taoensso.carmine.tundra.html#var-worker) to create a threaded worker that'll **automatically replicate dirty keys to your secondary datastore**
+ 1. Use Tundra's [`dirty`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.tundra#dirty) command **any time you modify/create evictable keys**
+ 2. Use [`worker`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.tundra#ITundraStore) to create a threaded worker that'll **automatically replicate dirty keys to your secondary datastore**
  3. When a dirty key hasn't been used in a specified TTL, it will be **automatically evicted from Redis** (eviction is optional if you just want to use Tundra as a backup/just-in-case mechanism)
- 4. Use [`ensure-ks`](https://taoensso.github.io/carmine/taoensso.carmine.tundra.html#var-ensure-ks) **any time you want to use evictable keys** - this'll extend their TTL or fetch them from your datastore as necessary
+ 4. Use [`ensure-ks`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.tundra#ensure-ks) **any time you want to use evictable keys** - this'll extend their TTL or fetch them from your datastore as necessary
 
 That's it: two Redis commands, and a worker!
 
-Tundra uses Redis' own dump/restore mechanism for replication, and Carmine's own [[Message queue|message queue]] to coordinate the replication worker.
+Tundra uses Redis' own dump/restore mechanism for replication, and Carmine's own [Message queue](./3-Message-queue) to coordinate the replication worker.
 
 It's possible to easily extend support to **any K/V-capable datastore**.  
 Implementations are provided out-the-box for:
 
-- [Disk](https://taoensso.github.io/carmine/taoensso.carmine.tundra.disk.html)
-- [Amazon S3](https://taoensso.github.io/carmine/taoensso.carmine.tundra.s3.html)
-- [Amazon DynamoDB](https://taoensso.github.io/carmine/taoensso.carmine.tundra.faraday.html) via [Faraday](https://www.taoensso.com/faraday)
+- [Disk](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.tundra.disk)
+- [Amazon S3](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.tundra.s3)
+- [Amazon DynamoDB](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.tundra.faraday) via [Faraday](https://www.taoensso.com/faraday)
 
 ## Example usage
 
@@ -155,4 +155,4 @@ Implementations are provided out-the-box for:
 )
 ```
 
-Note that the [Tundra API](https://taoensso.github.io/carmine/taoensso.carmine.tundra.html) makes it convenient to use several different datastores simultaneously (perhaps for different purposes with different latency requirements).
+Note that the [Tundra API](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.tundra) makes it convenient to use several different datastores simultaneously (perhaps for different purposes with different latency requirements).

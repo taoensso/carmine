@@ -1,6 +1,7 @@
 (ns taoensso.carmine.connections
-  "Handles socket connection lifecycle. Pool is implemented with Apache Commons
-  pool. Originally adapted from redis-clojure."
+  "Handles socket connection lifecycle.
+  Pool is implemented with Apache Commons pool.
+  Originally adapted from `redis-clojure`."
   {:author "Peter Taoussanis"}
   (:require
    [clojure.string            :as str]
