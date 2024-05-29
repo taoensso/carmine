@@ -57,3 +57,4 @@ The following semantics are provided:
 - Messages are **handled in loose order** (exact order may be affected by the number of concurrent handler threads, and retry/backoff features, etc.).
 - Messages are **fault-tolerant** (preserved until acknowledged as handled).
 - Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a configurable per-message backoff period.
+- Messages are encoded using [nippy](https://github.com/taoensso/nippy) and stored as string values in Redis hashes. Each message (after being encoded) may have a max size of 512MB
