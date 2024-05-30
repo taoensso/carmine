@@ -553,7 +553,8 @@
 
             handling-time-ns (- (enc/now-nano*) t0)
 
-            {:keys [status throwable backoff-ms]}
+            {:keys [status throwable backoff-ms]
+             :or   {status :success}}
             (when (map? result) result)
 
             fin
