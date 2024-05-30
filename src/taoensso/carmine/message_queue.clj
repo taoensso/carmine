@@ -746,7 +746,7 @@
                                     (monitor
                                       {:queue-size      nqueued
                                        :mid-circle-size nqueued ; Back compatibility
-                                       :ndry-runs       (or ndry-runs 0)
+                                       :ndry-runs       (enc/as-int (or ndry-runs 0))
                                        :poll-reply      poll-reply
                                        :worker          this}))
 
