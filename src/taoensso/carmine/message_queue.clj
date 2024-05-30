@@ -701,9 +701,9 @@
                     loop-error-backoff?_ (atom false)
                     loop-error!
                     (fn [throwable]
-                      (let [nce (nconsecutive-errors* :+=)]
+                      (let [nce (nconsecutive-errors*)]
                         (timbre/error throwable "[Carmine/mq] Worker error, will backoff & retry."
-                          {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce}))
+                          {:qname qname, :thread-id thread-idx, :nconsecutive-errors (inc nce)}))
                       (reset! loop-error-backoff?_ true))]
 
                 (when (> thread-idx 0)
