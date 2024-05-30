@@ -57,3 +57,4 @@ The following semantics are provided:
 - Messages are **handled in loose order** (exact order may be affected by the number of concurrent handler threads, and retry/backoff features, etc.).
 - Messages are **fault-tolerant** (preserved until acknowledged as handled).
 - Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a configurable per-message backoff period.
+- Messages are serialized with [Nippy](https://www.taoensso.com/nippy) and stored as [byte strings](https://redis.io/docs/latest/develop/data-types/strings) in Redis hashes, so each serialized message has a **maximum size of 512MiB**. You'll normally want to use *much* smaller messages though (typically small maps or UUIDs/pointers to larger data stores when necessary).
