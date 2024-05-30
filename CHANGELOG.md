@@ -2,6 +2,25 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.4.1` (2024-05-30)
+
+> **Dep**: Carmine is [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.4.1).  
+> **Versioning**: Carmine uses [Break Versioning](https://www.taoensso.com/break-versioning).
+
+This is a **hotfix release** that should be **non-breaking**.
+
+And as always **please report any unexpected problems** - thank you! 🙏
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Fixes since `v3.4.0` (2024-05-28)
+
+* 9dd67207 [fix] [mq] [#305] Typo in final loop error handler
+* 81f58d80 [fix] [mq] Monitor `:ndry-runs` arg should be an int
+* 41e5ed34 [fix] [mq] Properly assume `:success` handler status by default
+
+---
+
 # `v3.4.0` (2024-05-28)
 
 > **Dep**: Carmine is [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.4.0).  
