@@ -26,9 +26,9 @@ And as always **please report any unexpected problems** - thank you! 🙏
 > **Dep**: Carmine is [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.4.0).  
 > **Versioning**: Carmine uses [Break Versioning](https://www.taoensso.com/break-versioning).
 
-This is a **maintenance release** that should be **non-breaking** for most users.
+This is a **security and maintenance release** that should be **non-breaking** for most users.
 
-The release **updates Carmine's Nippy version** from `v3.3.0` to `v3.4.2`. Please review the [relevant Nippy release info](https://github.com/taoensso/nippy/releases/tag/v3.4.2), and **ensure adequate testing** in your environment before updating production data.
+⚠️ It addresses a [**security vulnerability**](https://github.com/taoensso/nippy/security/advisories/GHSA-vw78-267v-588h) in [Nippy](https://www.taoensso.com/nippy)'s upstream compression library and is **recommended for all existing users**. Please review the [relevant Nippy release info](https://github.com/taoensso/nippy/releases/tag/v3.4.2), and **ensure adequate testing** in your environment before updating production data.
 
 And as always **please report any unexpected problems** - thank you! 🙏
 
