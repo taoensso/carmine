@@ -20,29 +20,27 @@
 
 ;;;; TODO
 ;; - Interactions between systems (read-opts, parsers, etc.)
-;; - Conns
-;;   - Conn cbs, closing data, etc.
+;; - Test conns
+;;   - Callbacks, closing data, etc.
 ;;   - Sentinel, resolve changes
-;;   - Confirm :mgr works correctly w/in sentinel-opts/conn-opts
 
 ;;;; Setup, etc.
 
-(defn tk "Test key" [key] (str "__:carmine:test:" (enc/as-qname key)))
-(def  tc "Test conn-opts" {})
+(defn tk  "Test key" [key] (str "__:carmine:test:" (enc/as-qname key)))
+(def  tc  "Unparsed test conn-opts" {})
+(def  tc+ "Parsed   test conn-opts" (opts/parse-conn-opts false tc))
+
+(defonce mgr_ (delay (conns/conn-manager-pooled {:conn-opts tc})))
 
 (let [delete-test-keys
       (fn []
-        (when-let [ks (seq (wcar tc (resp/redis-call "keys" (tk "*"))))]
-          (wcar tc (doseq [k ks] (resp/redis-call "del" k)))))]
+        (when-let [ks (seq (wcar mgr_ (resp/redis-call "keys" (tk "*"))))]
+          (wcar mgr_ (doseq [k ks] (resp/redis-call "del" k)))))]
 
   (test/use-fixtures :once
     (enc/test-fixtures
       {:before delete-test-keys
        :after  delete-test-keys})))
-
-(def  mgr   "Var used to hold `ConnManager`" nil)
-(defn mgrv! "Mutates and returns #'mgr var"  [mgr]
-  (alter-var-root #'mgr (fn [_] mgr)) #'mgr)
 
 ;;;; Utils
 
@@ -71,157 +69,36 @@
   [(is (= (opts/descr-sock-addr (opts/parse-sock-addr            "ip" "80"))  ["ip" 80                ]))
    (is (= (opts/descr-sock-addr (opts/parse-sock-addr ^:my-meta ["ip" "80"])) ["ip" 80 {:my-meta true}]))])
 
-(deftest _parse-string-server->opts
-  [(is (= (#'opts/parse-string-server->opts "redis://redistogo:pass@panga.redistogo.com:9475/0")
-          {:server ["panga.redistogo.com" 9475]
-           :init   {:auth {:username "redistogo", :password "pass"}
-                    :select-db 0}}))])
-
-(deftest _parse-server->opts
-  [(is (= (#'opts/parse-server->opts nil ["127.0.0.1" "80"])           {:server ["127.0.0.1" 80]}))
-   (is (= (#'opts/parse-server->opts nil {:ip "127.0.0.1" :port "80"}) {:server ["127.0.0.1" 80]}))
-   (is (= (#'opts/parse-server->opts nil {:sentinel-spec #'opts/dummy-var, :master-name :foo/bar})
-         {:server                        {:sentinel-spec #'opts/dummy-var, :master-name "foo/bar" :sentinel-opts {}}}))
-
-   (is (->> (#'opts/parse-server->opts nil {:ip "127.0.0.1" :port "80" :invalid true})
-            (throws? :any {:eid :carmine.conn-opts/invalid-server})))
-
-   (is (= (#'opts/parse-server->opts nil "redis://redistogo:pass@panga.redistogo.com:9475/0")
-          {:server ["panga.redistogo.com" 9475],
-           :init {:auth {:username "redistogo", :password "pass"},
-                  :select-db 0}}))])
-
+(deftest _parse-string-server
+  [(is (= (#'opts/parse-string-server "redis://user:pass@x.y.com:9475/3") {:server ["x.y.com"     9475], :init {:auth {:username "user", :password "pass"}, :select-db 3}}))
+   (is (= (#'opts/parse-string-server "redis://:pass@x.y.com.com:9475/3") {:server ["x.y.com.com" 9475], :init {:auth {                  :password "pass"}, :select-db 3}} ))
+   (is (= (#'opts/parse-string-server "redis://user:@x.y.com:9475/3")     {:server ["x.y.com"     9475], :init {:auth {:username "user"                  }, :select-db 3}}))
+   (is (= (#'opts/parse-string-server "rediss://user:@x.y.com:9475/3")    {:server ["x.y.com"     9475], :init {:auth {:username "user"                  }, :select-db 3},
+                                                                           :socket-opts {:ssl true}}))])
 (deftest _parse-conn-opts
-  [(is (map? (#'opts/-parse-conn-opts false nil     @#'opts/ref-conn-opts)))
-   (is (map? (#'opts/-parse-conn-opts false nil @#'opts/default-conn-opts)))
+  [(is (enc/submap? (opts/parse-conn-opts false {:server [      "127.0.0.1"       "80"]}) {:server ["127.0.0.1" 80]}))
+   (is (enc/submap? (opts/parse-conn-opts false {:server {:host "127.0.0.1" :port "80"}}) {:server ["127.0.0.1" 80]}))
+   (is (enc/submap? (opts/parse-conn-opts false {:server {:host "127.0.0.1" :port "80"}}) {:server ["127.0.0.1" 80]}))
+   (is (enc/submap? (opts/parse-conn-opts false {:server "rediss://user:pass@x.y.com:9475/3"})
+         {:server ["x.y.com" 9475], :init {:auth {:username "user", :password "pass"}, :select-db 3, :resp3? true},
+          :socket-opts {:ssl true}}))
 
-   (is (map? (#'opts/-parse-conn-opts true  nil     @#'opts/ref-sentinel-conn-opts)))
-   (is (map? (#'opts/-parse-conn-opts true  nil @#'opts/default-sentinel-conn-opts)))
+   (is (->> (opts/parse-conn-opts false {:server ^:my-meta ["127.0.0.1" "6379"]}) :server (meta) :my-meta) "Retains metadata")
 
-   (is (=   (#'opts/-parse-conn-opts false nil           {:server ["127.0.0.1" "6379"]}) {:server ["127.0.0.1" 6379]}))
-   (is (->> (#'opts/-parse-conn-opts false nil           {:server ["127.0.0.1" "invalid-port"]}) (throws? :any)))
-   (is (->> (#'opts/-parse-conn-opts false nil ^:my-meta {:server ["127.0.0.1" "6379"]}) (meta) :my-meta) "Retains metadata")])
+   (is (->> (opts/parse-conn-opts false {:server ["127.0.0.1" "invalid-port"]})                  (throws? :any {:eid :carmine.conn-opts/invalid-server})))
+   (is (->> (opts/parse-conn-opts false {:server {:host "127.0.0.1" :port "80" :invalid "foo"}}) (throws? :any {:eid :carmine.conn-opts/invalid-server})))
 
-(deftest _parse-conn-opts
-  [(is (map? (opts/parse-conn-opts true  {})))
-   (is (map? (opts/parse-conn-opts false {:server ["127.0.0.1" "6379"]})))
-   (is (->>  (opts/parse-conn-opts false {}) (throws? :any)))])
+   (is (enc/submap?
+         (opts/parse-conn-opts false
+           {:server {:sentinel-spec (sentinel/sentinel-spec {:foo/bar [["127.0.0.1" 26379]]})
+                     :master-name :foo/bar}})
+         {:server {:master-name "foo/bar", :sentinel-opts {:retry-delay-ms 250}}}))
 
-;;;; Conns
-
-(deftest kop-keys
-  (let [kc (enc/counter 0)]
-    (binding [conns/*kop-counter* kc]
-      (let [conn-opts->kop-key @#'conns/conn-opts->kop-key
-            kop-key->conn-opts @#'conns/kop-key->conn-opts
-            result
-            (-> {:server ["127.0.0.1" 6379], :socket-opts {:read-timeout-ms 1000}}
-              conn-opts->kop-key kop-key->conn-opts
-              conn-opts->kop-key kop-key->conn-opts
-              conn-opts->kop-key kop-key->conn-opts)]
-
-        [(is (= result {:server ["127.0.0.1" 6379], :socket-opts {:read-timeout-ms 1000}}))
-         (is (= @kc 1))]))))
-
-(defn- test-conn
-  "Runs basic connection tests on given open `Conn`."
-  [ready-after? conn]
-  [(is    (conns/conn?       conn))
-   (is    (conns/conn-ready? conn))
-   (is (= (conns/with-conn   conn
-            (fn [conn in out]
-              [(resp/basic-ping!  in out)
-               (resp/with-replies in out false false
-                 (fn [] (resp/redis-call "echo" "x")))])) ["PONG" "x"]))
-
-   (is (= (conns/conn-ready? conn) ready-after?))])
-
-(deftest _basic-conns
-  [(let [mgrv (mgrv! nil)] (test-conn false (conns/get-conn (assoc tc :mgr nil) true true)))
-   (let [mgrv (mgrv! (conns/conn-manager-unpooled {}))]
-     [(test-conn false (conns/get-conn (assoc tc :mgr mgrv) true true))
-      (test-conn false (conns/get-conn (assoc tc :mgr mgrv) true true))
-      (enc/submap? (force (get @@mgrv :stats))
-        {:counts {:created 2, :active 0}})])
-
-   (let [mgrv (mgrv! (conns/conn-manager-pooled {}))]
-     [(test-conn true (conns/get-conn (assoc tc :mgr mgrv) true true))
-      (test-conn true (conns/get-conn (assoc tc :mgr mgrv) true true))
-      (enc/submap? (force (get @@mgrv :stats))
-        {:counts {:sub-pools 0, :created 1, :borrowed 2, :returned 2}})])])
-
-(deftest _conn-manager-hard-shutdown
-  (let [mgrv (mgrv! (conns/conn-manager-unpooled {}))
-        k1   (tk "tlist")
-        f
-        (future
-          (wcar (assoc tc :mgr mgrv)
-            (resp/redis-calls
-              ["del"   k1]
-              ["lpush" k1 "x"]
-              ["lpop"  k1]
-              ["blpop" k1 5] ; Block for 5 secs
-              )))]
-
-    (Thread/sleep 1000) ; Wait for wcar to start but not complete
-    [(is (true? (car/conn-manager-close! @mgrv {} 0))) ; Interrupt pool conns
-     (is (instance? java.net.SocketException (enc/ex-cause (enc/throws @f)))
-       "Hard pool shutdown interrupts blocking blpop")]))
-
-(deftest _wcar-basics
-  [(is (= (wcar tc                 (resp/ping))  "PONG"))
-   (is (= (wcar tc {:as-vec? true} (resp/ping)) ["PONG"]))
-   (is (= (wcar tc (resp/local-echo "hello")) "hello") "Local echo")
-
-   (let [k1 (tk "k1")
-         v1 (str (rand-int 1e6))]
-     (is
-       (= (wcar tc
-            (resp/ping)
-            (resp/rset k1 v1)
-            (resp/echo (wcar tc (resp/rget k1)))
-            (resp/rset k1 "0"))
-
-         ["PONG" "OK" v1 "OK"])
-
-       "Flush triggered by `wcar` in `wcar`"))
-
-   (let [k1 (tk "k1")
-         v1 (str (rand-int 1e6))]
-     (is
-      (= (wcar tc
-           (resp/ping)
-           (resp/rset k1 v1)
-           (resp/echo         (with-replies (resp/rget k1)))
-           (resp/echo (str (= (with-replies (resp/rget k1)) v1)))
-           (resp/rset k1 "0"))
-
-        ["PONG" "OK" v1 "true" "OK"])
-
-      "Flush triggered by `with-replies` in `wcar`"))
-
-   (is (= (wcar tc (resp/ping) (wcar tc))      "PONG") "Parent replies not swallowed by `wcar`")
-   (is (= (wcar tc (resp/ping) (with-replies)) "PONG") "Parent replies not swallowed by `with-replies`")
-
-   (is (= (let [k1 (tk "k1")]
-            (wcar tc
-              (resp/rset k1 "v1")
-              (resp/echo
-                (with-replies
-                  (car/skip-replies (resp/rset k1 "v2"))
-                  (resp/echo
-                    (with-replies (resp/rget k1)))))))
-         ["OK" "v2"]))
-
-   (is (=
-         (wcar tc
-           (resp/ping)
-           (resp/echo       (first (with-replies {:as-vec? true} (resp/ping))))
-           (resp/local-echo (first (with-replies {:as-vec? true} (resp/ping)))))
-
-         ["PONG" "PONG" "PONG"])
-
-     "Nested :as-vec")])
+   (is (enc/submap?
+         (opts/parse-conn-opts false
+           {:server {:sentinel-spec (sentinel/sentinel-spec {:foo/bar [["127.0.0.1" 26379]]})
+                     :master-name :foo/bar, :sentinel-opts {:retry-delay-ms 100}}})
+         {:server {:master-name "foo/bar",  :sentinel-opts {:retry-delay-ms 100}}}))])
 
 ;;;; Sentinel
 
@@ -249,11 +126,11 @@
 
 (deftest _parse-nodes-info->addrs
   [(is (= (#'sentinel/parse-nodes-info->addrs
-            [{"ip" "ip1" "port" "port1" "x1" "y1"}
-             {"ip" "ip2" "port" "port2"}
-             ["ip" "ip3" "port" "port3" "x2" "y2"]])
+            [{"host" "host1" "port" "port1" "x1" "y1"}
+             {"host" "host2" "port" "port2"}
+             ["host" "host3" "port" "port3" "x2" "y2"]])
 
-         [["ip1" "port1"] ["ip2" "port2"] ["ip3" "port3"]]))])
+         [["host1" "port1"] ["host2" "port2"] ["host3" "port3"]]))])
 
 ;;;; Cluster
 
@@ -262,17 +139,134 @@
    (is (=                      @(cluster/cluster-key "ignore{foo}")  12182))
    (is (= @(cluster/cluster-key (cluster/cluster-key "ignore{foo}")) 12182))])
 
+
+;;;; Conns
+
+(defn- test-manager [mgr_]
+  (let [v   (volatile! [])
+        v+ #(vswap! v conj %)]
+
+    (with-open [mgr ^java.io.Closeable (force mgr_)]
+      (v+
+        (car/with-car mgr
+          (fn [conn]
+            [(v+ (#'conns/conn?       conn))
+             (v+ (#'conns/conn-ready? conn))
+             (v+ (resp/ping))
+             (v+ (car/with-replies
+                   (resp/redis-call "echo" "x")))])))
+
+      [@v mgr])))
+
+(deftest _basic-conns
+  [(is (= (conns/with-new-conn tc+
+            (fn [conn in out]
+              [(#'conns/conn?       conn)
+               (#'conns/conn-ready? conn)
+               (resp/basic-ping!  in out)
+               (resp/with-replies in out false false
+                 (fn [] (resp/redis-call "echo" "x")))]))
+         [true true "PONG" "x"])
+     "Unmanaged conn")
+
+   (let [[v mgr] (test-manager (delay (conns/conn-manager-unpooled {})))]
+     [(is (= [true true nil "x" "PONG"]))
+      (is (enc/submap? @mgr {:ready? false, :stats {:counts {:active 0, :created 1, :failed 0}}}))])
+
+   (let [[v mgr] (test-manager (delay (conns/conn-manager-pooled {})))]
+     [(is (= [true true nil "x" "PONG"]))
+      (is (enc/submap? @mgr
+            {:ready? false,
+             :stats {:counts {:idle 0, :returned 1, :created 1, :waiting 0, :active 0, :cleared 0,
+                              :destroyed {:total 1}, :borrowed 1, :failed 0}}}))])])
+
+(deftest _conn-manager-interrupt
+  (let [mgr (conns/conn-manager-unpooled {})
+        k1  (tk "tlist")
+        f
+        (future
+          (wcar mgr
+            (resp/redis-calls
+              ["del"   k1]
+              ["lpush" k1 "x"]
+              ["lpop"  k1]
+              ["blpop" k1 5] ; Block for 5 secs
+              )))]
+
+    (Thread/sleep 1000) ; Wait for wcar to start but not complete
+    [(is (true? (car/conn-manager-close! mgr 0 {}))) ; Interrupt pool conns
+     (is (instance? java.net.SocketException (enc/ex-cause (enc/throws @f)))
+       "Close with zero timeout interrupts blocking blpop")]))
+
+(deftest _wcar-basics
+  [(is (= (wcar mgr_                 (resp/ping))  "PONG"))
+   (is (= (wcar mgr_ {:as-vec? true} (resp/ping)) ["PONG"]))
+   (is (= (wcar mgr_ (resp/local-echo "hello")) "hello") "Local echo")
+
+   (let [k1 (tk "k1")
+         v1 (str (rand-int 1e6))]
+     (is
+       (= (wcar mgr_
+            (resp/ping)
+            (resp/rset k1 v1)
+            (resp/echo (wcar mgr_ (resp/rget k1)))
+            (resp/rset k1 "0"))
+
+         ["PONG" "OK" v1 "OK"])
+
+       "Flush triggered by `wcar` in `wcar`"))
+
+   (let [k1 (tk "k1")
+         v1 (str (rand-int 1e6))]
+     (is
+      (= (wcar mgr_
+           (resp/ping)
+           (resp/rset k1 v1)
+           (resp/echo         (with-replies (resp/rget k1)))
+           (resp/echo (str (= (with-replies (resp/rget k1)) v1)))
+           (resp/rset k1 "0"))
+
+        ["PONG" "OK" v1 "true" "OK"])
+
+      "Flush triggered by `with-replies` in `wcar`"))
+
+   (is (= (wcar mgr_ (resp/ping) (wcar mgr_))    "PONG") "Parent replies not swallowed by `wcar`")
+   (is (= (wcar mgr_ (resp/ping) (with-replies)) "PONG") "Parent replies not swallowed by `with-replies`")
+
+   (is (= (let [k1 (tk "k1")]
+            (wcar mgr_
+              (resp/rset k1 "v1")
+              (resp/echo
+                (with-replies
+                  (car/skip-replies (resp/rset k1 "v2"))
+                  (resp/echo
+                    (with-replies (resp/rget k1)))))))
+         ["OK" "v2"]))
+
+   (is (=
+         (wcar mgr_
+           (resp/ping)
+           (resp/echo       (first (with-replies {:as-vec? true} (resp/ping))))
+           (resp/local-echo (first (with-replies {:as-vec? true} (resp/ping)))))
+
+         ["PONG" "PONG" "PONG"])
+
+     "Nested :as-vec")])
+
 ;;;; Benching
 
 (deftest _benching
-  (println)
-  (println "Benching...")
-  (println "  v4 includes robust conn pool testing by default")
-  [(is (= (v3-core/wcar tc (v3-core/ping)) "PONG"))
-   (is (=         (wcar tc    (resp/ping)) "PONG"))
+  (do
+    (println)
+    (println "Benching times (1e4 laps)...")
+    (with-open [mgr-unpooled (conns/conn-manager-unpooled {})
+                mgr-default  (conns/conn-manager-pooled   {})
+                mgr-untested (conns/conn-manager-pooled   {:pool-opts {:test-on-create? false
+                                                                       :test-on-borrow? false
+                                                                       :test-on-return? false}})]
 
-   (let [[v3-wcar v4-wcar] (enc/qb 1e3 (v3-core/wcar tc)                (wcar tc))
-         [v3-pong v4-pong] (enc/qb 1e3 (v3-core/wcar tc (v3-core/ping)) (wcar tc (resp/ping)))]
-     (println "  - wcar time (v3 -> v4)" v3-wcar "->" v4-wcar)
-     (println "  - pong time (v3 -> v4)" v3-pong "->" v4-pong)
-     true)])
+      (println "  - wcar/unpooled:" (enc/round0 (* (enc/qb 1e3 (wcar mgr-unpooled)) 10)))
+      (println "  - wcar/default: " (enc/round0    (enc/qb 1e4 (wcar mgr-default))))
+      (println "  - wcar/untested:" (enc/round0    (enc/qb 1e4 (wcar mgr-untested))))
+      (println "  - ping/default: " (enc/round0    (enc/qb 1e4 (wcar mgr-default  (resp/ping)))))
+      (println "  - ping/untested:" (enc/round0    (enc/qb 1e4 (wcar mgr-untested (resp/ping))))))))
