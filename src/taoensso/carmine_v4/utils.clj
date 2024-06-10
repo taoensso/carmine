@@ -5,6 +5,7 @@
 (comment (remove-ns 'taoensso.carmine-v4.utils))
 
 (let [not-found (Object.)
+      empty? (fn [x] (== (count x) 0))
       merge2
       (fn [left right]
         (reduce-kv
@@ -17,7 +18,6 @@
                   (assoc rm lk (reduce-kv rf rv lv))
                   (do    rm))
                 :else rm)))
-
           right left))]
 
   (defn merge-opts
@@ -43,7 +43,7 @@
            (merge2 o2 o3)
            (merge2 (merge2 o1 o2) o3)))))))
 
-(comment (enc/qb 1e6 (merge-opts {:a 1} {:a 2} {:a 3}))) ; 80.9
+(comment (enc/qb 1e6 (merge-opts {:a 1} {:a 2} {:a 3}))) ; 75.67
 
 (defn dissoc-k [m in-k dissoc-k]
   (if-let [in-v (get m in-k)]

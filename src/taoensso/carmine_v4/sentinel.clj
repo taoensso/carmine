@@ -9,8 +9,7 @@
    [taoensso.carmine-v4.resp  :as resp]
    [taoensso.carmine-v4.opts  :as opts])
 
-  (:import
-   [java.util.concurrent.atomic AtomicLong]))
+  (:import [java.util.concurrent.atomic AtomicLong]))
 
 (comment (remove-ns 'taoensso.carmine-v4.sentinel))
 
@@ -31,7 +30,7 @@
      quorum n-sentinels}}]
 
   (dotimes [idx n-sentinels]
-    (let [[master-ip master-port] master-addr
+    (let [[master-host master-port] master-addr
           sentinel-port (+ ^long first-sentinel-port idx)
           fname (str "sentinel" (inc idx) ".conf")
 
@@ -42,13 +41,13 @@
 
 port %2$s
 
-# sentinel monitor <master-group-name> <ip> <port> <quorum>
+# sentinel monitor <master-group-name> <host> <port> <quorum>
 sentinel monitor %3$s %4$s %5$s %6$s
 sentinel down-after-milliseconds %3$s 60000"
 
             fname
             sentinel-port
-            master-name master-ip master-port
+            master-name master-host master-port
             quorum)]
 
       (spit fname content ))))
@@ -57,7 +56,7 @@ sentinel down-after-milliseconds %3$s 60000"
 
 ;;;; Node adresses
 ;; - Node    => Redis master, Redis read replica, or Sentinel server
-;; - Address => [<node-ip> <node-port>]
+;; - Address => [<node-host> <node-port>]
 
 (defn- remove-addr [old-addrs addr]
   (let [addr (opts/parse-sock-addr addr)]
@@ -86,14 +85,13 @@ sentinel down-after-milliseconds %3$s 60000"
 (defprotocol ^:private ISentinelSpec
   "Internal protocol, not for public use or extension."
   (sentinel-opts  [spec])
-  (update-addrs!  [spec master-name cbs                  kind f])
-  (resolve-addr   [spec master-name parsed-sentinel-opts use-cache?])
-  (resolved-addr? [spec master-name parsed-sentinel-opts use-cache? addr]))
+  (update-addrs!  [spec master-name cbs               kind f])
+  (resolve-addr!  [spec master-name sentinel-opts use-cache?])
+  (resolved-addr? [spec master-name sentinel-opts use-cache? addr]))
 
 (def ^:dynamic *mgr-cbs*
   "Private, implementation detail.
-  Mechanism to allow ConnManagers to easily request cbs from
-  a resolution that they've requested."
+  Mechanism to support `ConnManager` callbacks (cbs)."
   nil)
 
 (enc/defn-cached ^:private unique-addrs {:size 128 :gc-every 100}
@@ -110,9 +108,9 @@ sentinel down-after-milliseconds %3$s 60000"
         (reduce
           (fn [acc in] ; Info elements may be map (RESP3) or kvseq (RESP2)
             (let [in (kvs->map in)]
-              (enc/if-let [ip   (get in "ip")
+              (enc/if-let [host (get in "host")
                            port (get in "port")]
-                (conj acc [ip port])
+                (conj acc [host port])
                 (do   acc))))
           []
           info-seq)))))
@@ -124,24 +122,27 @@ sentinel down-after-milliseconds %3$s 60000"
 (comment (inc-stat! (atom {}) "foo" :k1))
 
 (deftype SentinelSpec
-  [spec-sentinel-opts
+  [sentinel-opts
    addrs-state_    ; Delayed {<master-name>   {:master <addr>, :replicas [<addr>s], :sentinels [<addr>s]}}
    resolve-stats_  ;         {<master-name>   {:keys [n-requests n-attempts n-successes n-errors n-resolved-to-X n-changes-to-X]}
    sentinel-stats_ ;         {<sentinel-addr> {:keys [           n-attempts n-successes n-errors n-ignorant n-unreachable n-misidentified]}
    ]
 
   Object
-  (toString [this] ; "taoensso.carmine.SentinelSpec[masters=3, replicas=2, sentinels=6]"
+  (toString [this]
+    ;; "taoensso.carmine.SentinelSpec[masters=3 replicas=4 sentinels=2 0x7b9f6831]"
     (let [{:keys [masters replicas sentinels]} (unique-addrs (force @addrs-state_))]
-      (str "taoensso.carmine.SentinelSpec["
-          "masters=" (count masters)  ", "
-         "replicas=" (count replicas) ", "
-        "sentinels=" (count sentinels) "]")))
+      (str
+        "taoensso.carmine.SentinelSpec["
+        "masters="   (count masters)   " "
+        "replicas="  (count replicas)  " "
+        "sentinels=" (count sentinels) " "
+        (enc/ident-hex-str this) "]")))
 
   clojure.lang.IDeref
   (deref [this]
     (let [addrs-state (force @addrs-state_)]
-      {:sentinel-opts spec-sentinel-opts
+      {:sentinel-opts sentinel-opts
        :nodes-addrs   addrs-state
        :stats
        (let [{:keys [masters replicas sentinels]} (unique-addrs addrs-state)]
@@ -154,7 +155,7 @@ sentinel down-after-milliseconds %3$s 60000"
           :sentinel-stats @sentinel-stats_})}))
 
   ISentinelSpec
-  (sentinel-opts [_] spec-sentinel-opts)
+  (sentinel-opts [_] sentinel-opts)
   (update-addrs! [this master-name cbs kind f]
     (have? [:el #{:master :replicas :sentinels}] kind)
     (let [master-name (enc/as-qname master-name)
@@ -198,17 +199,15 @@ sentinel down-after-milliseconds %3$s 60000"
                 {:cbid          cbid
                  :master-name   master-name
                  :sentinel-spec this
-                 :sentinel-opts spec-sentinel-opts
+                 :sentinel-opts sentinel-opts
                  :changed       {:old old-val, :new new-val}})))
           true)
 
         false)))
 
-  (resolve-addr [this master-name parsed-sentinel-opts use-cache?]
+  (resolve-addr! [this master-name sentinel-opts use-cache?]
     (let [master-name (enc/as-qname      master-name)
           node-addrs  (get @addrs-state_ master-name)
-
-          sentinel-opts           parsed-sentinel-opts
           {:keys [prefer-read-replica?]} sentinel-opts]
 
       (if use-cache?
@@ -332,16 +331,14 @@ sentinel down-after-milliseconds %3$s 60000"
                         (.incrementAndGet n-attempts*)
                         (inc-stat! resolve-stats_  master-name   :n-attempts)
                         (inc-stat! sentinel-stats_ sentinel-addr :n-attempts)
-                        (let [[ip port] sentinel-addr
+                        (let [[host port] sentinel-addr
                               [?master-addr ?replicas-info ?sentinels-info]
-                              (case ip ; Simulated errors for tests
+                              (case host ; Simulated errors for tests
                                 "unreachable"   [::unreachable                 nil nil]
                                 "misidentified" [["simulated-misidentified" 0] nil nil]
                                 "ignorant"      nil
                                 (try
-                                  (conns/with-conn
-                                    ;; (conns/new-conn ip port conn-opts)
-                                    (conns/get-conn (assoc conn-opts :server [ip port]) false true)
+                                  (conns/with-new-conn conn-opts host port master-name
                                     (fn [_ in out]
                                       (resp/with-replies in out :natural-reads :as-vec
                                         (fn []
@@ -383,12 +380,10 @@ sentinel down-after-milliseconds %3$s 60000"
                                    [master-addr :master])
 
                                  actual-role
-                                 (let [[ip port] target-addr
+                                 (let [[host port] target-addr
                                        reply
                                        (try
-                                         (conns/with-conn
-                                           ;; (conns/new-conn ip port conn-opts)
-                                           (conns/get-conn (assoc conn-opts :server [ip port]) false true)
+                                         (conns/with-new-conn conn-opts host port master-name
                                            (fn [_ in out]
                                              (resp/with-replies in out :natural-reads false
                                                (fn [] (resp/redis-call "ROLE")))))
@@ -437,21 +432,18 @@ sentinel down-after-milliseconds %3$s 60000"
                         (Thread/sleep (int retry-delay-ms))
                         (recur (inc n-retries)))))))))))))
 
-  (resolved-addr? [this master-name parsed-sentinel-opts use-cache? addr]
-    (let [sentinel-opts parsed-sentinel-opts]
+  (resolved-addr? [this master-name sentinel-opts use-cache? addr]
+    (when-not use-cache? ; Update cache
+      (resolve-addr! this master-name sentinel-opts false))
 
-      (when-not use-cache? ; Update cache
-        (resolve-addr this master-name sentinel-opts false))
-
-      (let [addr        (opts/parse-sock-addr addr)
-            master-name (enc/as-qname      master-name)
-            node-addrs  (get @addrs-state_ master-name)]
-
-        (or
-          (when (= addr (get node-addrs :master)) :master)
-          (when (and (get sentinel-opts :prefer-read-replica?)
-                  (enc/rfirst #(= % addr) (get node-addrs :replicas)))
-            :replica))))))
+    (let [addr        (opts/parse-sock-addr addr)
+          master-name (enc/as-qname      master-name)
+          node-addrs  (get @addrs-state_ master-name)]
+      (or
+        (when (= addr (get node-addrs :master)) :master)
+        (when (and (get sentinel-opts :prefer-read-replica?)
+                (enc/rfirst #(= % addr) (get node-addrs :replicas)))
+          :replica)))))
 
 (enc/def-print-impl [ss SentinelSpec] (str "#" ss))
 
@@ -461,7 +453,7 @@ sentinel down-after-milliseconds %3$s 60000"
 
 (defn ^:public sentinel-spec
   "Given a Redis Sentinel server addresses map of form
-    {<master-name> [[<sentinel-server-ip> <sentinel-server-port>] ...]},
+    {<master-name> [[<sentinel-server-host> <sentinel-server-port>] ...]},
   returns a new stateful `SentinelSpec` for use in `conn-opts`.
 
     (def my-sentinel-spec
@@ -491,13 +483,12 @@ sentinel down-after-milliseconds %3$s 60000"
        (atom {})))))
 
 (comment
-  (resolve-addr
-    ;; Use ip e/o #{"unreachable" "ignorant" "misidentified"} to simulate errors
+  (resolve-addr!
+    ;; Use host e/o #{"unreachable" "ignorant" "misidentified"} to simulate errors
     (sentinel-spec {"my-master" [[#_"ignorant" #_"misidentified" "127.0.0.1" 26379]]})
     "my-master" {} (not :use-cache))
 
-  (conns/with-conn
-    (conns/new-conn "127.0.0.1" 26379 #_6379 {})
+  (conns/with-new-conn {} "127.0.0.1" 26379 #_6379 nil
     (fn [_ in out]
       (resp/with-replies in out false false
         (fn []

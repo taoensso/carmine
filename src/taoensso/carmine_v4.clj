@@ -25,99 +25,6 @@
 
 (comment (remove-ns 'taoensso.carmine-v4))
 
-;;;; Config
-
-(def ^:dynamic *issue-83-workaround?*
-  "TODO Doc env config
-  A bug in Carmine v2.6.0 to v2.6.1 (2014-04-01 to 2014-05-01)
-  caused Nippy blobs to be marked incorrectly (with `ba-bin` instead
-  of `ba-npy`), Ref. <https://github.com/ptaoussanis/carmine/issues/83>
-
-  This should be kept true (the default) if there's a chance you might
-  read any data written by Carmine < v2.6.1 (2014-05-01).
-
-  Only relevant if `*auto-deserialize?` is true."
-  (enc/get-env {:as :bool, :default true}
-    :taoensso.carmine.issue-83-workaround))
-
-(def ^:dynamic *auto-serialize?*
-  "TODO Doc env config
-  Should Carmine automatically serialize arguments sent to Redis
-  that are non-native to Redis?
-
-  Affects non-(string, keyword, simple long/double) types.
-
-  Default is true. If false, an exception will be thrown when trying
-  to send such arguments.
-
-  See also `*auto-deserialize?`*."
-  (enc/get-env {:as :bool, :default true}
-    :taoensso.carmine.auto-serialize))
-
-(def ^:dynamic *auto-deserialize?*
-  "TODO Doc env config
-  Should Carmine automatically deserialize Redis replies that
-  contain data previously serialized by `*auto-serialize?*`?
-
-  Affects non-(string, keyword, simple long/double) types.
-
-  Default is true. If false, such replies will by default look like
-  malformed strings.
-  TODO: Mention utils, bindings.
-
-  See also `*auto-serialize?`*."
-  (enc/get-env {:as :bool, :default true}
-    :taoensso.carmine.auto-deserialize))
-
-(def ^:dynamic *keywordize-maps?*
-  "Keywordize string keys in map-type Redis replies?"
-  true)
-
-(def ^:dynamic *freeze-opts*
-  "TODO Docstring"
-  nil)
-
-(def default-pool-opts
-  "TODO Docstring: describe `pool-opts`, env config.
-  Ref. <https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/GenericKeyedObjectPool.html>,
-       <https://commons.apache.org/proper/commons-pool/apidocs/org/apache/commons/pool2/impl/BaseGenericObjectPool.html>"
-  (enc/nested-merge opts/default-pool-opts
-    (enc/get-env {:as :edn} :taoensso.carmine.default-pool-opts)))
-
-(def default-conn-manager-pooled_
-  "TODO Docstring"
-  (delay (conns/conn-manager-pooled {:pool-opts default-pool-opts})))
-
-(comment @default-conn-manager-pooled_)
-
-(def ^:dynamic *default-conn-opts*
-  "TODO Docstring: describe `conn-opts`, env config."
-  (opts/parse-conn-opts false
-    (enc/nested-merge opts/default-conn-opts
-      (enc/get-env {:as :edn} :taoensso.carmine.default-conn-opts))))
-
-(def ^:dynamic *default-sentinel-opts*
-  "TODO Docstring: describe `sentinel-opts`, env config."
-  (opts/parse-sentinel-opts
-    (enc/nested-merge opts/default-sentinel-opts
-      (enc/get-env {:as :edn} :taoensso.carmine.default-sentinel-opts))))
-
-(def ^:dynamic *conn-cbs*
-  "Map of any additional callback fns, as in `conn-opts` or `sentinel-opts`.
-  Useful for REPL/debugging/tests/etc.
-
-  Possible keys:
-    `:on-conn-close`
-    `:on-conn-error`
-    `:on-resolve-success`
-    `:on-resolve-error`
-    `:on-changed-master`
-    `:on-changed-replicas`
-    `:on-changed-sentinels`
-
-  Values should be unary callback fns of a single data map."
-  nil)
-
 ;;;; Aliases
 
 (enc/defaliases
@@ -159,9 +66,9 @@
   resp/local-echos*
 
   ;;; Connections
-  conns/conn?
-  conns/conn-ready?
-  conns/conn-close!
+  #_conns/conn?
+  #_conns/conn-ready?
+  #_conns/conn-close!
   ;;
   sentinel/sentinel-spec
   sentinel/sentinel-spec?
@@ -169,75 +76,206 @@
   conns/conn-manager?
   conns/conn-manager-unpooled
   conns/conn-manager-pooled
-  {:alias conn-manager-init!           :src conns/mgr-init!}
-  {:alias conn-manager-ready?          :src conns/mgr-ready?}
-  {:alias conn-manager-close!          :src conns/mgr-close!}
-  {:alias conn-manager-master-changed! :src conns/mgr-master-changed!}
+  {:alias conn-manager-ready? :src conns/mgr-ready?}
+  {:alias conn-manager-clear! :src conns/mgr-clear!}
+  {:alias conn-manager-close! :src conns/mgr-close!}
 
   ;;; Cluster
   cluster/cluster-key)
 
+;;;; Config
+
+(def default-conn-opts
+  "TODO Docstring incl. env config."
+  (let [from-env (enc/get-env {:as :edn} :taoensso.carmine.default-conn-opts)
+        base
+        {:server ["127.0.0.1" 6379]
+         #_{:host "127.0.0.1" :port "6379"}
+         #_{:master-name  "my-master"
+            :sentinel-spec my-spec
+            :sentinel-opts {}}
+
+         :cbs         {:on-conn-close nil, :on-conn-error nil}
+         :buffer-opts {:init-size-in 8192, :init-size-out 8192}
+         :socket-opts {:ssl false, :connect-timeout-ms 400, :read-timeout-ms nil
+                       :ready-timeout-ms 200}
+         :init
+         {;; :commands [["HELLO" 3 "AUTH" "default" "my-password" "SETNAME" "client-name"]
+          ;;            ["auth" "default" "my-password"]]
+          :resp3? true
+          :auth {:username "default" :password nil}
+          ;; :client-name "carmine"
+          ;; :select-db   5
+          }}]
+
+    (enc/nested-merge base from-env)))
+
+(def default-pool-opts
+  "TODO Docstring incl. env config."
+  (let [from-env (enc/get-env {:as :edn} :taoensso.carmine.default-pool-opts)
+        base
+        {:test-on-create?               true
+         :test-while-idle?              true
+         :test-on-borrow?               true
+         :test-on-return?               false
+         :num-tests-per-eviction-run    -1
+         :min-evictable-idle-time-ms    60000
+         :time-between-eviction-runs-ms 30000
+         :max-total                     16
+         :max-idle                      16}]
+
+    (enc/nested-merge base from-env)))
+
+(def default-sentinel-opts
+  "TODO Docstring incl. env config."
+  (let [from-env (enc/get-env {:as :edn} :taoensso.carmine.default-sentinel-opts)
+        base
+        {:cbs
+         {:on-resolve-success   nil
+          :on-resolve-error     nil
+          :on-changed-master    nil
+          :on-changed-replicas  nil
+          :on-changed-sentinels nil}
+
+         :update-sentinels?     true
+         :update-replicas?      false
+         :prefer-read-replica?  false
+
+         :retry-delay-ms        250
+         :resolve-timeout-ms    2000
+         :clear-timeout-ms      10000
+
+         :conn-opts
+         {:cbs         {:on-conn-close nil, :on-conn-error nil}
+          :buffer-opts {:init-size-in 512, :init-size-out 256}
+          :socket-opts {:ssl false, :connect-timeout-ms 200, :read-timeout-ms 200
+                        :ready-timeout-ms 200}}}]
+
+    (enc/nested-merge base from-env)))
+
+;;;;
+
+(def ^:dynamic *auto-serialize?*
+  "TODO Docstring incl. env config.
+  Should Carmine automatically serialize arguments sent to Redis
+  that are non-native to Redis?
+
+  Affects non-(string, keyword, simple long/double) types.
+
+  Default is true. If false, an exception will be thrown when trying
+  to send such arguments.
+
+  See also `*auto-deserialize?`*."
+  (enc/get-env {:as :bool, :default true}
+    :taoensso.carmine.auto-serialize))
+
+(def ^:dynamic *auto-deserialize?*
+  "TODO Docstring incl. env config.
+  Should Carmine automatically deserialize Redis replies that
+  contain data previously serialized by `*auto-serialize?*`?
+
+  Affects non-(string, keyword, simple long/double) types.
+
+  Default is true. If false, such replies will by default look like
+  malformed strings.
+  TODO: Mention utils, bindings.
+
+  See also `*auto-serialize?`*."
+  (enc/get-env {:as :bool, :default true}
+    :taoensso.carmine.auto-deserialize))
+
+(def ^:dynamic *keywordize-maps?*
+  "TODO Docstring incl. env config."
+  true)
+
+(def ^:dynamic *freeze-opts*
+  "TODO Docstring incl. env config?"
+  nil)
+
+(def ^:dynamic *issue-83-workaround?*
+  "TODO Docstring incl. env config.
+  A bug in Carmine v2.6.0 to v2.6.1 (2014-04-01 to 2014-05-01)
+  caused Nippy blobs to be marked incorrectly (with `ba-bin` instead
+  of `ba-npy`), Ref. <https://github.com/ptaoussanis/carmine/issues/83>
+
+  This should be kept true (the default) if there's a chance you might
+  read any data written by Carmine < v2.6.1 (2014-05-01).
+
+  Only relevant if `*auto-deserialize?` is true."
+  (enc/get-env {:as :bool, :default true}
+    :taoensso.carmine.issue-83-workaround))
+
+(def ^:dynamic *conn-cbs*
+  "Map of any additional callback fns, as in `conn-opts` or `sentinel-opts`.
+  Useful for REPL/debugging/tests/etc.
+
+  Possible keys:
+    `:on-conn-close`
+    `:on-conn-error`
+    `:on-resolve-success`
+    `:on-resolve-error`
+    `:on-changed-master`
+    `:on-changed-replicas`
+    `:on-changed-sentinels`
+
+  Values should be unary callback fns of a single data map."
+  nil)
+
 ;;;; Core API (main entry point to Carmine)
 
+(def ^:private default-conn-manager
+  (delay (conns/conn-manager-pooled {:mgr-name :default})))
+
+(comment (force default-conn-manager))
+
 (defn with-car
-  "TODO Docstring: `*default-conn-opts*`, `wcar`, etc.
-  body-fn takes [conn]"
-  ([conn-opts                                  body-fn] (with-car conn-opts nil body-fn))
-  ([conn-opts {:keys [as-vec?] :as reply-opts} body-fn]
-   (let [{:keys [natural-reads?]}  reply-opts] ; Undocumented
-     (conns/with-conn
-       (conns/get-conn conn-opts true true)
+  "TODO Docstring"
+  ([conn-mgr                                  body-fn] (with-car conn-mgr nil body-fn))
+  ([conn-mgr {:keys [as-vec?] :as reply-opts} body-fn]
+   (let [{:keys [natural-reads?]} reply-opts] ; Undocumented
+     (conns/mgr-borrow! (force (or conn-mgr default-conn-manager))
        (fn [conn in out]
          (resp/with-replies in out natural-reads? as-vec?
            (fn [] (body-fn conn))))))))
 
-(comment
-  (do
-    (def mgr-unpooled (conns/conn-manager-unpooled {}))
-    (def mgr-pooled   (conns/conn-manager-pooled
-                        {:pool-opts
-                         {:test-on-create? false
-                          :test-on-borrow? false
-                          :test-on-return? false}})))
-
-  (enc/qb 1e3 ; [97.84 99.07 23.1], unpooled port limited
-    (with-car {:mgr            nil} (fn [conn] (resp/ping) (resp/local-echo conn)))
-    (with-car {:mgr #'mgr-unpooled} (fn [conn] (resp/ping) (resp/local-echo conn)))
-    (with-car {:mgr   #'mgr-pooled} (fn [conn] (resp/ping) (resp/local-echo conn))))
-
-  (->     unpooled deref)
-  (-> (-> pooled   deref) :stats_ deref)
-
-  ;; Benching
-  (let [conn-opts {:mgr #'mgr-pooled :init nil}]
-    (enc/qb 1e4 ; [16.49 219.44 691.71]
-      (with-car conn-opts (fn [_]))
-      (with-car conn-opts (fn [_]                  (resp/ping)))
-      (with-car conn-opts (fn [_] (dotimes [_ 100] (resp/ping)))))))
-
 (defmacro wcar
-  "TODO Docstring: `*default-conn-opts*`, `with-car`, etc."
+  "TODO Docstring"
   {:arglists
-   '([conn-opts                   & body]
-     [conn-opts {:keys [as-vec?]} & body])}
+   '([conn-mgr                   & body]
+     [conn-mgr {:keys [as-vec?]} & body])}
 
-  [conn-opts & body]
+  [conn-mgr & body]
   (let [[reply-opts body] (resp/parse-body-reply-opts body)]
-    `(with-car ~conn-opts ~reply-opts
+    `(with-car ~conn-mgr ~reply-opts
        (fn [~'__wcar-conn] ~@body))))
 
 (comment
-  (wcar {} (resp/redis-call "PING"))
-  (wcar {} (resp/redis-call "set" "k1" 3))
-  (wcar {} (resp/redis-call "get" "k1"))
+  (let [mgr1 (conns/conn-manager-unpooled {})
+        mgr2 (conns/conn-manager-pooled   {})
+        mgr3 (conns/conn-manager-pooled
+               {:pool-opts
+                {:test-on-create? false
+                 :test-on-borrow? false
+                 :test-on-return? false}})]
 
-  (wcar {}                 (resp/ping))
-  (wcar {} {:as-vec? true} (resp/ping))
-  (wcar {}  :as-vec        (resp/ping))
-  
-  (enc/qb 1e4 ; [209.87 222.09]
-    (v3-core/wcar {}                  (v3-core/ping))
-    (wcar         {:mgr #'mgr-pooled} (resp/ping))))
+    (try
+      (enc/qb 1e3 ; [22.33 97.37 38.87 19.86]
+        (v3-core/wcar {}       (v3-core/ping))
+        (with-car mgr1 (fn [conn] (resp/ping)))
+        (with-car mgr2 (fn [conn] (resp/ping)))
+        (with-car mgr3 (fn [conn] (resp/ping))))
+
+      (finally
+        (doseq [mgr [mgr1 mgr2 mgr3]]
+          (conns/mgr-close! mgr 5000 nil)))))
+
+  [(wcar nil (resp/redis-call "PING"))
+   (wcar nil (resp/redis-call "set" "k1" 3))
+   (wcar nil (resp/redis-call "get" "k1"))
+
+   (wcar nil                 (resp/ping))
+   (wcar nil {:as-vec? true} (resp/ping))
+   (wcar nil  :as-vec        (resp/ping))])
 
 (defmacro with-replies
   "TODO Docstring
@@ -246,7 +284,6 @@
   [& body]
   (let [[reply-opts body] (resp/parse-body-reply-opts body)
         {:keys [natural-reads? as-vec?]} reply-opts]
-
     `(resp/with-replies ~natural-reads? ~as-vec?
        (fn [] ~@body))))
 

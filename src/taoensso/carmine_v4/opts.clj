@@ -1,516 +1,279 @@
 (ns ^:no-doc taoensso.carmine-v4.opts
   "Private ns, implementation detail.
-
   Carmine has a lot of options, so we do our best to:
     - Coerce and validate early when possible.
-    - Throw detailed error messages when issues occur.
-
-  Notes:
-
-    - To facilitate caching and other uses of `=`, we generally restrict
-      most opts content to pure data. In particular, fn opt vals are
-      usually prohibited - but var opt vals are allowed.
-
-    - In some cases, we may may use metdata on opts maps to hold:
-      - Private options (e.g. for implementation details).
-      - Options that we don't want to affect equality/fungibility,
-        or that might not support equality.
-
-    - We generally avoid dynamic *vars* and other defaults (e.g. `:or`)
-      within inner implementation code. Instead, we try explicitly capture
-      and reify all relevant config up-front."
-
+    - Throw detailed error messages when issues occur."
   (:require
+   [clojure.string  :as str]
    [taoensso.encore :as enc :refer [have have?]]
    [taoensso.carmine-v4.utils :as utils])
 
   (:import
    [java.net Socket]
-   [org.apache.commons.pool2.impl GenericKeyedObjectPool]))
+   [org.apache.commons.pool2.impl GenericObjectPool]))
 
 (comment (remove-ns 'taoensso.carmine-v4.opts))
 
 (enc/declare-remote
-  ^:dynamic taoensso.carmine-v4/*default-conn-opts*
-  ^:dynamic taoensso.carmine-v4/*default-sentinel-opts*
-            taoensso.carmine-v4/default-pool-opts
-            taoensso.carmine-v4/default-conn-manager-pooled_
-            taoensso.carmine-v4.conns/conn-manager?
-            taoensso.carmine-v4.sentinel/sentinel-spec?
-            taoensso.carmine-v4.sentinel/sentinel-opts)
+  taoensso.carmine-v4/default-conn-opts
+  taoensso.carmine-v4/default-sentinel-opts
+  taoensso.carmine-v4.conns/conn-manager?
+  taoensso.carmine-v4.sentinel/sentinel-spec?
+  taoensso.carmine-v4.sentinel/sentinel-opts)
 
 (do
   (alias 'core     'taoensso.carmine-v4)
   (alias 'conns    'taoensso.carmine-v4.conns)
   (alias 'sentinel 'taoensso.carmine-v4.sentinel))
 
-;;;; Reference opts
+;;;; Mutators
 
-(let [dummy-val (Object.)]
-  ;; Used only for REPL/tests, `#'dummy-var` will pass all var validation checks
-  (enc/defonce ^:private dummy-var                        dummy-val)
-  (enc/defonce ^:private dummy-val? (fn [x] (identical? x dummy-val))))
+(defn set-socket-opts!
+  ^Socket [^Socket s socket-opts]
+  (enc/run-kv!
+    (fn [k v]
+      (case k
+        ;; Carmine options, noop and pass through
+        (:ssl :connect-timeout-ms :ready-timeout-ms) nil
 
-(def ^:private ref-servers
-  [[    "127.0.0.1"       "6379"]
-   {:ip "127.0.0.1" :port "6379"}
-   {:master-name  "my-master"
-    :sentinel-spec dummy-var
-    :sentinel-opts {}}])
+        (:setKeepAlive    :keep-alive?)    (.setKeepAlive    s (boolean v))
+        (:setOOBInline    :oob-inline?)    (.setOOBInline    s (boolean v))
+        (:setTcpNoDelay   :tcp-no-delay?)  (.setTcpNoDelay   s (boolean v))
+        (:setReuseAddress :reuse-address?) (.setReuseAddress s (boolean v))
 
-(def ^:private ref-conn-opts
-  {:mgr         nil ; var
-   :server      ["127.0.0.1" "6379"]
-   :cbs         {:on-conn-close nil :on-conn-error nil} ; vars
-   :buffer-opts {:init-size-in 8192 :init-size-out 8192}
-   :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000
-                 :ready-timeout-ms 200}
-   :init
-   {:commands [#_["HELLO" 3 "AUTH" "my-username" "my-password" "SETNAME" "client-name"]
-               #_["auth" "my-username" "my-password"]]
-    :resp3? true
-    :auth {:username "" :password ""}
-    :client-name "carmine"
-    :select-db 5}})
+        (:setReceiveBufferSize     :receive-buffer-size) (.setReceiveBufferSize s (int     v))
+        (:setSendBufferSize        :send-buffer-size)    (.setSendBufferSize    s (int     v))
+        (:setSoTimeout :so-timeout :read-timeout-ms)     (.setSoTimeout         s (int (or v 0)))
 
-(def ^:private ref-sentinel-conn-opts
-  {:mgr         nil ; var
-   #_:server ; [ip port] of Sentinel server will be auto added by resolver
-   :cbs         {:on-conn-close nil :on-conn-error nil} ; vars
-   :buffer-opts {:init-size-in 1024 :init-size-out 512}
-   :socket-opts {:ssl true :connect-timeout-ms 1000 :read-timeout-ms 4000
-                 :ready-timeout-ms 200}
-   :init
-   {:commands []
-    :resp3? true
-    :auth {:username "" :password ""}
-    #_:client-name
-    #_:select-db}})
+        ;; (:setSocketImplFactory :socket-impl-factory) (.setSocketImplFactory s v)
+        (:setTrafficClass         :traffic-class)       (.setTrafficClass      s v)
 
-(def ^:private ref-sentinel-opts
-  {:conn-opts  ref-sentinel-conn-opts
-   :cbs
-   {:on-resolve-success   nil
-    :on-resolve-error     nil
-    :on-changed-master    nil
-    :on-changed-replicas  nil
-    :on-changed-sentinels nil} ; vars
+        (:setSoLinger :so-linger)
+        (let [[on? linger] (have vector? v)]
+          (.setSoLinger s (boolean on?) (int linger)))
 
-   :update-sentinels?     true
-   :update-replicas?      false
-   :prefer-read-replica?  false
+        (:setPerformancePreferences :performance-preferences)
+        (let [[conn-time latency bandwidth] (have vector? v)]
+          (.setPerformancePreferences s (int conn-time) (int latency) (int bandwidth)))
 
-   :retry-delay-ms        250
-   :resolve-timeout-ms    2000})
-
-;;;; Default opts
-
-(def default-conn-opts
-  "Used by `core/*default-conn-opts*`"
-  {:mgr         #'core/default-conn-manager-pooled_
-   :server      ["127.0.0.1" 6379]
-   :cbs         {:on-conn-close nil, :on-conn-error nil}
-   :buffer-opts {:init-size-in 8192, :init-size-out 8192}
-   :socket-opts {:ssl false, :connect-timeout-ms 400, :read-timeout-ms nil
-                 :ready-timeout-ms 200}
-   :init
-   {:auth {:username "default" :password nil}
-    :client-name :auto
-    :select-db   nil
-    :resp3?      true}})
-
-(def ^:private default-sentinel-conn-opts
-  {:cbs         {:on-conn-close nil, :on-conn-error nil}
-   :buffer-opts {:init-size-in 512, :init-size-out 256}
-   :socket-opts {:ssl false, :connect-timeout-ms 200, :read-timeout-ms 200
-                 :ready-timeout-ms 200}})
-
-(def default-sentinel-opts
-  "Used by `core/*default-sentinel-opts*`"
-  {:cbs
-   {:on-resolve-success   nil
-    :on-resolve-error     nil
-    :on-changed-master    nil
-    :on-changed-replicas  nil
-    :on-changed-sentinels nil}
-
-   :update-sentinels?    true
-   :update-replicas?     false
-   :prefer-read-replica? false
-
-   :retry-delay-ms       250
-   :resolve-timeout-ms   2000
-
-   :conn-opts default-sentinel-conn-opts})
-
-(def default-pool-opts
-  "Used by `core/default-pool-opts`"
-  {:test-on-create?               true
-   :test-while-idle?              true
-   :test-on-borrow?               true
-   :test-on-return?               false
-   :num-tests-per-eviction-run    -1
-   :min-evictable-idle-time-ms    60000
-   :time-between-eviction-runs-ms 30000
-   :max-total-per-key             16
-   :max-idle-per-key              16})
-
-;;;; Socket addresses
-
-(defn parse-sock-addr
-  "Returns valid [<ip-string> <port-int>] socket address pair, or throws.
-  Retains metadata (server name, comments, etc.)."
-  ( [ip port         ]            [(have string? ip) (enc/as-int port)])
-  ( [ip port metadata] (with-meta [(have string? ip) (enc/as-int port)] metadata))
-  ([[ip port :as addr]]
-   (have? string? ip)
-   (assoc addr 1 (enc/as-int port))))
-
-(defn descr-sock-addr
-  "Returns [<ip-string> <port-int> <?meta>] socket address."
-  [addr] (if-let [m (meta addr)] (conj addr m) addr))
-
-;;;; Servers
-
-(defn- parse-string-server->opts [s]
-  (let [uri (java.net.URI. (have string? s))
-        server [(.getHost uri) (.getPort uri)]
-        init
-        (let [auth
-              (let [[username password] (.split (str (.getUserInfo uri)) ":")]
-                (when password
-                  (if username
-                    {:username username :password password}
-                    {                   :password password})))
-
-              select-db
-              (when-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
-                (Integer. ^String db-str))]
-
-          (when (or auth select-db)
-            (enc/assoc-when {}
-              :auth      auth
-              :select-db select-db)))]
-
-    (if init
-      {:server server :init init}
-      {:server server})))
-
-(defn get-sentinel-server [conn-opts]
-  (let [{:keys [server]} conn-opts]
-    (when (map? server) server)))
-
-(declare ^:private -parse-sentinel-opts)
-
-(defn- parse-sentinel-server [default-sentinel-opts server]
-  (have? map? server)
-  (let [{:keys [master-name sentinel-spec sentinel-opts]} server
-
-        master-name (enc/as-qname (have [:or string? enc/named?] master-name))
-        sentinel-opts
-        (let [spec (have [:or sentinel/sentinel-spec? dummy-val?]
-                     @(have var? sentinel-spec))
-
-              spec-sentinel-opts
-              (when (sentinel/sentinel-spec? spec)
-                (sentinel/sentinel-opts      spec))]
-
-          (-parse-sentinel-opts
-            (or (utils/merge-opts default-sentinel-opts spec-sentinel-opts
-                  (have [:or nil? map? ] sentinel-opts)) {})))]
-
-    (assoc server
-      :master-name   master-name
-      :sentinel-opts sentinel-opts)))
-
-(defn- parse-server->opts [default-sentinel-opts server]
-  (try
-    (enc/cond
-      (vector?         server) {:server (parse-sock-addr server)}
-      (string?         server) (have map? (parse-string-server->opts server))
-      (map?            server)
-      (case (set (keys server))
-        #{:ip :port}
-        (let [{:keys [ip port]} server]
-          {:server (parse-sock-addr ip port (meta server))})
-
-        (#{:master-name :sentinel-spec               }
-         #{:master-name :sentinel-spec :sentinel-opts})
-        {:server (parse-sentinel-server default-sentinel-opts server)}
-
-        (do (throw (ex-info "Unexpected `:server` keys" {:keys (keys server)}))))
-      :else (throw (ex-info "Unexpected `:server` type" {:type (type server)})))
-
-    (catch Throwable t
-      (throw
-        (ex-info "[Carmine] Invalid Redis server specification in connection options"
-          {:eid      :carmine.conn-opts/invalid-server
-           :server   (enc/typed-val server)
-           :expected '(or uri-string [ip port] {:keys [ip port]}
-                        {:keys [master-name sentinel-spec sentinel-opts]})}
-          t)))))
-
-;;;; conn-opts
-
-(declare ^:private socket-opts-dry-run!)
-
-(defn- -parse-conn-opts
-  "Returns valid parsed conn-opts, or throws.
-  Uncached and expensive."
-  [in-sentinel-opts? default-sentinel-opts opts]
-  (if (and (map? opts) (get opts :skip-parsing?)) ; Undocumented
-    opts
-    (try
-      (have? map? opts)
-      (let [{:keys [mgr server cbs socket-opts buffer-opts init]} opts
-            {:keys [auth]} init]
-
-        (if in-sentinel-opts?
-          ;; [ip port] of Sentinel server will be auto added by resolver
-          (have? [:ks<= #{:id :mgr #_:server :cbs :socket-opts :buffer-opts :init}] opts)
-          (have? [:ks<= #{:id :mgr   :server :cbs :socket-opts :buffer-opts :init}] opts))
-
-        (when-let [mgr (have [:or nil? var?] mgr)]
-          ;; (have? [:or conns/conn-manager? dummy-val?] (force @mgr)) ; Don't realise
-          (have?    [:or conns/conn-manager? dummy-val? delay?] @mgr))
-
-        (have? [:ks<= #{:on-conn-close :on-conn-error}] cbs)
-        (have? [:or var? nil?] :in                (vals cbs))
-
-        (when socket-opts (socket-opts-dry-run! socket-opts))
-
-        ;; socket-opts will be verified during socket creation
-        (have? [:ks<= #{:init-size-in :init-size-out}] buffer-opts)
-
-        (if in-sentinel-opts?
-          (have? [:ks<= #{:commands :auth :resp3? #_:client-name #_:select-db}] init)
-          (have? [:ks<= #{:commands :auth :resp3?   :client-name   :select-db}] init))
-
-        (have? [:ks<= #{:username :password}] auth)
-
-        (if in-sentinel-opts?
-          (do    opts) ; Doesn't have :server
-          (conj  opts (parse-server->opts default-sentinel-opts server))))
-
-      (catch Throwable t
-        (throw
-          (ex-info "[Carmine] Invalid connection options"
-            {:eid  :carmine.conn-opts/invalid
-             :opts {:id (get opts :id), :value opts, :type (type opts)}
-             :purpose
-             (if in-sentinel-opts?
-               :conn-to-sentinel-server
-               :conn-to-redis-server)}
-            t))))))
-
-(let [;; Opts are pure data => safe to cache
-      cached2 (enc/memoize-last (enc/cache {:size 128 :gc-every 1000} (partial -parse-conn-opts false)))
-      cached3
-      (enc/memoize-last
-        (enc/cache {:size 1024 :gc-every 8000}
-          (fn [dyn-conn-opts dyn-sentinel-opts conn-opts]
-            (have? [:or nil? map?] dyn-conn-opts dyn-sentinel-opts conn-opts)
-            (cached2
-              dyn-sentinel-opts
-              (or (utils/merge-opts dyn-conn-opts conn-opts) {})))))]
-
-  (defn parse-conn-opts [with-defaults? conn-opts]
-    (if with-defaults?
-      (cached3 core/*default-conn-opts* core/*default-sentinel-opts* conn-opts)
-      (cached2                          nil                          conn-opts))))
-
-(comment (enc/qb 1e6 (parse-conn-opts true ref-conn-opts))) ; 89.62
-
-;;;; sentinel-opts
-
-(defn- -parse-sentinel-opts
-  "Returns valid parsed sentinel-opts, or throws.
-  Uncached and expensive."
-  [opts]
-  (if (and (map? opts) (get opts :skip-parsing?)) ; Undocumented
-    opts
-    (try
-      (have? map? opts)
-      (have? [:ks<= #{:id :conn-opts :cbs :retry-delay-ms :resolve-timeout-ms
-                      :update-sentinels? :update-replicas? :prefer-read-replica?}] opts)
-
-      (let [{:keys [cbs]} opts]
-        (have? [:ks<= #{:on-resolve-success :on-resolve-error
-                        :on-changed-master :on-changed-replicas :on-changed-sentinels}] cbs)
-        (have? [:or nil? var?] :in                                                (vals cbs)))
-
-      (if-let [conn-opts (not-empty (get opts :conn-opts))]
-        (assoc opts :conn-opts (-parse-conn-opts :in-sentinel-opts nil conn-opts))
-        (do    opts))
-
-      (catch Throwable t
-        (throw
-          (ex-info "[Carmine] Invalid Sentinel options"
-            {:eid :carmine.sentinel-opts/invalid
-             :opts {:id (get opts :id), :value opts, :type (type opts)}}
-            t))))))
-
-(def parse-sentinel-opts (enc/memoize-last (enc/cache {:size 128 :gc-every 1000} -parse-sentinel-opts)))
-
-(comment (enc/qb 1e6 (parse-sentinel-opts ref-sentinel-opts))) ; 60.21
-
-;;;; Config mutators
-
-;; socket-opts
-(let [throw!
-      (fn [k v opts]
         (throw
           (ex-info "[Carmine] Unknown socket option specified"
             {:eid      :carmine.conns/unknown-socket-option
              :opt-key  (enc/typed-val k)
              :opt-val  (enc/typed-val v)
-             :all-opts opts})))]
+             :all-opts socket-opts}))))
+    socket-opts)
+  s)
 
-  (defn- socket-opts-dry-run! [socket-opts]
+(defn set-pool-opts!
+  ^GenericObjectPool [^GenericObjectPool p pool-opts]
+  (let [neg-duration (java.time.Duration/ofSeconds -1)]
     (enc/run-kv!
       (fn [k v]
         (case k
-          ;; Carmine options, noop and pass through
-          :ssl nil
-          (:connect-timeout-ms :ready-timeout-ms) (have? [:or nil? int?] v)
-
-          (:setKeepAlive    :keep-alive?)    nil
-          (:setOOBInline    :oob-inline?)    nil
-          (:setTcpNoDelay   :tcp-no-delay?)  nil
-          (:setReuseAddress :reuse-address?) nil
-
-          (:setReceiveBufferSize     :receive-buffer-size) (have?           int?  v)
-          (:setSendBufferSize        :send-buffer-size)    (have?           int?  v)
-          (:setSoTimeout :so-timeout :read-timeout-ms)     (have? [:or nil? int?] v)
-
-          ;; (:setSocketImplFactory :socket-impl-factory) nil
-          (:setTrafficClass         :traffic-class)       nil
-
-          (:setSoLinger :so-linger) nil
-
-          (:setPerformancePreferences :performance-preferences) (have? vector? v)
-          (throw! k v socket-opts)))
-       socket-opts)
-    nil)
-
-  (defn socket-opts-set!
-    ^Socket [^Socket s socket-opts]
-    (enc/run-kv!
-      (fn [k v]
-        (case k
-          ;; Carmine options, noop and pass through
-          (:ssl :connect-timeout-ms :ready-timeout-ms) nil
-
-          (:setKeepAlive    :keep-alive?)    (.setKeepAlive    s (boolean v))
-          (:setOOBInline    :oob-inline?)    (.setOOBInline    s (boolean v))
-          (:setTcpNoDelay   :tcp-no-delay?)  (.setTcpNoDelay   s (boolean v))
-          (:setReuseAddress :reuse-address?) (.setReuseAddress s (boolean v))
-
-          (:setReceiveBufferSize     :receive-buffer-size) (.setReceiveBufferSize s (int     v))
-          (:setSendBufferSize        :send-buffer-size)    (.setSendBufferSize    s (int     v))
-          (:setSoTimeout :so-timeout :read-timeout-ms)     (.setSoTimeout         s (int (or v 0)))
-
-          ;; (:setSocketImplFactory :socket-impl-factory) (.setSocketImplFactory s v)
-          (:setTrafficClass         :traffic-class)       (.setTrafficClass      s v)
-
-          (:setSoLinger :so-linger)
-          (let [[on? linger] (have vector? v)]
-            (.setSoLinger s (boolean on?) (int linger)))
-
-          (:setPerformancePreferences :performance-preferences)
-          (let [[conn-time latency bandwidth] (have vector? v)]
-            (.setPerformancePreferences s (int conn-time) (int latency) (int bandwidth)))
-
-          (throw! k v socket-opts)))
-      socket-opts)
-    s))
-
-;; kop-opts
-(let [duration? (fn [x] (instance? java.time.Duration x))
-      neg-duration (java.time.Duration/ofSeconds -1)
-      throw!
-      (fn [k v opts]
-        (throw
-          (ex-info "[Carmine] Unknown pool option specified"
-            {:eid      :carmine.conns/unknown-pool-option
-             :opt-key  (enc/typed-val k)
-             :opt-val  (enc/typed-val v)
-             :all-opts opts})))]
-
-  (defn kop-opts-dry-run! [kop-opts]
-    (enc/run-kv!
-      (fn [k v]
-        (case k
-          ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
-          (:setMinIdlePerKey  :min-idle-per-key)  (have [:or nil? int?] v)
-          (:setMaxIdlePerKey  :max-idle-per-key)  (have [:or nil? int?] v)
-          (:setMaxTotalPerKey :max-total-per-key) (have [:or nil? int?] v)
+          ;;; org.apache.commons.pool2.impl.GenericObjectPool
+          (:setMinIdle  :min-idle) (.setMinIdle p (int (or v -1)))
+          (:setMaxIdle  :max-idle) (.setMaxIdle p (int (or v -1)))
 
           ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
-          (:setBlockWhenExhausted :block-when-exhausted?) nil
-          (:setLifo               :lifo?)                 nil
+          (:setBlockWhenExhausted :block-when-exhausted?) (.setBlockWhenExhausted p (boolean v))
+          (:setLifo               :lifo?)                 (.setLifo               p (boolean v))
 
-          (:setMaxTotal      :max-total)   (have [:or nil? int?]      v)
-          (:setMaxWaitMillis :max-wait-ms) (have [:or nil? int?]      v)
-          (:setMaxWait       :max-wait)    (have [:or nil? duration?] v)
+          (:setMaxTotal      :max-total)   (.setMaxTotal      p (int  (or v -1)))
+          (:setMaxWaitMillis :max-wait-ms) (.setMaxWaitMillis p (long (or v -1)))
+          (:setMaxWait       :max-wait)    (.setMaxWait       p       (or v neg-duration))
 
-          (:setMinEvictableIdleTimeMillis     :min-evictable-idle-time-ms)      (have [:or nil? int?]      v)
-          (:setMinEvictableIdle               :min-evictable-idle)              (have [:or nil? duration?] v)
-          (:setSoftMinEvictableIdleTimeMillis :soft-min-evictable-idle-time-ms) (have [:or nil? int?]      v)
-          (:setSoftMinEvictableIdle           :soft-min-evictable-idle)         (have [:or nil? duration?] v)
-          (:setNumTestsPerEvictionRun         :num-tests-per-eviction-run)      (have [:or nil? int?]      v)
-          (:setTimeBetweenEvictionRunsMillis  :time-between-eviction-runs-ms)   (have [:or nil? int?]      v)
-          (:setTimeBetweenEvictionRuns        :time-between-eviction-runs)      (have [:or nil? duration?] v)
+          (:setMinEvictableIdleTimeMillis     :min-evictable-idle-time-ms)      (.setMinEvictableIdleTimeMillis     p (long (or v -1)))
+          (:setMinEvictableIdle               :min-evictable-idle)              (.setMinEvictableIdle               p       (or v neg-duration))
+          (:setSoftMinEvictableIdleTimeMillis :soft-min-evictable-idle-time-ms) (.setSoftMinEvictableIdleTimeMillis p (long (or v -1)))
+          (:setSoftMinEvictableIdle           :soft-min-evictable-idle)         (.setSoftMinEvictableIdle           p       (or v neg-duration))
+          (:setNumTestsPerEvictionRun         :num-tests-per-eviction-run)      (.setNumTestsPerEvictionRun         p (int  (or v 0)))
+          (:setTimeBetweenEvictionRunsMillis  :time-between-eviction-runs-ms)   (.setTimeBetweenEvictionRunsMillis  p (long (or v -1)))
+          (:setTimeBetweenEvictionRuns        :time-between-eviction-runs)      (.setTimeBetweenEvictionRuns        p       (or v neg-duration))
 
-          (:setEvictorShutdownTimeoutMillis :evictor-shutdown-timeout-ms) (have [:or nil? int?]      v)
-          (:setEvictorShutdownTimeout       :evictor-shutdown-timeout)    (have [:or nil? duration?] v)
+          (:setEvictorShutdownTimeoutMillis :evictor-shutdown-timeout-ms) (.setEvictorShutdownTimeoutMillis p (long v))
+          (:setEvictorShutdownTimeout       :evictor-shutdown-timeout)    (.setEvictorShutdownTimeout       p       v)
 
-          (:setTestOnCreate  :test-on-create?)  nil
-          (:setTestWhileIdle :test-while-idle?) nil
-          (:setTestOnBorrow  :test-on-borrow?)  nil
-          (:setTestOnReturn  :test-on-return?)  nil
-
-          (:setSwallowedExceptionListener :swallowed-exception-listener) nil
-          (throw! k v kop-opts)))
-      kop-opts)
-    nil)
-
-  (defn kop-opts-set!
-    ^GenericKeyedObjectPool [^GenericKeyedObjectPool kop kop-opts]
-    (enc/run-kv!
-      (fn [k v]
-        (case k
-          ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
-          (:setMinIdlePerKey  :min-idle-per-key)  (.setMinIdlePerKey  kop (int (or v -1)))
-          (:setMaxIdlePerKey  :max-idle-per-key)  (.setMaxIdlePerKey  kop (int (or v -1)))
-          (:setMaxTotalPerKey :max-total-per-key) (.setMaxTotalPerKey kop (int (or v -1)))
-
-          ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
-          (:setBlockWhenExhausted :block-when-exhausted?) (.setBlockWhenExhausted kop (boolean v))
-          (:setLifo               :lifo?)                 (.setLifo               kop (boolean v))
-
-          (:setMaxTotal      :max-total)   (.setMaxTotal      kop (int  (or v -1)))
-          (:setMaxWaitMillis :max-wait-ms) (.setMaxWaitMillis kop (long (or v -1)))
-          (:setMaxWait       :max-wait)    (.setMaxWait       kop       (or v neg-duration))
-
-          (:setMinEvictableIdleTimeMillis     :min-evictable-idle-time-ms)      (.setMinEvictableIdleTimeMillis     kop (long (or v -1)))
-          (:setMinEvictableIdle               :min-evictable-idle)              (.setMinEvictableIdle               kop       (or v neg-duration))
-          (:setSoftMinEvictableIdleTimeMillis :soft-min-evictable-idle-time-ms) (.setSoftMinEvictableIdleTimeMillis kop (long (or v -1)))
-          (:setSoftMinEvictableIdle           :soft-min-evictable-idle)         (.setSoftMinEvictableIdle           kop       (or v neg-duration))
-          (:setNumTestsPerEvictionRun         :num-tests-per-eviction-run)      (.setNumTestsPerEvictionRun         kop (int  (or v 0)))
-          (:setTimeBetweenEvictionRunsMillis  :time-between-eviction-runs-ms)   (.setTimeBetweenEvictionRunsMillis  kop (long (or v -1)))
-          (:setTimeBetweenEvictionRuns        :time-between-eviction-runs)      (.setTimeBetweenEvictionRuns        kop       (or v neg-duration))
-
-          (:setEvictorShutdownTimeoutMillis :evictor-shutdown-timeout-ms) (.setEvictorShutdownTimeoutMillis kop (long v))
-          (:setEvictorShutdownTimeout       :evictor-shutdown-timeout)    (.setEvictorShutdownTimeout       kop       v)
-
-          (:setTestOnCreate  :test-on-create?)  (.setTestOnCreate  kop (boolean v))
-          (:setTestWhileIdle :test-while-idle?) (.setTestWhileIdle kop (boolean v))
-          (:setTestOnBorrow  :test-on-borrow?)  (.setTestOnBorrow  kop (boolean v))
-          (:setTestOnReturn  :test-on-return?)  (.setTestOnReturn  kop (boolean v))
+          (:setTestOnCreate  :test-on-create?)  (.setTestOnCreate  p (boolean v))
+          (:setTestWhileIdle :test-while-idle?) (.setTestWhileIdle p (boolean v))
+          (:setTestOnBorrow  :test-on-borrow?)  (.setTestOnBorrow  p (boolean v))
+          (:setTestOnReturn  :test-on-return?)  (.setTestOnReturn  p (boolean v))
 
           (:setSwallowedExceptionListener :swallowed-exception-listener)
-          (.setSwallowedExceptionListener kop v)
-          (throw! k v kop-opts)))
-      kop-opts)
-    kop))
+          (.setSwallowedExceptionListener p v)
+          (throw
+            (ex-info "[Carmine] Unknown pool option specified"
+              {:eid      :carmine.conns/unknown-pool-option
+               :opt-key  (enc/typed-val k)
+               :opt-val  (enc/typed-val v)
+               :all-opts pool-opts}))))
+      pool-opts))
+  p)
+
+;;;; Misc
+
+(defn parse-sock-addr
+  "Returns valid [<host-string> <port-int>] socket address pair, or throws.
+  Retains metadata (server name, comments, etc.)."
+  ( [host port         ]            [(have string? host) (enc/as-int port)])
+  ( [host port metadata] (with-meta [(have string? host) (enc/as-int port)] metadata))
+  ([[host port :as addr]]
+   (have? string? host)
+   (assoc addr 1 (enc/as-int port))))
+
+(defn descr-sock-addr
+  "Returns [<host-string> <port-int> <?meta>] socket address."
+  [addr] (if-let [m (meta addr)] (conj addr m) addr))
+
+(defn get-sentinel-server [conn-opts]
+  (let [{:keys [server]}   conn-opts]
+    (when (and (map? server) (get server :sentinel-spec))
+      server)))
+
+;;;;
+
+(declare ^:private parse-string-server ^:private parse-sentinel-server)
+
+(defn parse-conn-opts
+  "Returns valid parsed conn-opts, or throws."
+  [in-sentinel-opts? conn-opts]
+  (try
+    (have? [:or nil? map?] conn-opts)
+    (let [default-conn-opts
+          (if in-sentinel-opts?
+            (dissoc core/default-conn-opts :server)
+            (do     core/default-conn-opts))
+
+          conn-opts (utils/merge-opts default-conn-opts conn-opts)
+          {:keys [server cbs socket-opts buffer-opts init]}  conn-opts
+          {:keys [auth]} init]
+
+      (if in-sentinel-opts?
+        ;; [host port] of Sentinel server will be auto added by resolver
+        (have? [:ks<= #{:id #_:server :cbs :socket-opts :buffer-opts :init}] conn-opts)
+        (have? [:ks<= #{:id   :server :cbs :socket-opts :buffer-opts :init}] conn-opts))
+
+      (have? [:ks<= #{:on-conn-close :on-conn-error}] cbs)
+      (have? [:or nil? fn?] :in                 (vals cbs))
+
+      (when socket-opts (set-socket-opts! (java.net.Socket.) socket-opts)) ; Dry run
+      (have? [:ks<= #{:init-size-in :init-size-out}] buffer-opts)
+
+      (if in-sentinel-opts?
+        (have? [:ks<= #{:commands :auth :resp3? #_:client-name #_:select-db}] init)
+        (have? [:ks<= #{:commands :auth :resp3?   :client-name   :select-db}] init))
+
+      (have? [:ks<= #{:username :password}] auth)
+
+      (if in-sentinel-opts?
+        (do               conn-opts) ; Doesn't have :server
+        (utils/merge-opts conn-opts
+          (try
+            (enc/cond
+              (vector?         server) {:server   (parse-sock-addr     server)}
+              (string?         server) (have map? (parse-string-server server))
+              (map?            server)
+              (case (set (keys server))
+                #{:host :port}
+                (let [{:keys [host port]} server]               {:server (parse-sock-addr host port (meta server))})
+                (#{:master-name :sentinel-spec               }
+                 #{:master-name :sentinel-spec :sentinel-opts}) {:server (parse-sentinel-server server)}
+
+                (do (throw (ex-info "Unexpected `:server` keys" {:keys (keys server)}))))
+              :else (throw (ex-info "Unexpected `:server` type" {:type (type server)})))
+
+            (catch Throwable t
+              (throw
+                (ex-info "[Carmine] Invalid Redis server specification in connection options"
+                  {:eid      :carmine.conn-opts/invalid-server
+                   :server   (enc/typed-val server)
+                   :expected '(or uri-string [host port] {:keys [host port]}
+                                {:keys [master-name sentinel-spec sentinel-opts]})}
+                  t)))))))
+
+    (catch Throwable t
+      (throw
+        (ex-info "[Carmine] Invalid connection options"
+          {:eid       :carmine.conn-opts/invalid
+           :conn-opts (assoc (enc/typed-val conn-opts) :id (get conn-opts :id))
+           :purpose
+           (if in-sentinel-opts?
+             :conn-to-sentinel-server
+             :conn-to-redis-server)}
+          t)))))
+
+;;;;
+
+(defn- parse-string-server
+  "\"rediss://user:pass@x.y.com:9475/3\" ->
+    {:keys [server init socket-opts]}, etc."
+  [s]
+  (let [uri    (java.net.URI. (have string? s))
+        server [(.getHost uri) (.getPort uri)]
+        init
+        (enc/assoc-some nil
+          :auth
+          (let [[username password] (.split (str (.getUserInfo uri)) ":")]
+            (enc/assoc-some nil
+              :username (enc/as-?nempty-str username)
+              :password (enc/as-?nempty-str password)))
+
+          :select-db
+          (when-let [[_ db-str] (re-matches #"/(\d+)$" (.getPath uri))]
+            (Integer. ^String db-str)))
+
+        socket-opts
+        (when-let [scheme (.getScheme uri)]
+          (when (contains? #{"rediss" "https"} (str/lower-case scheme))
+            {:ssl true}))]
+
+    (enc/assoc-some {:server server}
+      :init        init
+      :socket-opts socket-opts)))
+
+(comment
+  [(parse-string-server "redis://user:pass@x.y.com:9475/3")
+   (parse-string-server "redis://:pass@x.y.com.com:9475/3")
+   (parse-string-server     "redis://user:@x.y.com:9475/3")
+   (parse-string-server    "rediss://user:@x.y.com:9475/3")])
+
+(defn- parse-sentinel-server [server]
+  (have? map? server)
+  (let [{:keys [master-name sentinel-spec sentinel-opts]} server
+
+        master-name (enc/as-qname (have [:or string? enc/named?] master-name))
+        sentinel-opts
+        (let [sentinel-spec (have sentinel/sentinel-spec? sentinel-spec)
+              sentinel-opts
+              (utils/merge-opts core/default-sentinel-opts
+                (sentinel/sentinel-opts sentinel-spec)
+                sentinel-opts)]
+
+          (try
+            (have? map? sentinel-opts)
+            (have? [:ks<= #{:id :conn-opts :cbs
+                            :retry-delay-ms :resolve-timeout-ms :clear-timeout-ms
+                            :update-sentinels? :update-replicas? :prefer-read-replica?}]
+              sentinel-opts)
+
+            (let [{:keys [cbs]} sentinel-opts]
+              (have? [:ks<= #{:on-resolve-success :on-resolve-error
+                              :on-changed-master :on-changed-replicas :on-changed-sentinels}] cbs)
+              (have? [:or nil? fn?] :in                                                 (vals cbs)))
+
+            (if-let [conn-opts (not-empty (get sentinel-opts :conn-opts))]
+              (assoc sentinel-opts :conn-opts (parse-conn-opts true conn-opts))
+              (do    sentinel-opts))
+
+            (catch Throwable t
+              (throw
+                (ex-info "[Carmine] Invalid Sentinel options"
+                  {:eid :carmine.sentinel-opts/invalid
+                   :sentinel-opts
+                   (assoc (enc/typed-val sentinel-opts)
+                     :id (get sentinel-opts :id))}
+                  t)))))]
+
+    (assoc server
+      :master-name   master-name
+      :sentinel-opts sentinel-opts)))
