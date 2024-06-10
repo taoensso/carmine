@@ -4,14 +4,11 @@
 #+TAGS: nb(n) urgent(u)
 
 * Next
-** Manually pre-parse conn-opts, remove var indirection; re-bench
-** Port SSL API improvements from Telemere? Relevant?
-** Review config
+** Re-eval choice to switch away from KeyedObjectPool
+** Review arch needs for Cluster, esp. re: conns
 
 ** Add SSB stats to pooled manager (borrow time, etc.)?
 ** Add SSB stats to Sentinel?
-** Review arch needs for Cluster
-
 ** Common & core util to parse-?marked-ba -> [<kind> <payload>]
 ** Some way to implement a parser over >1 replies?
 E.g. fetch two sets, and parser to merge -> single reply

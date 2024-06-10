@@ -12,12 +12,15 @@
    )
 
   #_
-  (:import
-   [java.util.concurrent.atomic AtomicLong]))
+  (:import [java.util.concurrent.atomic AtomicLong]))
 
 (comment (remove-ns 'taoensso.carmine-v4.cluster))
 
 ;;;; 1st sketch
+
+;; Update: might now be best with some sort of
+;; dedicated cluster ConnManager that can delegate
+;; to shard pools, etc.
 
 ;; Without cluster:
 ;; - with-car [conn-opts]
@@ -97,7 +100,7 @@
 ;; - If never any non-nil partition: choose random shard-addr.
 
 ;; Conn pooling:
-;; - Pool to operate solely on [ip port] servers, injected by slot->addr in flush.
+;; - Pool to operate solely on [host port] servers, injected by slot->addr in flush.
 ;; - I.e. pool needs no invalidation or kop-key changes.
 
 ;;;; Misc
@@ -113,7 +116,7 @@
 
 ;; - Cluster "stable" when no ongoing reconfig (i.e. hash slots being moved)
 ;; - Each node has unique node-id
-;; - Nodes can change IP without changing node-id (problematic?)
+;; - Nodes can change host without changing node-id (problematic?)
 
 ;; - Cluster has internal concept of {<slot> <node-id>}
 ;; - Client should store state like
@@ -131,8 +134,8 @@
 
 ;; - Possible Cluster errors:
 ;;   - -MOVED => permanently moved
-;;     -MOVED 3999 127.0.0.1:6381 ; (3999 = key slot) => try ip:port
-;;     -MOVED 3999 :6380 ; => unknown endpoint, try <same-ip>:port
+;;     -MOVED 3999 127.0.0.1:6381 ; (3999 = key slot) => try host:port
+;;     -MOVED 3999 :6380 ; => unknown endpoint, try <same-host>:port
 ;;
 ;;     - On redirection error:
 ;;       - Either update cache for specific slot, or whole topology
