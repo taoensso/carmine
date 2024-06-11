@@ -619,11 +619,15 @@
 
   java.io.Closeable (close [this] (stop this))
   Object
-  (toString [this] ; "CarmineMessageQueueWorker[nthreads=1w+1h, running]"
-    (str "CarmineMessageQueueWorker[qname=" qname ", nthreads="
+  (toString [this]
+    ;;   "CarmineMessageQueueWorker[qname=foo nthreads=1w+1h running 0x7b9f6831]"
+    (str "CarmineMessageQueueWorker["
+      "qname=" qname " "
+      "nthreads="
       (get worker-opts :nthreads-worker)  "w+"
-      (get worker-opts :nthreads-handler) "h, "
-      (if @running?_ "running" "shut down") "]"))
+      (get worker-opts :nthreads-handler) "h "
+      (if @running?_ "running" "shut down") " "
+      (enc/ident-hex-str this) "]"))
 
   clojure.lang.IDeref
   (deref [this]
