@@ -253,7 +253,8 @@
 
   Ref. https://github.com/ptaoussanis/carmine/issues/83 for more info."
 
-  (enc/get-sys-bool* true :taoensso.carmine.issue-83-workaround))
+  (enc/get-env {:as :bool :default true}
+    :taoensso.carmine.issue-83-workaround))
 
 (defn thaw-if-possible-nippy-bytes
   "If given agrgument is a byte-array starting with apparent NPY header,

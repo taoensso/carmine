@@ -82,7 +82,7 @@
 ;;;; Admin
 
 (let [idx-qname-start (inc (count (car/key :carmine :mq))) ; "carmine:mq:"
-      idx-qname-end     (- (count ":messages"))]
+      suffix-len      (count ":messages")]
 
   (defn queue-names
     "Returns a non-empty set of existing queue names, or nil.
@@ -90,7 +90,7 @@
     ([conn-opts        ] (queue-names conn-opts "*"))
     ([conn-opts pattern]
      (when-let [qks (not-empty (car/scan-keys conn-opts (qkey pattern :messages)))]
-       (into #{} (map #(enc/get-substr-by-idx % idx-qname-start idx-qname-end)) qks)))))
+       (into #{} (map #(enc/substr % idx-qname-start (- (count %) suffix-len))) qks)))))
 
 (comment (queue-names {}))
 
@@ -619,11 +619,12 @@
 
   java.io.Closeable (close [this] (stop this))
   Object
-  (toString [this] ; "CarmineMessageQueueWorker[nthreads=1w+1h, running]"
-    (str "CarmineMessageQueueWorker[qname=" qname ", nthreads="
-      (get worker-opts :nthreads-worker)  "w+"
-      (get worker-opts :nthreads-handler) "h, "
-      (if @running?_ "running" "shut down") "]"))
+  (toString [this]
+    (enc/str-impl this "taoensso.carmine.CarmineMessageQueueWorker"
+      {:qname    qname
+       :running? @running?_
+       :nthreads-worker  (get worker-opts :nthreads-worker)
+       :nthreads-handler (get worker-opts :nthreads-handler)}))
 
   clojure.lang.IDeref
   (deref [this]
@@ -701,7 +702,7 @@
                     loop-error-backoff?_ (atom false)
                     loop-error!
                     (fn [throwable]
-                      (let [nce (nconsecutive-errors*)]
+                      (let [^long nce (nconsecutive-errors*)]
                         (timbre/error throwable "[Carmine/mq] Worker error, will backoff & retry."
                           {:qname qname, :thread-id thread-idx, :nconsecutive-errors (inc nce)}))
                       (reset! loop-error-backoff?_ true))]
@@ -771,10 +772,7 @@
 
       true)))
 
-(let [ns *ns*]
-  (defmethod print-method CarmineMessageQueueWorker
-    [x ^java.io.Writer w] (.write w (str "#" ns "." x))))
-
+(enc/def-print-impl [x CarmineMessageQueueWorker] (str "#" x))
 (defn ^:no-doc worker? [x] (instance? CarmineMessageQueueWorker x))
 
 (defn monitor-fn
