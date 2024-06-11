@@ -2,6 +2,7 @@
   (:require
    [clojure.test     :as test :refer [deftest testing is]]
    [taoensso.encore  :as enc]
+   [taoensso.truss   :as truss]
    [taoensso.carmine :as car  :refer [wcar]]
    [taoensso.carmine.locks    :refer
     [acquire-lock release-lock with-lock]]))
@@ -71,8 +72,7 @@
 
 (deftest with-lock-expiry-tests
   [(testing "Case 1"
-     (is (enc/throws? clojure.lang.ExceptionInfo
-           (with-lock {} 9 500 2000 (sleep 1000)))
+     (is (truss/throws? clojure.lang.ExceptionInfo (with-lock {} 9 500 2000 (sleep 1000)))
        "Since lock expired before being released, it should throw an exception."))
 
   (testing "Case 2"

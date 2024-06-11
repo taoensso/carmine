@@ -2,6 +2,7 @@
   (:require
    [clojure.test     :as test :refer [deftest testing is]]
    [taoensso.encore  :as enc]
+   [taoensso.encore  :as truss]
    [taoensso.carmine :as car  :refer [wcar]]
    [taoensso.carmine.message-queue :as mq]))
 

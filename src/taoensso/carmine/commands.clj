@@ -1,10 +1,14 @@
 (ns ^:no-doc taoensso.carmine.commands
   "Macros to define an up-to-date, fully documented function for every Redis
   command as specified in the official json command spec."
-  (:require [clojure.string  :as str]
-            [taoensso.encore :as enc]
-            [taoensso.carmine.protocol :as protocol])
-  (:import  [taoensso.carmine.protocol EnqueuedRequest Context]))
+  (:require
+   [clojure.string  :as str]
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
+   [taoensso.carmine.protocol :as protocol])
+
+  (:import
+   [taoensso.carmine.protocol EnqueuedRequest Context]))
 
 ;;;; Cluster keyslots
 
@@ -112,7 +116,7 @@
     (let [simple-params
           (reduce
             (fn [acc in]
-              (let [{:keys [optional multiple arguments name]} (enc/have map? in)]
+              (let [{:keys [optional multiple arguments name]} (truss/have map? in)]
                 (cond
                   optional  (reduced       acc)
                   arguments (reduced       acc)
@@ -168,7 +172,7 @@
                         ;; Can adjust later if needed.
                         cluster-key-idx (count cmd-args)]
 
-                    (enc/have? pos? cluster-key-idx)
+                    (truss/have? pos? cluster-key-idx)
                     (assoc! m cmd-name
                       {:fn-name         fn-name
                        :cluster-key-idx cluster-key-idx
@@ -206,8 +210,8 @@
     (let [redis-command-spec   (get-redis-command-spec   json-source)
           carmine-command-spec (get-carmine-command-spec redis-command-spec)]
 
-      (spit "resources/redis-commands.json"  (enc/have (:as-json redis-command-spec)))
-      (spit "resources/carmine-commands.edn" (enc/have (:as-edn  carmine-command-spec)))))
+      (spit "resources/redis-commands.json"  (truss/have (:as-json redis-command-spec)))
+      (spit "resources/carmine-commands.edn" (truss/have (:as-edn  carmine-command-spec)))))
 
   (update-commands! :local)
   (update-commands! :online))
@@ -224,7 +228,7 @@
      #_(into      request more-args)))
 
   ([cluster-key-idx request]
-   ;; (enc/have? vector? request)
+   ;; (truss/have? vector? request)
    (let [context protocol/*context*
          _ (when (nil? context) (throw protocol/no-context-ex))
          parser  protocol/*parser*

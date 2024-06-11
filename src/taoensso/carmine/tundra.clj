@@ -7,13 +7,16 @@
     * carmine:tundra:evictable - set, ks for which `ensure-ks` fail should throw"
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
-  (:require [taoensso.encore      :as enc]
-            [taoensso.nippy       :as nippy]
-            [taoensso.nippy.tools :as nippy-tools]
-            [taoensso.timbre      :as timbre]
-            [taoensso.carmine     :as car :refer (wcar)]
-            [taoensso.carmine.message-queue :as mq])
-  (:import  [java.net URLDecoder URLEncoder]))
+  (:require
+   [taoensso.encore      :as enc]
+   [taoensso.truss       :as truss]
+   [taoensso.nippy       :as nippy]
+   [taoensso.nippy.tools :as nippy-tools]
+   [taoensso.timbre      :as timbre]
+   [taoensso.carmine     :as car :refer [wcar]]
+   [taoensso.carmine.message-queue :as mq])
+
+  (:import [java.net URLDecoder URLEncoder]))
 
 ;;;; TODO v2/refactor
 ;; - Why is evictable set key not configurable?
@@ -86,7 +89,7 @@
 (def ^:private extend-exists
   "Returns 0/1 for each key that doesn't/exist, extending any preexisting TTLs."
   ;; Cluster: no between-key atomicity requirements, can pipeline per shard
-  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/tundra/extend-exists.lua"))]
+  (let [script (truss/have (enc/slurp-resource "taoensso/carmine/lua/tundra/extend-exists.lua"))]
     (fn [ttl-ms keys] (car/lua script keys [(or ttl-ms 0)]))))
 
 (comment (wcar {} (car/ping) (extend-exists nil ["k1" "invalid" "k3"])))

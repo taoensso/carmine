@@ -8,8 +8,7 @@
 
   Ref. <http://goo.gl/5UalQ> for implementation details."
   (:require
-   [taoensso.timbre  :as timbre]
-   [taoensso.carmine :as car :refer (wcar)]))
+   [taoensso.carmine :as car :refer [wcar]]))
 
 (def ^:private lkey (partial car/key :carmine :lock))
 
@@ -75,16 +74,16 @@
   or nil if the lock could not be acquired. If the lock is successfully acquired
   but expires before being released, throws an exception."
   [conn-opts lock-name timeout-ms wait-ms & body]
-  `(let [conn-opts# ~conn-opts]
-     (when-let [uuid# (acquire-lock conn-opts# ~lock-name ~timeout-ms ~wait-ms)]
+  `(let [conn-opts# ~conn-opts
+         lock-name# ~lock-name]
+     (when-let [uuid# (acquire-lock conn-opts# lock-name# ~timeout-ms ~wait-ms)]
        (try
          {:result (do ~@body)} ; Wrapped to distinguish nil body result
          (catch Throwable t# (throw t#))
          (finally
-          (when-not (release-lock conn-opts# ~lock-name uuid#)
-            (throw (ex-info (str "Lock expired before it was released: "
-                              ~lock-name)
-                     {:lock-name ~lock-name}))))))))
+          (when-not (release-lock conn-opts# lock-name# uuid#)
+            (throw (ex-info (str "Lock expired before it was released: " lock-name#)
+              {:lock-name lock-name#}))))))))
 
 (comment
   (timbre/set-level! :debug)

@@ -2,8 +2,9 @@
   (:require
    [clojure.string   :as str]
    [clojure.test     :as test :refer [deftest testing is]]
-   [taoensso.encore  :as enc  :refer [throws?]]
-   [taoensso.carmine :as car  :refer [wcar]]
+   [taoensso.encore  :as enc]
+   [taoensso.truss   :as truss :refer [throws?]]
+   [taoensso.carmine :as car   :refer [wcar]]
    [taoensso.carmine.commands   :as commands]
    [taoensso.carmine.protocol   :as protocol]
    [taoensso.carmine.benchmarks :as benchmarks]))

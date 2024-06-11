@@ -1,11 +1,15 @@
 (ns ^:no-doc taoensso.carmine.protocol
   "Core facilities for communicating with Redis servers using the Redis
   request/response protocol, Ref. http://redis.io/topics/protocol."
-  (:require [clojure.string       :as str]
-            [taoensso.encore      :as enc]
-            [taoensso.nippy.tools :as nippy-tools])
-  (:import  [java.io DataInputStream BufferedOutputStream]
-            [clojure.lang Keyword]))
+  (:require
+   [clojure.string       :as str]
+   [taoensso.encore      :as enc]
+   [taoensso.truss       :as truss]
+   [taoensso.nippy.tools :as nippy-tools])
+
+  (:import
+   [java.io DataInputStream BufferedOutputStream]
+   [clojure.lang Keyword]))
 
 ;;;; Dynamic context
 
@@ -18,8 +22,8 @@
 
 (defmacro with-context "Implementation detail"
   [conn & body]
-  `(binding [*context* (->Context ~conn (atom []))
-             *parser*  nil]
+  `(enc/binding* [*context* (->Context ~conn (atom []))
+                  *parser*  nil]
      ~@body))
 
 ;;;; Bytes
@@ -238,7 +242,7 @@
   "Wraps body so that replies to any wrapped Redis commands will be parsed with
   `(f reply)`. Replaces any current parser; removes parser when `f` is nil.
   See also `parser-comp`."
-  [f & body] `(binding [*parser* ~f] ~@body))
+  [f & body] `(enc/binding* [*parser* ~f] ~@body))
 
 (defn- comp-maybe [f g] (cond (and f g) (comp f g) f f g g :else nil))
 (comment ((comp-maybe nil identity) :x))
@@ -354,8 +358,8 @@
             stash-size (count stashed-reqs)
 
             ?throwable ; Binding to support nested `with-replies` in body-fn:
-            (binding [*nested-stashed-reqs*     stashed-reqs
-                      *nested-stash-consumed?_* nested-stash-consumed?_]
+            (enc/binding* [*nested-stashed-reqs*     stashed-reqs
+                           *nested-stash-consumed?_* nested-stash-consumed?_]
               (try (body-fn) nil (catch Throwable t t)))
 
             new-reqs    (pull-requests req-queue_)

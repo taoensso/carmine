@@ -7,6 +7,7 @@
   (:require
    [clojure.string       :as str]
    [taoensso.encore      :as enc]
+   [taoensso.truss       :as truss]
    [taoensso.timbre      :as timbre]
    [taoensso.nippy       :as nippy]
    [taoensso.nippy.tools :as nippy-tools]
@@ -253,7 +254,8 @@
 
   Ref. https://github.com/ptaoussanis/carmine/issues/83 for more info."
 
-  (enc/get-sys-bool* true :taoensso.carmine.issue-83-workaround))
+  (enc/get-env {:as :bool :default true}
+    :taoensso.carmine.issue-83-workaround))
 
 (defn thaw-if-possible-nippy-bytes
   "If given agrgument is a byte-array starting with apparent NPY header,
@@ -535,7 +537,7 @@
 
   and returns {:kind _ :pattern _ :channel _ :payload _ :raw _}."
   [listener-msg]
-  (let [v (enc/have vector? listener-msg)]
+  (let [v (truss/have vector? listener-msg)]
     (case (count v)
       2 (let [[x1 x2      ] v] {:kind x1                            :payload x2  :raw v})
       3 (let [[x1 x2 x3   ] v] {:kind x1               :channel x2  :payload x3  :raw v})
@@ -854,10 +856,11 @@
 
   See also `lua` as alternative way to get transactional behaviour."
   [conn-opts max-cas-attempts & body]
-  `(atomic* ~conn-opts ~max-cas-attempts (do ~@body)
-     (throw (ex-info (format "`atomic` failed after %s attempt(s)"
-                       ~max-cas-attempts)
-              {:nattempts ~max-cas-attempts}))))
+  `(let [n# ~max-cas-attempts]
+     (atomic* ~conn-opts n# (do ~@body)
+       (throw
+         (ex-info (str "`atomic` failed after " n# " attempts")
+           {:nattempts n#})))))
 
 (comment
   ;; Error before exec (=> syntax, etc.)
@@ -922,7 +925,7 @@
 
 (comment (enc/qb 1000 (prep-cas-old-val "hello there")))
 
-(let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-set.lua"))]
+(let [script (truss/have (enc/slurp-resource "taoensso/carmine/lua/cas-set.lua"))]
   (defn compare-and-set "Experimental."
     ([k old-val new-val]
      (let [[?sha raw-bs] (prep-cas-old-val old-val)]
@@ -936,7 +939,7 @@
           :delete   (if delete? 1 0)
           :new-val  (if delete? "" new-val)})))))
 
-(let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-hset.lua"))]
+(let [script (truss/have (enc/slurp-resource "taoensso/carmine/lua/cas-hset.lua"))]
   (defn compare-and-hset "Experimental."
     ([k field old-val new-val]
      (let [[?sha raw-bs] (prep-cas-old-val old-val)]
@@ -962,7 +965,7 @@
 
 (def swap "Experimental."
   (let [cas-get
-        (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-get.lua"))]
+        (let [script (truss/have (enc/slurp-resource "taoensso/carmine/lua/cas-get.lua"))]
           (fn [k] (lua script {:k k} {})))]
 
     (fn [k f & [nmax-attempts abort-val]]
@@ -997,7 +1000,7 @@
 
 (def hswap "Experimental."
   (let [cas-hget
-        (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/cas-hget.lua"))]
+        (let [script (truss/have (enc/slurp-resource "taoensso/carmine/lua/cas-hget.lua"))]
           (fn [k field] (lua script {:k k} {:field field})))]
 
     (fn [k field f & [nmax-attempts abort-val]]
@@ -1038,7 +1041,7 @@
 ;;;;
 
 (def hmsetnx "Experimental."
-  (let [script (enc/have (enc/slurp-resource "taoensso/carmine/lua/hmsetnx.lua"))]
+  (let [script (truss/have (enc/slurp-resource "taoensso/carmine/lua/hmsetnx.lua"))]
     (fn [key field value & more]
       (-eval* script 1 (into [key field value] more)))))
 
