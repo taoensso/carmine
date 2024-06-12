@@ -13,7 +13,7 @@
    [taoensso.carmine_v4.classes ReplyError]))
 
 (enc/declare-remote
-  ^:dynamic taoensso.carmine-v4/*auto-deserialize?*
+  ^:dynamic taoensso.carmine-v4/*auto-thaw?*
   ^:dynamic taoensso.carmine-v4/*keywordize-maps?*
   ^:dynamic taoensso.carmine-v4/*issue-83-workaround?*)
 
@@ -76,7 +76,7 @@
 (defn read-blob-?marker
   "Returns e/o {nil :nil :bin :npy}, and possibly advances position
   in stream to skip (consume) any blob markers (`ba-npy`, etc.).
-  Won't be called if `*auto-deserialize?*` is false."
+  Won't be called if `*auto-thaw?*` is false."
   [^DataInputStream in ^long n]
   (when (>= n 2) ; >= 2 for marker+?payload
     (.mark in 2)
@@ -211,7 +211,7 @@
 
 ;;;; ReadOpts, etc.
 
-(deftype ReadOpts [read-mode parser auto-deserialize? keywordize-maps?])
+(deftype ReadOpts [read-mode parser auto-thaw? keywordize-maps?])
 
 (do
   (enc/defonce read-opts-natural "For \"natural\" reads" (ReadOpts. nil   nil nil  nil))
@@ -223,10 +223,10 @@
   We retain (nest) all options but parser."
   ^ReadOpts [^ReadOpts read-opts]
   (ReadOpts.
-    (.-read-mode         read-opts)
-    #_(.-parser          read-opts) nil
-    (.-auto-deserialize? read-opts)
-    (.-keywordize-maps?  read-opts)))
+    (.-read-mode        read-opts)
+    #_(.-parser         read-opts) nil
+    (.-auto-thaw?       read-opts)
+    (.-keywordize-maps? read-opts)))
 
 (declare ^:dynamic *parser* get-parser-opts)
 
@@ -251,19 +251,19 @@
                (ReadOpts.
                  (get p-opts :read-mode read-mode)
                  parser
-                 (if (contains? p-opts :auto-deserialize?) (get p-opts :auto-deserialize?) core/*auto-deserialize?*)
-                 (if (contains? p-opts :keywordize-maps?)  (get p-opts :keywordize-maps?)  core/*keywordize-maps?*))
+                 (if (contains? p-opts :auto-thaw?)        (get p-opts :auto-thaw?)       core/*auto-thaw?*)
+                 (if (contains? p-opts :keywordize-maps?)  (get p-opts :keywordize-maps?) core/*keywordize-maps?*))
 
                ;; Common case (no parser-opts present)
                (ReadOpts. read-mode parser
-                 core/*auto-deserialize?*
+                 core/*auto-thaw?*
                  core/*keywordize-maps?*)))))))
 
     (^ReadOpts [opts] ; For REPL/tests
      (if (empty? opts)
        read-opts-natural
-       (let [{:keys [read-mode parser auto-deserialize? keywordize-maps?]} opts]
-         (ReadOpts.  read-mode parser auto-deserialize? keywordize-maps?))))))
+       (let [{:keys [read-mode parser auto-thaw? keywordize-maps?]} opts]
+         (ReadOpts.  read-mode parser auto-thaw? keywordize-maps?))))))
 
 (comment (enc/qb 1e6 (get-read-opts))) ; 43.72
 
@@ -273,10 +273,10 @@
   "For error messages, etc."
   [read-opts]
   (when-let [^ReadOpts read-opts read-opts]
-    {:read-mode             (.-read-mode         read-opts)
-     :parser            (-> (.-parser            read-opts) describe-parser)
-     :auto-deserialize?     (.-auto-deserialize? read-opts)
-     :keywordize-maps?      (.-keywordize-maps?  read-opts)}))
+    {:read-mode        (.-read-mode        read-opts)
+     :parser       (-> (.-parser           read-opts) describe-parser)
+     :auto-thaw?       (.-auto-thaw?       read-opts)
+     :keywordize-maps? (.-keywordize-maps? read-opts)}))
 
 ;;;; Reply parsing
 ;; We choose to keep parsing pretty simple:
@@ -289,7 +289,7 @@
 ;; rfc: auto-generated (fn rf-constructor []) => <possibly-stateful-rf*>
 ;; parser-opts:
 ;;   read-mode            ; nx    ; Currently undocumented
-;;   auto-deserialize?    ; nx    ; ''
+;;   auto-thaw?           ; nx    ; ''
 ;;   keywordize-maps?     ; nx    ; ''
 ;;   kv-rf?               ; false ; ''
 ;;   catch-errors?        ; true  ; ''
