@@ -434,8 +434,8 @@
         "Simple longs produce same output as longs or strings")])
 
    (testing "Blob markers"
-     [(testing "Auto serialization enabled"
-        (binding [core/*auto-serialize?* true]
+     [(testing "Auto freeze enabled"
+        (binding [core/*auto-freeze?* true]
           [(is (= (com/with-out->str (#'write/write-requests out [[nil]])) "*1\r\n$2\r\n\u0000_\r\n")            "nil arg => ba-nil marker")
            (is (= (com/with-out->str (#'write/write-requests out [[{}]]))  "*1\r\n$7\r\n\u0000>NPY\u0000\r\n") "clj arg => ba-npy marker")
 
@@ -443,8 +443,8 @@
              [(is (= (com/with-out->str (#'write/write-requests out [[                ba]]))  "*1\r\n$5\r\n\u0000<abc\r\n") "ba-bin marker")
               (is (= (com/with-out->str (#'write/write-requests out [[(write/to-bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Unmarked bin")])]))
 
-      (testing "Auto serialization disabled"
-        (binding [core/*auto-serialize?* false]
+      (testing "Auto freeze disabled"
+        (binding [core/*auto-freeze?* false]
           (let [pattern {:eid :carmine.write/non-native-arg-type}]
            [(is (throws? :common pattern (com/with-out->str (#'write/write-requests out [[nil]]))) "nil arg => throw")
             (is (throws? :common pattern (com/with-out->str (#'write/write-requests out [[{}]])))  "clj arg => throw")
