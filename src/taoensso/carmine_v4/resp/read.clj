@@ -373,8 +373,8 @@
                (int \$) ; Blob (nil/string/bytes/thawed) ✓
                (read-blob
                  ;; User blob => obey read-opts
-                 (.-read-mode         read-opts)
-                 (.-auto-deserialize? read-opts)
+                 (.-read-mode  read-opts)
+                 (.-auto-thaw? read-opts)
                  in)
 
                (int \*) ; Aggregate array ✓

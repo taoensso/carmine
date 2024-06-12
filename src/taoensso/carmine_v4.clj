@@ -155,7 +155,7 @@
 
 ;;;;
 
-(def ^:dynamic *auto-serialize?*
+(def ^:dynamic *auto-freeze?*
   "TODO Docstring incl. env config.
   Should Carmine automatically serialize arguments sent to Redis
   that are non-native to Redis?
@@ -165,14 +165,14 @@
   Default is true. If false, an exception will be thrown when trying
   to send such arguments.
 
-  See also `*auto-deserialize?`*."
+  See also `*auto-freeze?`*."
   (enc/get-env {:as :bool, :default true}
-    :taoensso.carmine.auto-serialize))
+    :taoensso.carmine.auto-freeze))
 
-(def ^:dynamic *auto-deserialize?*
+(def ^:dynamic *auto-thaw?*
   "TODO Docstring incl. env config.
   Should Carmine automatically deserialize Redis replies that
-  contain data previously serialized by `*auto-serialize?*`?
+  contain data previously serialized by `*auto-thaw?*`?
 
   Affects non-(string, keyword, simple long/double) types.
 
@@ -180,9 +180,9 @@
   malformed strings.
   TODO: Mention utils, bindings.
 
-  See also `*auto-serialize?`*."
+  See also `*auto-thaw?`*."
   (enc/get-env {:as :bool, :default true}
-    :taoensso.carmine.auto-deserialize))
+    :taoensso.carmine.auto-thaw))
 
 (def ^:dynamic *keywordize-maps?*
   "TODO Docstring incl. env config."
@@ -201,7 +201,7 @@
   This should be kept true (the default) if there's a chance you might
   read any data written by Carmine < v2.6.1 (2014-05-01).
 
-  Only relevant if `*auto-deserialize?` is true."
+  Only relevant if `*auto-thaw?` is true."
   (enc/get-env {:as :bool, :default true}
     :taoensso.carmine.issue-83-workaround))
 

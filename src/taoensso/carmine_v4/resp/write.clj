@@ -11,7 +11,7 @@
    [java.io BufferedOutputStream]))
 
 (enc/declare-remote
-  ^:dynamic taoensso.carmine-v4/*auto-serialize?*
+  ^:dynamic taoensso.carmine-v4/*auto-freeze?*
   ^:dynamic taoensso.carmine-v4/*freeze-opts*)
 
 (alias 'core 'taoensso.carmine-v4)
@@ -277,7 +277,7 @@
       non-native-type!
       (fn [arg]
         (throw
-          (ex-info "[Carmine] Trying to send argument of non-native type to Redis while `*auto-serialize?` is false"
+          (ex-info "[Carmine] Trying to send argument of non-native type to Redis while `*auto-freeze?` is false"
             {:eid :carmine.write/non-native-arg-type
              :arg (enc/typed-val arg)})))]
 
@@ -298,26 +298,26 @@
     ToFrozen
     (write-bulk-arg [x out]
       (let [ba (or (.-?frozen-ba x) (nippy/freeze x (.-freeze-opts x)))]
-        (if core/*auto-serialize?*
+        (if core/*auto-freeze?*
           (write-bulk-ba out ba-npy ba)
           (write-bulk-ba out        ba))))
 
     Object
     (write-bulk-arg [x out]
-      (if core/*auto-serialize?*
+      (if core/*auto-freeze?*
         (write-bulk-ba out ba-npy (nippy/freeze x))
         (non-native-type!                       x)))
 
     nil
     (write-bulk-arg [x ^BufferedOutputStream out]
-      (if core/*auto-serialize?*
+      (if core/*auto-freeze?*
         (.write out bulk-nil 0 bulk-nil-len)
         (non-native-type! x))))
 
   (extend-type (Class/forName "[B") ; Extra `extend` needed due to CLJ-1381
     IRedisArg
     (write-bulk-arg [ba out]
-      (if core/*auto-serialize?*
+      (if core/*auto-freeze?*
         (write-bulk-ba out ba-bin ba) ; Write   marked bytes
         (write-bulk-ba out        ba) ; Write unmarked bytes
         ))))
