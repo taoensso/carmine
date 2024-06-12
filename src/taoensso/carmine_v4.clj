@@ -57,10 +57,10 @@
   write/to-frozen
 
   ;;; RESP3
-  resp/redis-call
-  resp/redis-call*
-  resp/redis-calls
-  resp/redis-calls*
+  resp/rcall
+  resp/rcall*
+  resp/rcalls
+  resp/rcalls*
   resp/local-echo
   resp/local-echos
   resp/local-echos*
@@ -269,9 +269,9 @@
         (doseq [mgr [mgr1 mgr2 mgr3]]
           (conns/mgr-close! mgr 5000 nil)))))
 
-  [(wcar nil (resp/redis-call "PING"))
-   (wcar nil (resp/redis-call "set" "k1" 3))
-   (wcar nil (resp/redis-call "get" "k1"))
+  [(wcar nil (resp/rcall "PING"))
+   (wcar nil (resp/rcall "set" "k1" 3))
+   (wcar nil (resp/rcall "get" "k1"))
 
    (wcar nil                 (resp/ping))
    (wcar nil {:as-vec? true} (resp/ping))
