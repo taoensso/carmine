@@ -10,7 +10,9 @@
 
   (:import
    [java.net Socket]
-   [org.apache.commons.pool2.impl GenericObjectPool]))
+   [org.apache.commons.pool2.impl
+    BaseGenericObjectPool
+    GenericObjectPool GenericKeyedObjectPool]))
 
 (comment (remove-ns 'taoensso.carmine-v4.opts))
 
@@ -66,14 +68,19 @@
   s)
 
 (defn set-pool-opts!
-  ^GenericObjectPool [^GenericObjectPool p pool-opts]
+  [^BaseGenericObjectPool p pool-opts]
   (let [neg-duration (java.time.Duration/ofSeconds -1)]
     (enc/run-kv!
       (fn [k v]
         (case k
           ;;; org.apache.commons.pool2.impl.GenericObjectPool
-          (:setMinIdle  :min-idle) (.setMinIdle p (int (or v -1)))
-          (:setMaxIdle  :max-idle) (.setMaxIdle p (int (or v -1)))
+          (:setMinIdle  :min-idle) (.setMinIdle ^GenericObjectPool p (int (or v -1)))
+          (:setMaxIdle  :max-idle) (.setMaxIdle ^GenericObjectPool p (int (or v -1)))
+
+          ;;; org.apache.commons.pool2.impl.GenericKeyedObjectPool
+          (:setMinIdlePerKey  :min-idle-per-key)  (.setMinIdlePerKey  ^GenericKeyedObjectPool p (int (or v -1)))
+          (:setMaxIdlePerKey  :max-idle-per-key)  (.setMaxIdlePerKey  ^GenericKeyedObjectPool p (int (or v -1)))
+          (:setMaxTotalPerKey :max-total-per-key) (.setMaxTotalPerKey ^GenericKeyedObjectPool p (int (or v -1)))
 
           ;;; org.apache.commons.pool2.impl.BaseGenericObjectPool
           (:setBlockWhenExhausted :block-when-exhausted?) (.setBlockWhenExhausted p (boolean v))
