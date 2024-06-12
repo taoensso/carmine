@@ -72,10 +72,10 @@
 (let [get-read-opts get-read-opts
       cluster-slot cluster/cluster-slot]
 
-  (defn ^:public redis-call*
+  (defn ^:public rcall*
     "Sends 1 arbitrary command to Redis server.
     Takes a vector of args for the command call:
-      (wcar {} (redis-call* [\"set\" \"my-key\" \"my-val\"])) => \"OK\"
+      (wcar {} (rcall* [\"set\" \"my-key\" \"my-val\"])) => \"OK\"
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
@@ -87,12 +87,12 @@
         nil)
       (throw-no-ctx! call-args)))
 
-  (defn ^:public redis-calls*
+  (defn ^:public rcalls*
     "Send >=0 arbitrary commands to Redis server.
     Takes a vector of calls, with each call a vector of args:
       (wcar {}
-        (redis-calls* [[\"set\" \"my-key\" \"my-val\"]
-                       [\"get\" \"my-key\"]])) => [\"OK\" \"my-val\"]
+        (rcalls* [[\"set\" \"my-key\" \"my-val\"]
+                  [\"get\" \"my-key\"]])) => [\"OK\" \"my-val\"]
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
@@ -109,27 +109,27 @@
         nil)
       (throw-no-ctx! calls))))
 
-(let [redis-call* redis-call*]
-  (defn ^:public redis-call
+(let [rcall* rcall*]
+  (defn ^:public rcall
     "Sends 1 arbitrary command to Redis server.
     Takes varargs for the command call:
-      (wcar {} (redis-call \"set\" \"my-key\" \"my-val\")) => \"OK\"
+      (wcar {} (rcall \"set\" \"my-key\" \"my-val\")) => \"OK\"
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
-    [& call-args] (redis-call* call-args)))
+    [& call-args] (rcall* call-args)))
 
-(let [redis-calls* redis-calls*]
-  (defn ^:public redis-calls
+(let [rcalls* rcalls*]
+  (defn ^:public rcalls
     "Send >=0 arbitrary commands to Redis server.
     Takes vararg calls, with each call a vector of args:
       (wcar {}
-        (redis-call [\"set\" \"my-key\" \"my-val\"]
-                    [\"get\" \"my-key\"])) => [\"OK\" \"my-val\"]
+        (rcall [\"set\" \"my-key\" \"my-val\"]
+               [\"get\" \"my-key\"])) => [\"OK\" \"my-val\"]
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
-    [& calls] (redis-calls* calls)))
+    [& calls] (rcalls* calls)))
 
 (let [get-read-opts get-read-opts]
   (defn ^:public local-echo
@@ -163,10 +163,10 @@
     [& xs] (local-echos* xs)))
 
 (do ; Basic commands for tests
-  (defn ping []    (redis-call "PING"))
-  (defn echo [x]   (redis-call "ECHO" x))
-  (defn rset [k v] (redis-call "SET" k v))
-  (defn rget [k]   (redis-call "GET" k)))
+  (defn ping []    (rcall "PING"))
+  (defn echo [x]   (rcall "ECHO" x))
+  (defn rset [k v] (rcall "SET" k v))
+  (defn rget [k]   (rcall "GET" k)))
 
 ;;;; Non-cluster API
 

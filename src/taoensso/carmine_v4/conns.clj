@@ -185,7 +185,7 @@
               replies
               (try
                 (resp/with-replies in out :natural-reads :as-vec
-                  (fn [] (run! resp/redis-call* reqs)))
+                  (fn [] (run! resp/rcall* reqs)))
 
                 (catch Throwable t (vreset! conn-error_ t) nil))
 

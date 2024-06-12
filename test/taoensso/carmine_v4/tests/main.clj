@@ -34,8 +34,8 @@
 
 (let [delete-test-keys
       (fn []
-        (when-let [ks (seq (wcar mgr_ (resp/redis-call "keys" (tk "*"))))]
-          (wcar mgr_ (doseq [k ks] (resp/redis-call "del" k)))))]
+        (when-let [ks (seq (wcar mgr_ (resp/rcall "keys" (tk "*"))))]
+          (wcar mgr_ (doseq [k ks] (resp/rcall "del" k)))))]
 
   (test/use-fixtures :once
     (enc/test-fixtures
@@ -153,8 +153,7 @@
             [(v+ (#'conns/conn?       conn))
              (v+ (#'conns/conn-ready? conn))
              (v+ (resp/ping))
-             (v+ (car/with-replies
-                   (resp/redis-call "echo" "x")))])))
+             (v+ (car/with-replies (resp/rcall "echo" "x")))])))
 
       [@v mgr])))
 
@@ -165,7 +164,7 @@
                (#'conns/conn-ready? conn)
                (resp/basic-ping!  in out)
                (resp/with-replies in out false false
-                 (fn [] (resp/redis-call "echo" "x")))]))
+                 (fn [] (resp/rcall "echo" "x")))]))
          [true true "PONG" "x"])
      "Unmanaged conn")
 
@@ -186,7 +185,7 @@
         f
         (future
           (wcar mgr
-            (resp/redis-calls
+            (resp/rcalls
               ["del"   k1]
               ["lpush" k1 "x"]
               ["lpop"  k1]

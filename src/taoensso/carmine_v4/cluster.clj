@@ -57,7 +57,7 @@
 ;; - Slots can be determined automatically for auto-generated commands:
 ;;   - First arg after command name seems to usu. indicate "key".
 ;;   - If there's any additional keys, their slots would anyway need to agree
-;; - `redis-call` and co. expect `cluster-key` to be called manually on the appropriate arg
+;; - `rcall` and co. expect `cluster-key` to be called manually on the appropriate arg
 
 ;; [ ]
 ;; Stateful ClusterSpec:
