@@ -343,16 +343,16 @@ sentinel down-after-milliseconds %3$s 60000"
                                       (resp/with-replies in out :natural-reads :as-vec
                                         (fn []
                                           ;; Always ask about master (may be used as fallback when no replicas)
-                                          (resp/redis-call "SENTINEL" "get-master-addr-by-name" master-name)
+                                          (resp/rcall "SENTINEL" "get-master-addr-by-name" master-name)
 
                                           (if (or prefer-read-replica? update-replicas?)
                                             ;; Ask about replica nodes
-                                            (resp/redis-call "SENTINEL" "replicas" master-name)
+                                            (resp/rcall "SENTINEL" "replicas" master-name)
                                             (resp/local-echo nil))
 
                                           (when update-sentinels?
                                             ;; Ask about sentinel nodes
-                                            (resp/redis-call "SENTINEL" "sentinels" master-name))))))
+                                            (resp/rcall "SENTINEL" "sentinels" master-name))))))
 
                                   (catch Throwable _
                                     [::unreachable nil nil])))]
@@ -386,7 +386,7 @@ sentinel down-after-milliseconds %3$s 60000"
                                          (conns/with-new-conn conn-opts host port master-name
                                            (fn [_ in out]
                                              (resp/with-replies in out :natural-reads false
-                                               (fn [] (resp/redis-call "ROLE")))))
+                                               (fn [] (resp/rcall "ROLE")))))
                                          (catch Throwable _ nil))]
 
                                    (when (vector? reply) (get reply 0)))]
@@ -492,7 +492,7 @@ sentinel down-after-milliseconds %3$s 60000"
     (fn [_ in out]
       (resp/with-replies in out false false
         (fn []
-          (resp/redis-call "ROLE")
-          #_(resp/redis-call "SENTINEL" "get-master-addr-by-name" "my-master")
-          #_(resp/redis-call "SENTINEL" "replicas"                "my-master")
-          #_(core/redis-call "SENTINEL" "sentinels"               "my-master"))))))
+          (resp/rcall "ROLE")
+          #_(resp/rcall "SENTINEL" "get-master-addr-by-name" "my-master")
+          #_(resp/rcall "SENTINEL" "replicas"                "my-master")
+          #_(core/rcall "SENTINEL" "sentinels"               "my-master"))))))
