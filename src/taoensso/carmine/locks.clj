@@ -15,7 +15,6 @@
 
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
-  ;; TODO Waiting on http://goo.gl/YemR7 for simpler (non-Lua) solution
   [conn-opts lock-name timeout-ms wait-ms]
   (let [max-udt (+ wait-ms (System/currentTimeMillis))
         uuid    (str (java.util.UUID/randomUUID))]
