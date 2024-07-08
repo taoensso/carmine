@@ -23,6 +23,7 @@
      (loop []
        (when (> max-udt (System/currentTimeMillis))
          (if (-> (car/set (lkey lock-name) uuid "nx" "px" timeout-ms)
+                 (car/with-replies)
                  (= "OK"))
            (car/return uuid)
            (do (Thread/sleep 1) (recur))))))))
