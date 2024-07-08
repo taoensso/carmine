@@ -14,24 +14,15 @@
 
 (defn acquire-lock
   "Attempts to acquire a distributed lock, returning an owner UUID iff successful."
-  ;; TODO Waiting on http://goo.gl/YemR7 for simpler (non-Lua) solution
   [conn-opts lock-name timeout-ms wait-ms]
   (let [max-udt (+ wait-ms (System/currentTimeMillis))
         uuid    (str (java.util.UUID/randomUUID))]
     (wcar conn-opts ; Hold one connection for all attempts
      (loop []
        (when (> max-udt (System/currentTimeMillis))
-         (if (-> (car/lua
-                  "if redis.call('setnx', _:lkey, _:uuid) == 1 then
-                    redis.call('pexpire', _:lkey, _:timeout-ms);
-                    return 1;
-                  else
-                    return 0;
-                  end"
-                  {:lkey       (lkey lock-name)}
-                  {:uuid       uuid
-                   :timeout-ms timeout-ms})
-                 car/with-replies car/as-bool)
+         (if (-> (car/set (lkey lock-name) uuid "nx" "px" timeout-ms)
+                 (car/with-replies)
+                 (= "OK"))
            (car/return uuid)
            (do (Thread/sleep 1) (recur))))))))
 
