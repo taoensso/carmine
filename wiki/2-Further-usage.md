@@ -46,7 +46,7 @@ Carmine has a flexible **listener API** to support persistent-connection feature
      "channel*" (fn f2 [msg] (println "f2:" msg))
      "ch*"      (fn f3 [msg] (println "f3:" msg))}
    (car/subscribe  "channel1")
-   (car/psubscribe "channel*" "ch*)))
+   (car/psubscribe "channel*" "ch*")))
 ```
 
 Exactly 1 handler fn will trigger per published message *exactly* matching each active subscription:
