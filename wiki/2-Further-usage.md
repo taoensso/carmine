@@ -70,7 +70,7 @@ So publishing to "channel1" in this example will trigger all 3x handlers:
 You can adjust subscriptions and/or handlers:
 
 ```clojure
-(with-open-listener my-listener
+(car/with-open-listener my-listener
   (car/unsubscribe) ; Unsubscribe from every channel (leaving patterns alone)
   (car/subscribe "channel3"))
 
