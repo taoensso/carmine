@@ -62,10 +62,8 @@
   java.io.Closeable (close [this] (conn-close! this {:via 'java.io.Closeable}))
   Object
   (toString [this]
-    ;; "taoensso.carmine.Conn[127.0.0.1:6379 open 0x7b9f6831]"
-    (str "taoensso.carmine.Conn[" host ":" port " "
-      (if (open?_) "open" "closed") " "
-      (enc/ident-hex-str this) "]"))
+    (enc/str-impl this "taoensso.carmine.Conn"
+      {:host host, :port port, :open? (open?_)}))
 
   clojure.lang.IDeref
   (deref [this]
@@ -448,10 +446,9 @@
   java.io.Closeable (close [this] (mgr-close! this nil {:mgr this, :via 'java.io.Closeable}))
   Object
   (toString [this]
-    ;; "taoensso.carmine.ConnManagerUnpooled[ready 0x7b9f6831]"
-    (let [status (if (closed?_) "closed" "ready")
-          id     (or (get mgr-opts :mgr-name) (enc/ident-hex-str this))]
-      (str "taoensso.carmine.ConnManagerUnpooled[" status " " id "]")))
+    (enc/str-impl this "taoensso.carmine.ConnManagerUnpooled"
+      {:name  (get mgr-opts :mgr-name)
+       :open? (not (closed?_))}))
 
   clojure.lang.IDeref
   (deref [_]
@@ -496,7 +493,7 @@
     (debug! :unpooled/close! timeout-ms data)
     (when (compare-and-set! closed?_ false true)
       (drain-conns! @active-conns_ timeout-ms
-        (enc/fast-merge {:mgr this, :via 'mgr-close!, :timeout-ms timeout-ms} data))
+        (enc/merge {:mgr this, :via 'mgr-close!, :timeout-ms timeout-ms} data))
       true)))
 
 (let [idx (java.util.concurrent.atomic.AtomicLong. 0)
@@ -534,10 +531,9 @@
   java.io.Closeable (close [this] (mgr-close! this nil {:mgr this, :via 'java.io.Closeable}))
   Object
   (toString [this]
-    ;; "taoensso.carmine.ConnManagerPooled[ready 0x7b9f6831]"
-    (let [status (if (closed?_) "closed" "ready")
-          id     (or (get mgr-opts :mgr-name) (enc/ident-hex-str this))]
-      (str "taoensso.carmine.ConnManagerPooled[" status " " id "]")))
+    (enc/str-impl this "taoensso.carmine.ConnManagerPooled"
+      {:name  (get mgr-opts :mgr-name)
+       :open? (not (closed?_))}))
 
   clojure.lang.IDeref
   (deref [_]
@@ -614,7 +610,7 @@
     (debug! :pooled/close! timeout-ms data)
     (when (compare-and-set! closed?_ false true)
       (drain-conns! @active-conns_ timeout-ms
-        (enc/fast-merge {:mgr this, :via 'mgr-close!, :timeout-ms timeout-ms} data))
+        (enc/merge {:mgr this, :via 'mgr-close!, :timeout-ms timeout-ms} data))
       (.close pool)
       true)))
 

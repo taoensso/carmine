@@ -297,11 +297,11 @@
 ;;   parse-error-replies? ; false
 ;;   parse-null-replies?  ; false
 
-(defn          parser? [x]            (instance? Parser x))
-(defn      when-parser [x] (when      (instance? Parser x)                     x))
-(defn   when-fn-parser [x] (when (and (instance? Parser x) (.-f    ^Parser x)) x))
-(defn   when-rf-parser [x] (when (and (instance? Parser x) (.-rfc  ^Parser x)) x))
-(defn- get-parser-opts [x] (when      (instance? Parser x) (.-opts ^Parser x)))
+(defn           parser? [x]            (instance? Parser x))
+(defn      when-parser  [x] (when      (instance? Parser x)                     x))
+(defn   when-fn-parser  [x] (when (and (instance? Parser x) (.-f    ^Parser x)) x))
+(defn   when-rf-parser  [x] (when (and (instance? Parser x) (.-rfc  ^Parser x)) x))
+(defn- get-parser-opts  [x] (when      (instance? Parser x) (.-opts ^Parser x)))
 
 (defn- describe-parser
   "For error messages, etc."

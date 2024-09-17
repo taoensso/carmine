@@ -79,13 +79,13 @@
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
-    [call-args]
+    [cmd-args]
     (if-let [^Ctx ctx *ctx*]
-      (let [cluster-slot (when (.-cluster? ctx) (enc/rsome cluster-slot call-args))]
+      (let [cluster-slot (when (.-cluster? ctx) (enc/rsome cluster-slot cmd-args))]
         (.addLast ^LinkedList (.-pending-reqs* ctx)
-          (Req. (get-read-opts ctx) call-args cluster-slot nil))
+          (Req. (get-read-opts ctx) cmd-args cluster-slot nil))
         nil)
-      (throw-no-ctx! call-args)))
+      (throw-no-ctx! cmd-args)))
 
   (defn ^:public rcalls*
     "Send >=0 arbitrary commands to Redis server.
@@ -96,18 +96,18 @@
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
-    [calls]
+    [cmds]
     (if-let [^Ctx ctx *ctx*]
       (let [^LinkedList pending-reqs (.-pending-reqs* ctx)
             read-opts                (get-read-opts   ctx)
             cluster?                 (.-cluster?      ctx)]
         (run!
-          (fn [call-args]
-            (let [cluster-slot (when cluster? (enc/rsome cluster-slot call-args))]
-              (.addLast pending-reqs (Req. read-opts call-args cluster-slot nil))))
-          calls)
+          (fn [cmd-args]
+            (let [cluster-slot (when cluster? (enc/rsome cluster-slot cmd-args))]
+              (.addLast pending-reqs (Req. read-opts cmd-args cluster-slot nil))))
+          cmds)
         nil)
-      (throw-no-ctx! calls))))
+      (throw-no-ctx! cmds))))
 
 (let [rcall* rcall*]
   (defn ^:public rcall
@@ -117,19 +117,19 @@
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
-    [& call-args] (rcall* call-args)))
+    [& cmd-args] (rcall* cmd-args)))
 
 (let [rcalls* rcalls*]
   (defn ^:public rcalls
     "Send >=0 arbitrary commands to Redis server.
     Takes vararg calls, with each call a vector of args:
       (wcar {}
-        (rcall [\"set\" \"my-key\" \"my-val\"]
-               [\"get\" \"my-key\"])) => [\"OK\" \"my-val\"]
+        (rcalls [\"set\" \"my-key\" \"my-val\"]
+                [\"get\" \"my-key\"])) => [\"OK\" \"my-val\"]
 
     Useful for DSLs, and to call commands (including Redis module commands)
     that might not yet have a native Clojure fn provided by Carmine."
-    [& calls] (rcalls* calls)))
+    [& cmds] (rcalls* cmds)))
 
 (let [get-read-opts get-read-opts]
   (defn ^:public local-echo
