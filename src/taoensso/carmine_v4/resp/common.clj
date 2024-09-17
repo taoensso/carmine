@@ -183,9 +183,10 @@
 (defmacro ^:public normal-replies
   "Cancels any active special read mode for body."
   [& body]
-  `(if *read-mode*
-     (do                        ~@body) ; Common case optmization
-     (binding [*read-mode* nil] ~@body)))
+  `(let [body-fn (fn [] ~@body)]
+     (enc/if-not *read-mode*
+       (do                        (body-fn)) ; Common case optimization
+       (binding [*read-mode* nil] (body-fn)))))
 
 (defmacro ^:public as-bytes
   "Establishes special read mode that returns raw byte arrays
