@@ -2,6 +2,7 @@
   "Experimental modern Clojure Redis client prototype.
   Still private, not yet intended for public use!"
   {:author "Peter Taoussanis (@ptaoussanis)"}
+  (:refer-clojure :exclude [bytes])
   (:require
    [taoensso.encore  :as enc]
    [taoensso.carmine :as v3-core]
@@ -34,7 +35,7 @@
   com/skip-replies
   com/normal-replies
   com/as-bytes
-  com/as-thawed
+  com/thaw
   com/natural-reads
 
   ;;; Reply parsing
@@ -53,8 +54,8 @@
   com/as-kw
 
   ;;; Write wrapping
-  write/to-bytes
-  write/to-frozen
+  write/bytes
+  write/freeze
 
   ;;; RESP3
   resp/rcall
