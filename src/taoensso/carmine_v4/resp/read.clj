@@ -8,7 +8,7 @@
 
   (:import
    [java.io DataInputStream]
-   [taoensso.carmine_v4.resp.common ReadOpts AsThawed Parser]))
+   [taoensso.carmine_v4.resp.common ReadOpts #_ReadThawed Parser]))
 
 (enc/declare-remote
   ^:dynamic taoensso.carmine-v4/*keywordize-maps?*

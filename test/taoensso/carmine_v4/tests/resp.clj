@@ -14,8 +14,8 @@
    [taoensso.carmine-v4 :as core])
 
   (:import
-   [taoensso.carmine_v4.resp.common #_ReadOpts AsThawed #_Parser]
-   [taoensso.carmine_v4.resp.write ToFrozen]))
+   [taoensso.carmine_v4.resp.common #_ReadOpts ReadThawed #_Parser]
+   [taoensso.carmine_v4.resp.write WriteFrozen]))
 
 (comment
   (remove-ns      'taoensso.carmine-v4.tests.resp)
@@ -113,11 +113,11 @@
       (is (= (binding [core/*keywordize-maps?* false] (rr (xs->in+ "%2" "+k1" "+v1" ":2" "+v2"))) {"k1" "v1", 2 "v2"}))
       (is (= (rr (xs->in+ "*3" ":1" "$?" ";4" "bulk" ";6" "string" ";0" ",1.5")) [1 "bulkstring" 1.5]))
 
-      (is (=                             (rr (xs->in+ "*2" ":1" "$3" [\a \b \c])) [1 "abc"]) "Baseline...")
+      (is (=                        (rr (xs->in+ "*2" ":1" "$3" [\a \b \c])) [1 "abc"]) "Baseline...")
       (is (let [[x y] (com/as-bytes (rr (xs->in+ "*2" ":1" "$3" [\a \b \c])))]
             [(is (= x 1))
              (is (= (enc/utf8-ba->str y) "abc"))])
-        "`as-bytes` penetrates aggregates")])
+        "`bytes` penetrates aggregates")])
 
    (testing "Errors"
      [(testing "Simple errors"
@@ -288,11 +288,11 @@
 
 (deftest _read-blob
   [(testing "Basics"
-     [(is (= ""                      (#'read/read-blob nil            nil (xs->in+  0))) "As default: empty blob")
-      (is (empty-bytes?              (#'read/read-blob :bytes         nil (xs->in+  0))) "As bytes:   empty blob")
-      (is (= com/sentinel-null-reply (#'read/read-blob nil            nil (xs->in+ -1))) "As default: RESP2 null")
-      (is (= com/sentinel-null-reply (#'read/read-blob :bytes         nil (xs->in+ -1))) "As bytes:   RESP2 null")
-      (is (= com/sentinel-null-reply (#'read/read-blob (AsThawed. {}) nil (xs->in+ -1))) "As thawed:  RESP2 null")
+     [(is (= ""                      (#'read/read-blob nil              nil (xs->in+  0))) "As default: empty blob")
+      (is (empty-bytes?              (#'read/read-blob :bytes           nil (xs->in+  0))) "As bytes:   empty blob")
+      (is (= com/sentinel-null-reply (#'read/read-blob nil              nil (xs->in+ -1))) "As default: RESP2 null")
+      (is (= com/sentinel-null-reply (#'read/read-blob :bytes           nil (xs->in+ -1))) "As bytes:   RESP2 null")
+      (is (= com/sentinel-null-reply (#'read/read-blob (ReadThawed. {}) nil (xs->in+ -1))) "As thawed:  RESP2 null")
 
       (is (=                   (#'read/read-blob nil    nil (xs->in+ 5 "hello"))  "hello"))
       (is (= (enc/utf8-ba->str (#'read/read-blob :bytes nil (xs->in+ 5 "hello"))) "hello"))
@@ -339,7 +339,7 @@
             marked-ba  (com/xs->ba com/ba-npy ba)
             marked-len (alength ^bytes marked-ba)]
 
-        [(is (= (#'read/read-blob (AsThawed. {:password pwd}) true (xs->in+ marked-len marked-ba)) data)
+        [(is (= (#'read/read-blob (ReadThawed. {:password pwd}) true (xs->in+ marked-len marked-ba)) data)
            "Encrypted Nippy data (good password)")
 
          (let [r (#'read/read-blob nil true (xs->in+ marked-len marked-ba))]
@@ -403,12 +403,12 @@
             (com/with-out->str (#'write/write-bulk-str    out (str (double an-uncached-num))))))])])
 
 (deftest _wrappers
-  [(is (= (enc/utf8-ba->str (.-ba (write/to-bytes (write/to-bytes (com/xs->ba [\a \b \c]))))) "abc"))
-   (is (= (.-freeze-opts (write/to-frozen {:a :A} (write/to-frozen {:b :B} "x"))) {:a :A}))
+  [(is (= (enc/utf8-ba->str (.-ba (write/bytes (write/bytes (com/xs->ba [\a \b \c]))))) "abc"))
+   (is (= (.-freeze-opts (write/freeze {:a :A} (write/freeze {:b :B} "x"))) {:a :A}))
 
    (is (= (binding [core/*freeze-opts* {:o :O}]
-            (let [[c1 c2 c3] (write/to-frozen :dynamic "x" "y" "z")]
-              (mapv #(.-freeze-opts ^ToFrozen %) [c1 c2 c3])))
+            (let [[c1 c2 c3] (write/freeze :dynamic "x" "y" "z")]
+              (mapv #(.-freeze-opts ^WriteFrozen %) [c1 c2 c3])))
          [{:o :O} {:o :O} {:o :O}])
      "Multiple frozen arguments sharing dynamic config")])
 
@@ -440,8 +440,8 @@
            (is (= (com/with-out->str (#'write/write-requests out [[{}]]))  "*1\r\n$7\r\n\u0000>NPY\u0000\r\n") "clj arg => ba-npy marker")
 
            (let [ba (byte-array [(int \a) (int \b) (int \c)])]
-             [(is (= (com/with-out->str (#'write/write-requests out [[                ba]]))  "*1\r\n$5\r\n\u0000<abc\r\n") "ba-bin marker")
-              (is (= (com/with-out->str (#'write/write-requests out [[(write/to-bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Unmarked bin")])]))
+             [(is (= (com/with-out->str (#'write/write-requests out [[             ba]]))  "*1\r\n$5\r\n\u0000<abc\r\n") "ba-bin marker")
+              (is (= (com/with-out->str (#'write/write-requests out [[(write/bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Unmarked bin")])]))
 
       (testing "Auto freeze disabled"
         (binding [core/*auto-freeze?* false]
@@ -450,5 +450,5 @@
             (is (throws? :common pattern (com/with-out->str (#'write/write-requests out [[{}]])))  "clj arg => throw")
 
             (let [ba (byte-array [(int \a) (int \b) (int \c)])]
-              [(is (= (com/with-out->str (#'write/write-requests out [[                ba]]))  "*1\r\n$3\r\nabc\r\n") "Unmarked bin")
-               (is (= (com/with-out->str (#'write/write-requests out [[(write/to-bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Same unmarked bin with `to-bytes`")])])))])])
+              [(is (= (com/with-out->str (#'write/write-requests out [[             ba]]))  "*1\r\n$3\r\nabc\r\n") "Unmarked bin")
+               (is (= (com/with-out->str (#'write/write-requests out [[(write/bytes ba)]])) "*1\r\n$3\r\nabc\r\n") "Same unmarked bin with `bytes`")])])))])])
