@@ -130,14 +130,11 @@ sentinel down-after-milliseconds %3$s 60000"
 
   Object
   (toString [this]
-    ;; "taoensso.carmine.SentinelSpec[masters=3 replicas=4 sentinels=2 0x7b9f6831]"
     (let [{:keys [masters replicas sentinels]} (unique-addrs (force @addrs-state_))]
-      (str
-        "taoensso.carmine.SentinelSpec["
-        "masters="   (count masters)   " "
-        "replicas="  (count replicas)  " "
-        "sentinels=" (count sentinels) " "
-        (enc/ident-hex-str this) "]")))
+      (enc/str-impl this "taoensso.carmine.SentinelSpec"
+        {:n-masters   (count masters)
+         :n-replicas  (count replicas)
+         :n-sentinels (count sentinels)})))
 
   clojure.lang.IDeref
   (deref [this]
