@@ -10,17 +10,17 @@
   :test-paths ["test" #_"src"]
 
   :dependencies
-  [[com.taoensso/encore              "3.112.0"]
-   [com.taoensso/nippy               "3.4.2"]
-   [com.taoensso/timbre              "6.5.0"]
-   [org.apache.commons/commons-pool2 "2.12.0"]
-   [commons-codec/commons-codec      "1.17.0"]]
+  [[com.taoensso/encore              "3.145.0"]
+   [com.taoensso/nippy               #_"3.5.0" "3.6.0-alpha1"]
+   [com.taoensso/timbre              "6.7.0"]
+   [org.apache.commons/commons-pool2 "2.12.1"]
+   [commons-codec/commons-codec      "1.18.0"]]
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
-   :provided {:dependencies [[org.clojure/clojure "1.11.3"]]}
-   :c1.12    {:dependencies [[org.clojure/clojure "1.12.0-alpha12"]]}
-   :c1.11    {:dependencies [[org.clojure/clojure "1.11.3"]]}
+   :provided {:dependencies [[org.clojure/clojure "1.12.0"]]}
+   :c1.12    {:dependencies [[org.clojure/clojure "1.12.0"]]}
+   :c1.11    {:dependencies [[org.clojure/clojure "1.11.4"]]}
    :c1.10    {:dependencies [[org.clojure/clojure "1.10.3"]]}
    :c1.9     {:dependencies [[org.clojure/clojure "1.9.0"]]}
 
@@ -34,7 +34,7 @@
      [com.github.clj-easy/graal-build-time "1.0.5"]]}
 
    :dev
-   {:jvm-opts ["-server" #_"-Dtaoensso.elide-deprecated=true"]
+   {:jvm-opts ["-server" "-Dtaoensso.elide-deprecated=true"]
     :global-vars
     {*warn-on-reflection* true
      *assert*             true
@@ -42,10 +42,10 @@
 
     :dependencies
     [[org.clojure/test.check "1.1.1"]
-     [org.clojure/data.json  "2.5.0"]
-     [com.taoensso/faraday   "1.12.2"]
+     [org.clojure/data.json  "2.5.1"]
+     [com.taoensso/faraday   "1.12.3"]
      [clj-aws-s3             "0.3.10"]
-     [ring/ring-core         "1.12.1"]]
+     [ring/ring-core         "1.14.1"]]
 
     :plugins
     [[lein-pprint  "1.3.2"]
