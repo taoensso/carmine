@@ -171,7 +171,7 @@
 ;;;; Read mode
 
 (def ^:dynamic *read-mode*
-  "Special read mode, e/o {nil :skip :bytes <AsThawed>}.
+  "Special read mode, e/o {nil :skip :bytes <ReadThawed>}.
   Applies mostly to blobs, except notably `:skip`."
   nil)
 
@@ -193,15 +193,15 @@
   for any blob-type Redis replies to requests in body."
   [& body] `(binding [*read-mode* :bytes] ~@body))
 
-(defmacro ^:public as-thawed
+(defmacro ^:public thaw
   "Establishes special read mode that will attempt Nippy thawing
   for any blob-type Redis replies to requests in body."
-  [thaw-opts & body] `(binding [*read-mode* (AsThawed. ~thaw-opts)] ~@body))
+  [thaw-opts & body] `(binding [*read-mode* (ReadThawed. ~thaw-opts)] ~@body))
 
-(deftype AsThawed [thaw-opts])
+(deftype ReadThawed [thaw-opts])
 (defn read-mode->?thaw-opts [read-mode]
-  (when (instance? AsThawed  read-mode)
-    (or (.-thaw-opts ^AsThawed read-mode) {})))
+  (when (instance?    ReadThawed read-mode)
+    (or (.-thaw-opts ^ReadThawed read-mode) {})))
 
 (def ^:dynamic *natural-reads?* false)
 

@@ -1,5 +1,6 @@
 (ns ^:no-doc taoensso.carmine-v4.resp.write
   "Private ns, implementation detail."
+  (:refer-clojure :exclude [bytes])
   (:require
    [taoensso.encore :as enc]
    [taoensso.nippy  :as nippy]
@@ -185,68 +186,68 @@
   (write-bulk-ba out (enc/str->utf8-ba s)))
 
 ;;;; Wrapper types
-;; IRedisArg behaviour influenced by wrapping arguments, wrapping
-;; must capture any relevant dynamic config at wrap time.
+;; Influence `IRedisArg` behaviour by wrapping arguments.
+;; Wrapping must capture any relevant dynamic config at wrap time.
 ;;
 ;; Implementation detail:
 ;; We try to avoid lazily converting arguments to Redis byte strings
 ;; (i.e. while writing to out) if there's a chance the conversion
 ;; could fail (e.g. Nippy freeze).
 
-(deftype ToBytes [ba])
-(defn ^:public to-bytes
-  "Wraps given bytes to ensure that they'll be written to Redis
+(deftype  WriteBytes [ba])
+(defn ^:public bytes
+  "Wraps given byte array to ensure that it'll be written to Redis
   without any modifications (serialization, blob markers, etc.)."
-  (^ToBytes [ba]
-   (if (instance? ToBytes ba)
+  (^WriteBytes [ba]
+   (if (instance? WriteBytes ba)
      ba
      (if (enc/bytes? ba)
-       (ToBytes.     ba)
+       (WriteBytes.  ba)
        (throw
-         (ex-info "[Carmine] `to-bytes` expects a byte-array argument"
+         (ex-info "[Carmine] `bytes` expects a byte-array argument"
            {:eid :carmine.write/unsupported-arg-type
             :arg (enc/typed-val ba)})))))
 
   ;; => Vector for destructuring (undocumented)
-  ([ba & more] (mapv to-bytes (cons ba more))))
+  ([ba & more] (mapv bytes (cons ba more))))
 
-(deftype ToFrozen [arg freeze-opts ?frozen-ba])
-(defn ^:public to-frozen
-  "Wraps given argument to ensure that it'll be written to Redis
+(deftype WriteFrozen [unfrozen-val freeze-opts ?frozen-ba])
+(defn ^:public freeze
+  "Wraps given arb Clojure value to ensure that it'll be written to Redis
   using Nippy serialization [1].
 
   Options:
     See `taoensso.nippy/freeze` for `freeze-opts` docs.
     By default, `*freeze-opts*` value will be used.
 
-  See also `as-thawed` for thawing (deserialization).
-  [1] Ref. <https://github.com/ptaoussanis/nippy>"
+  See also `thaw` for thawing (deserialization).
+  [1] Ref. <https://www.taoensso.com/nippy>"
 
-  (^ToFrozen [            x] (to-frozen core/*freeze-opts* x))
-  (^ToFrozen [freeze-opts x]
+  (^WriteFrozen [            clj-val] (freeze core/*freeze-opts* clj-val))
+  (^WriteFrozen [freeze-opts clj-val]
    ;; We do eager freezing here since we can, and we'd prefer to
    ;; catch freezing errors early (rather than while writing to out).
-   (if (instance? ToFrozen x)
-     (let [^ToFrozen x x]
-       (if (= freeze-opts (.-freeze-opts x))
-         x
-         (let [arg (.-arg x)]
-           ;; Re-freeze (expensive)
-           (ToFrozen. arg freeze-opts
-             (nippy/freeze arg freeze-opts)))))
+   (if (instance? WriteFrozen   clj-val)
+     (let [^WriteFrozen wrapper clj-val]
+       (if (= freeze-opts (.-freeze-opts wrapper))
+         wrapper
+         ;; Re-freeze (expensive)
+         (let [clj-val (.-unfrozen-val wrapper)]
+           (WriteFrozen.   clj-val freeze-opts
+             (nippy/freeze clj-val freeze-opts)))))
 
-     (ToFrozen. x freeze-opts
-       (nippy/freeze x freeze-opts))))
+     (WriteFrozen.   clj-val freeze-opts
+       (nippy/freeze clj-val freeze-opts))))
 
   ;; => Vector for destructuring (undocumented)
-  ([freeze-opts x & more]
+  ([freeze-opts clj-val & more]
    (let [freeze-opts
          (enc/have [:or nil? map?]
            (if (identical? freeze-opts :dynamic)
              core/*freeze-opts*
              freeze-opts))]
 
-     (mapv #(to-frozen freeze-opts %) (cons x more)))))
+     (mapv #(freeze freeze-opts %) (cons clj-val more)))))
 
 ;;;; IRedisArg
 
@@ -288,16 +289,16 @@
 
     ;; Redis doesn't currently seem to accept `write-simple-long` (at least
     ;; without RESP3 mode?) though this seems an unnecessary limitation?
-    Long    (write-bulk-arg [n out] (write-bulk-long   out       n))
-    Integer (write-bulk-arg [n out] (write-bulk-long   out       n))
-    Short   (write-bulk-arg [n out] (write-bulk-long   out       n))
-    Byte    (write-bulk-arg [n out] (write-bulk-long   out       n))
-    Double  (write-bulk-arg [n out] (write-bulk-double out       n))
-    Float   (write-bulk-arg [n out] (write-bulk-double out       n))
-    ToBytes (write-bulk-arg [x out] (write-bulk-ba     out (.-ba x)))
-    ToFrozen
-    (write-bulk-arg [x out]
-      (let [ba (or (.-?frozen-ba x) (nippy/freeze x (.-freeze-opts x)))]
+    Long       (write-bulk-arg [n out] (write-bulk-long   out       n))
+    Integer    (write-bulk-arg [n out] (write-bulk-long   out       n))
+    Short      (write-bulk-arg [n out] (write-bulk-long   out       n))
+    Byte       (write-bulk-arg [n out] (write-bulk-long   out       n))
+    Double     (write-bulk-arg [n out] (write-bulk-double out       n))
+    Float      (write-bulk-arg [n out] (write-bulk-double out       n))
+    WriteBytes (write-bulk-arg [w out] (write-bulk-ba     out (.-ba w)))
+    WriteFrozen
+    (write-bulk-arg [w out]
+      (let [ba (or (.-?frozen-ba w) (nippy/freeze (.-unfrozen-val w) (.-freeze-opts w)))]
         (if core/*auto-freeze?*
           (write-bulk-ba out ba-npy ba)
           (write-bulk-ba out        ba))))
