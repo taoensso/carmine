@@ -44,7 +44,8 @@
    (is (= (test-blob-?marker "\u0000_more")    [:nil "more"]))
    (is (= (test-blob-?marker "\u0000>more")    [:npy "more"]))
    (is (= (test-blob-?marker "\u0000<more")    [:bin "more"]))
-   (is (= (test-blob-?marker "\u0000<NPYmore") [:npy "NPYmore"]))
+   (is (= (binding [core/*issue-83-workaround?* true ] (test-blob-?marker "\u0000<NPYmore")) [:npy "NPYmore"]))
+   (is (= (binding [core/*issue-83-workaround?* false] (test-blob-?marker "\u0000<NPYmore")) [:bin "NPYmore"]))
    (is (= (test-blob-?marker "\u0000<NPmore")  [:bin "NPmore"]))
    (is (= (test-blob-?marker "\u0000<Nmore")   [:bin "Nmore"]))])
 
