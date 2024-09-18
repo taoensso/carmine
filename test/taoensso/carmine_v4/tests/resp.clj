@@ -15,7 +15,8 @@
 
   (:import
    [taoensso.carmine_v4.resp.common #_ReadOpts ReadThawed #_Parser]
-   [taoensso.carmine_v4.resp.write WriteFrozen]))
+   [taoensso.carmine_v4.resp.write WriteFrozen]
+   [taoensso.carmine_v4.resp.read VerbatimString]))
 
 (comment
   (remove-ns      'taoensso.carmine-v4.tests.resp)
@@ -185,17 +186,17 @@
                 "~?" ":1" ":2" "."             ; Set val
                 ))))])
 
-   (testing "Misc types"
-     [(is (= (rr (xs->in+ "=11" "txt:hello\r\n")) [:carmine/verbatim-string "txt" "hello\r\n"])
-        "Verbatim string")
+   (testing "Verbatim string type"
+     [(is (= (binding [core/*raw-verbatim-strings?* true ] (rr (xs->in+ "=11" "txt:hello\r\n"))) (VerbatimString. "txt", "hello\r\n")))
+      (is (= (binding [core/*raw-verbatim-strings?* false] (rr (xs->in+ "=11" "txt:hello\r\n")))                         "hello\r\n"))])
 
-      (is (enc/submap?
+   (testing "Attribute map type"
+     [(is (enc/submap?
             {:carmine/attributes {:key-popularity {:a 0.1923 :b 0.0012}}}
             (meta
               (rr (xs->in+ "|1" "+key-popularity"
-                           "%2" "$1" "a" ",0.1923" "$1" "b" ",0.0012"
-                           "*2" ":2039123" ":9543892"))))
-        "Attributes")])
+                    "%2" "$1" "a" ",0.1923" "$1" "b" ",0.0012"
+                    "*2" ":2039123" ":9543892")))))])
 
    (testing "Pushes"
      ;; Push replies can be received at any time, but only at the top level

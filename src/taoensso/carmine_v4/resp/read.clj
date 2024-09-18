@@ -13,7 +13,8 @@
 (enc/declare-remote
   ^:dynamic taoensso.carmine-v4/*keywordize-maps?*
   ^:dynamic taoensso.carmine-v4/*push-fn*
-  ^:dynamic taoensso.carmine-v4/*issue-83-workaround?*)
+  ^:dynamic taoensso.carmine-v4/*issue-83-workaround?*
+  ^:dynamic taoensso.carmine-v4/*raw-verbatim-strings?*)
 
 (alias 'core 'taoensso.carmine-v4)
 
@@ -338,6 +339,8 @@
 
 (declare complete-reply)
 
+(defrecord VerbatimString [format content])
+
 (let [sentinel-end-of-aggregate-stream com/sentinel-end-of-aggregate-stream
       sentinel-null-reply              com/sentinel-null-reply]
 
@@ -401,9 +404,10 @@
                      ^String s (read-blob nil false in)]
                  (when-not skip?
                    (let [format  (subs s 0 3) ; "txt", "mkd", etc.
-                         payload (subs s 4)]
-                     ;; TODO API okay? Dynamic opt to just return payload?
-                     [:carmine/verbatim-string format payload])))
+                         content (subs s 4)]
+                     (if taoensso.carmine-v4/*raw-verbatim-strings?*
+                       (VerbatimString. format content)
+                       (do                     content)))))
 
                (int \,) ; Double ✓
                (let [s (.readLine in)]
