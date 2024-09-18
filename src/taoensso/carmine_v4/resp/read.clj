@@ -340,6 +340,7 @@
 (declare complete-reply)
 
 (defrecord VerbatimString [format content])
+(defrecord WithAttributes [content attributes])
 
 (let [sentinel-end-of-aggregate-stream com/sentinel-end-of-aggregate-stream
       sentinel-null-reply              com/sentinel-null-reply]
@@ -426,20 +427,19 @@
                (int \%) (read-aggregate-by-pairs    read-opts read-reply in) ; Aggregate map ✓
 
                (int \|) ; Attribute map ✓
-               (let [attrs  (read-aggregate-by-pairs read-opts read-reply in)
-                     target (read-reply              read-opts            in)]
+               (let [attrs   (read-aggregate-by-pairs read-opts read-reply in)
+                     content (read-reply              read-opts            in)]
 
                  (when-not skip?
-                   ;; TODO API okay?
-                   (if (instance? clojure.lang.IObj target)
-                     (with-meta target {:carmine/attributes attrs})
-                     [:carmine/with-attributes target attrs]
+                   (if (and (enc/can-meta? content) (map? attrs))
+                     (with-meta       content attrs)
+                     (WithAttributes. content attrs)
                      #_
                      (throw
-                       (ex-info "[Carmine] Attributes reply for unexpected (non-IObj) type"
-                         {:eid :carmine.read/attributes-for-unexpected-type
-                          :target (enc/typed-val target)
-                          :attributes attrs})))))
+                       (ex-info "[Carmine] Unexpected attributes reply"
+                         {:eid :carmine.read/unexpected-attributes
+                          :content    (enc/typed-val content)
+                          :attributes (enc/typed-val attrs)})))))
 
                (int \>) ; Push ✓
                (let [v (read-aggregate-by-ones [] com/read-opts-natural read-reply in)]
