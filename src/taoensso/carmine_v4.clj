@@ -34,9 +34,9 @@
   ;;; Read opts
   com/skip-replies
   com/normal-replies
+  com/natural-replies
   com/as-bytes
   com/thaw
-  com/natural-reads
 
   ;;; Reply parsing
   com/reply-error?
@@ -233,10 +233,10 @@
   "TODO Docstring"
   ([conn-mgr                                  body-fn] (with-car conn-mgr nil body-fn))
   ([conn-mgr {:keys [as-vec?] :as reply-opts} body-fn]
-   (let [{:keys [natural-reads?]} reply-opts] ; Undocumented
+   (let [{:keys [natural-replies?]} reply-opts] ; Undocumented
      (conns/mgr-borrow! (force (or conn-mgr default-conn-manager))
        (fn [conn in out]
-         (resp/with-replies in out natural-reads? as-vec?
+         (resp/with-replies in out natural-replies? as-vec?
            (fn [] (body-fn conn))))))))
 
 (defmacro wcar
@@ -284,8 +284,8 @@
   {:arglists '([& body] [{:keys [as-vec?]} & body])}
   [& body]
   (let [[reply-opts body] (resp/parse-body-reply-opts body)
-        {:keys [natural-reads? as-vec?]} reply-opts]
-    `(resp/with-replies ~natural-reads? ~as-vec?
+        {:keys [natural-replies? as-vec?]} reply-opts]
+    `(resp/with-replies ~natural-replies? ~as-vec?
        (fn [] ~@body))))
 
 ;;;; Push API ; TODO

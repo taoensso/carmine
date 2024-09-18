@@ -184,7 +184,7 @@
               t0 (System/currentTimeMillis)
               replies
               (try
-                (resp/with-replies in out :natural-reads :as-vec
+                (resp/with-replies in out :natural-replies :as-vec
                   (fn [] (run! resp/rcall* reqs)))
 
                 (catch Throwable t (vreset! conn-error_ t) nil))

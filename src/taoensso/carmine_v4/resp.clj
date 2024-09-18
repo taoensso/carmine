@@ -40,7 +40,7 @@
 ;;;; Request context
 
 (def ^:dynamic *ctx* nil)
-(deftype Ctx [cluster? natural-reads? pending-reqs* pending-replies* conn-opts in out])
+(deftype Ctx [cluster? natural-replies? pending-reqs* pending-replies* conn-opts in out])
 
 (deftype Req          [read-opts args cluster-slot supports-cluster?])
 (deftype LocalEchoReq [read-opts reply])
@@ -65,7 +65,7 @@
 
 (let [read-opts-natural com/read-opts-natural]
   (defn- get-read-opts [^Ctx ctx]
-    (if (.-natural-reads? ctx)
+    (if (.-natural-replies? ctx)
       read-opts-natural
       (com/get-read-opts))))
 
@@ -179,34 +179,34 @@
   and returns completed replies."
 
   ;; Add non-cluster ctx, used by `with-car`
-  ([in out natural-reads? as-vec? body-fn]
+  ([in out natural-replies? as-vec? body-fn]
    (when-let [^Ctx parent-ctx *ctx*]
      (flush-pending-reqs parent-ctx))
 
-   (let [new-ctx (Ctx. false natural-reads? (LinkedList.) (LinkedList.) nil in out)]
+   (let [new-ctx (Ctx. false natural-replies? (LinkedList.) (LinkedList.) nil in out)]
      (binding [*ctx* new-ctx] (body-fn))
      (flush-pending-reqs       new-ctx)
      (complete-replies as-vec? new-ctx)))
 
   ;; Add cluster ctx, used by `with-car`
-  ([conn-opts natural-reads? as-vec? body-fn]
+  ([conn-opts natural-replies? as-vec? body-fn]
    (when-let [^Ctx parent-ctx *ctx*]
      (flush-pending-reqs parent-ctx))
 
-   (let [new-ctx (Ctx. true natural-reads? (LinkedList.) (LinkedList.) conn-opts nil nil)]
+   (let [new-ctx (Ctx. true natural-replies? (LinkedList.) (LinkedList.) conn-opts nil nil)]
      (binding [*ctx* new-ctx] (body-fn))
      (flush-pending-reqs       new-ctx)
      (complete-replies as-vec? new-ctx)))
 
   ;; Add additional ctx, used by public `with-replies`
-  ([natural-reads? as-vec? body-fn]
+  ([natural-replies? as-vec? body-fn]
    (when-let [^Ctx parent-ctx *ctx*]
      (flush-pending-reqs parent-ctx)
 
      (let [new-ctx
            (if (.-cluster? parent-ctx)
-             (Ctx. true  natural-reads? (LinkedList.) (LinkedList.) (.-conn-opts parent-ctx) nil nil)
-             (Ctx. false natural-reads? (LinkedList.) (LinkedList.) nil (.-in parent-ctx) (.-out parent-ctx)))]
+             (Ctx. true  natural-replies? (LinkedList.) (LinkedList.) (.-conn-opts parent-ctx) nil nil)
+             (Ctx. false natural-replies? (LinkedList.) (LinkedList.) nil (.-in parent-ctx) (.-out parent-ctx)))]
 
        (binding [*ctx* new-ctx] (body-fn))
        (flush-pending-reqs       new-ctx)
@@ -350,11 +350,11 @@
       (cond
         (set? b1)
         (case b1
-          #{}                       [nil                    bn]
-          #{:as-vec               } [{:as-vec?        true} bn]
-          #{        :natural-reads} [{:natural-reads? true} bn]
-          #{:as-vec :natural-reads} [{:as-vec?        true
-                                      :natural-reads? true} bn]
+          #{}                         [nil                      bn]
+          #{:as-vec                 } [{:as-vec?          true} bn]
+          #{        :natural-replies} [{:natural-replies? true} bn]
+          #{:as-vec :natural-replies} [{:as-vec?          true
+                                        :natural-replies? true} bn]
           (throw
             (ex-info "[Carmine] Unexpected reply-opts in body"
               {:opts (enc/typed-val b1)})))
