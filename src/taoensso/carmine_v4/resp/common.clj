@@ -188,6 +188,16 @@
        (do                        (body-fn)) ; Common case optimization
        (binding [*read-mode* nil] (body-fn)))))
 
+(def ^:dynamic    *natural-replies?* false)
+(defmacro ^:public natural-replies
+  "Cancels any active special read mode or reply parser for body.
+  Equivalent to (unparsed (normal-replies <body>))."
+  [& body]
+  `(let [body-fn (fn [] ~@body)]
+     (if *natural-replies?*
+       (do                                (body-fn)) ; Common case optimization
+       (binding [*natural-replies?* true] (body-fn)))))
+
 (defmacro ^:public as-bytes
   "Establishes special read mode that returns raw byte arrays
   for any blob-type Redis replies to requests in body."
@@ -202,13 +212,6 @@
 (defn read-mode->?thaw-opts [read-mode]
   (when (instance?    ReadThawed read-mode)
     (or (.-thaw-opts ^ReadThawed read-mode) {})))
-
-(def ^:dynamic *natural-reads?* false)
-
-(defmacro ^:public natural-reads
-  "Cancels any active special read mode or reply parser for body.
-  Equivalent to (unparsed (normal-replies <body>))."
-  [& body] `(binding [*natural-reads?* true] ~@body))
 
 ;;;; ReadOpts, etc.
 
@@ -237,7 +240,7 @@
   (defn get-read-opts
     "Returns an appropriate `ReadOpts`."
     (^ReadOpts []
-     (if *natural-reads?*
+     (if *natural-replies?*
        read-opts-natural
 
        (let [read-mode *read-mode*]

@@ -337,7 +337,7 @@ sentinel down-after-milliseconds %3$s 60000"
                                 (try
                                   (conns/with-new-conn conn-opts host port master-name
                                     (fn [_ in out]
-                                      (resp/with-replies in out :natural-reads :as-vec
+                                      (resp/with-replies in out :natural-replies :as-vec
                                         (fn []
                                           ;; Always ask about master (may be used as fallback when no replicas)
                                           (resp/rcall "SENTINEL" "get-master-addr-by-name" master-name)
@@ -382,7 +382,7 @@ sentinel down-after-milliseconds %3$s 60000"
                                        (try
                                          (conns/with-new-conn conn-opts host port master-name
                                            (fn [_ in out]
-                                             (resp/with-replies in out :natural-reads false
+                                             (resp/with-replies in out :natural-replies false
                                                (fn [] (resp/rcall "ROLE")))))
                                          (catch Throwable _ nil))]
 
