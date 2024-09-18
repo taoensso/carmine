@@ -185,13 +185,10 @@
   (enc/get-env {:as :bool, :default true}
     :taoensso.carmine.auto-thaw))
 
-(def ^:dynamic *keywordize-maps?*
-  "TODO Docstring incl. env config."
-  true)
-
-(def ^:dynamic *freeze-opts*
-  "TODO Docstring incl. env config?"
-  nil)
+;; TODO Docstrings incl. env config.
+(def ^:dynamic *raw-verbatim-strings?* false)
+(def ^:dynamic *keywordize-maps?*       true)
+(def ^:dynamic *freeze-opts*             nil)
 
 (def ^:dynamic *issue-83-workaround?*
   "TODO Docstring incl. env config.
