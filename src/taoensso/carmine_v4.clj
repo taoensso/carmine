@@ -195,15 +195,17 @@
 
 (def ^:dynamic *issue-83-workaround?*
   "TODO Docstring incl. env config.
-  A bug in Carmine v2.6.0 to v2.6.1 (2014-04-01 to 2014-05-01)
-  caused Nippy blobs to be marked incorrectly (with `ba-bin` instead
-  of `ba-npy`), Ref. <https://github.com/ptaoussanis/carmine/issues/83>
+  Only relevant if `*auto-thaw?` is true.
 
-  This should be kept true (the default) if there's a chance you might
-  read any data written by Carmine < v2.6.1 (2014-05-01).
+  A bug in Carmine v2.6.0 to v2.6.1 (2014-04-01 to 2014-05-01) caused Nippy blobs
+  to be marked incorrectly, Ref. <https://github.com/ptaoussanis/carmine/issues/83>
 
-  Only relevant if `*auto-thaw?` is true."
-  (enc/get-env {:as :bool, :default true}
+  When enabled, this workaround will cause Carmine to automatically try thaw any
+  reply byte data that starts with a valid Nippy header.
+
+  Enable iff you might read data written by Carmine < v2.6.1 (2014-05-01).
+  Disabled by default."
+  (enc/get-env {:as :bool, :default false}
     :taoensso.carmine.issue-83-workaround))
 
 (def ^:dynamic *conn-cbs*
