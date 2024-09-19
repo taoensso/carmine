@@ -343,16 +343,16 @@ sentinel down-after-milliseconds %3$s 60000"
                                       (resp/with-replies in out :natural-replies :as-vec
                                         (fn []
                                           ;; Always ask about master (may be used as fallback when no replicas)
-                                          (resp/rcall "SENTINEL" "get-master-addr-by-name" master-name)
+                                          (resp/rcmd "SENTINEL" "get-master-addr-by-name" master-name)
 
                                           (if (or prefer-read-replica? update-replicas?)
                                             ;; Ask about replica nodes
-                                            (resp/rcall "SENTINEL" "replicas" master-name)
+                                            (resp/rcmd "SENTINEL" "replicas" master-name)
                                             (resp/local-echo nil))
 
                                           (when update-sentinels?
                                             ;; Ask about sentinel nodes
-                                            (resp/rcall "SENTINEL" "sentinels" master-name))))))
+                                            (resp/rcmd "SENTINEL" "sentinels" master-name))))))
 
                                   (catch Throwable _
                                     [::unreachable nil nil])))]
@@ -386,7 +386,7 @@ sentinel down-after-milliseconds %3$s 60000"
                                          (conns/with-new-conn conn-opts host port master-name
                                            (fn [_ in out]
                                              (resp/with-replies in out :natural-replies false
-                                               (fn [] (resp/rcall "ROLE")))))
+                                               (fn [] (resp/rcmd "ROLE")))))
                                          (catch Throwable _ nil))]
 
                                    (when (vector? reply) (get reply 0)))]
@@ -492,7 +492,7 @@ sentinel down-after-milliseconds %3$s 60000"
     (fn [_ in out]
       (resp/with-replies in out false false
         (fn []
-          (resp/rcall "ROLE")
-          #_(resp/rcall "SENTINEL" "get-master-addr-by-name" "my-master")
-          #_(resp/rcall "SENTINEL" "replicas"                "my-master")
-          #_(core/rcall "SENTINEL" "sentinels"               "my-master"))))))
+          (resp/rcmd "ROLE")
+          #_(resp/rcmd "SENTINEL\" \"get-master-addr-by-name\" \"my-master\"")
+          #_(resp/rcmd "SENTINEL\" \"replicas\"                \"my-master\"")
+          #_(core/rcmd "SENTINEL\" \"sentinels\"               \"my-master\""))))))
