@@ -34,8 +34,8 @@
 
 (let [delete-test-keys
       (fn []
-        (when-let [ks (seq (wcar mgr_ (resp/rcall "keys" (tk "*"))))]
-          (wcar mgr_ (doseq [k ks] (resp/rcall "del" k)))))]
+        (when-let [ks (seq (wcar mgr_ (resp/rcmd "KEYS" (tk "*"))))]
+          (wcar mgr_ (doseq [k ks] (resp/rcmd "DEL" k)))))]
 
   (test/use-fixtures :once
     (enc/test-fixtures
@@ -153,7 +153,7 @@
             [(v+ (#'conns/conn?       conn))
              (v+ (#'conns/conn-ready? conn))
              (v+ (resp/ping))
-             (v+ (car/with-replies (resp/rcall "echo" "x")))])))
+             (v+ (car/with-replies (resp/rcmd "ECHO" "x")))])))
 
       [@v mgr])))
 
@@ -164,7 +164,7 @@
                (#'conns/conn-ready? conn)
                (resp/basic-ping!  in out)
                (resp/with-replies in out false false
-                 (fn [] (resp/rcall "echo" "x")))]))
+                 (fn [] (resp/rcmd "ECHO" "x")))]))
          [true true "PONG" "x"])
      "Unmanaged conn")
 
@@ -185,11 +185,11 @@
         f
         (future
           (wcar mgr
-            (resp/rcalls
-              ["del"   k1]
-              ["lpush" k1 "x"]
-              ["lpop"  k1]
-              ["blpop" k1 5] ; Block for 5 secs
+            (resp/rcmds
+              ["DEL"   k1]
+              ["LPUSH" k1 "x"]
+              ["LPOP"  k1]
+              ["BLPOP" k1 5] ; Block for 5 secs
               )))]
 
     (Thread/sleep 1000) ; Wait for wcar to start but not complete
