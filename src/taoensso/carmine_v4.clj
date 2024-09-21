@@ -308,6 +308,77 @@
             ;; TODO Try publish error message?
             ))))))
 
+;;;;
+
+(defn ^:no-doc scan-reduce-elements
+  "Low-level, for use with `scan`, `hscan`, `zscan`, etc.
+  Private, don't use.
+  Takes:
+    - (fn scan-fn [cursor])       -> next scan result
+    - (fn rf      [acc elements]) -> next accumulator
+
+  Does no deduplication, the same element may be encountered more than once."
+  [init scan-fn rf]
+  (loop [cursor "0" acc init]
+    (let [[next-cursor next-in] (scan-fn cursor)]
+      (if (= next-cursor "0")
+        (rf acc next-in)
+        (let [result (rf acc next-in)]
+          (if (reduced? result)
+            @result
+            (recur next-cursor result)))))))
+
+(defn scan-reduce
+  "TODO Docstring, example, tests.
+  Takes:
+    - (fn scan-fn [cursor])      -> next scan result
+    - (fn rf      [acc element]) -> next accumulator
+
+  Deduplicates, ensuring that `rf` is called only once per unique element."
+  [init scan-fn rf]
+  (let [seen_ (volatile! (transient #{}))]
+    (scan-reduce-elements init scan-fn
+      (fn wrapped-rf [acc elements]
+        (reduce
+          (fn [acc element]
+            (if (contains? @seen_ element)
+              acc
+              (do
+                (vswap! seen_ conj! element)
+                (enc/convey-reduced (rf acc element)))))
+          init elements)))))
+
+(comment
+  (scan-reduce []
+    (fn scan-fn [cursor] (wcar default-conn-manager (rcmd :SCAN cursor :MATCH "*")))
+    (fn rf [acc in] (conj acc in))))
+
+(defn scan-reduce-kv
+  "TODO Docstring, example, tests.
+  Takes:
+    - (fn scan-fn [cursor])  -> next scan result
+    - (fn rf      [acc k v]) -> next accumulator
+
+  Deduplicates, ensuring that `rf` is called only once per unique key."
+  [init scan-fn rf]
+  (let [seen_ (volatile! (transient #{}))]
+    (scan-reduce-elements init scan-fn
+      (fn wrapped-rf [acc kvs]
+        (enc/reduce-kvs
+          (fn [acc k v]
+            (if (contains? @seen_ k)
+              acc
+              (do
+                (vswap! seen_ conj! k)
+                (enc/convey-reduced (rf acc k v)))))
+          acc kvs)))))
+
+(comment
+  (wcar default-conn-manager (rcmd :HMSET "my-hash" "k1" "v1" "k2" "v2"))
+  (scan-reduce-kv {}
+    (fn scan-fn [cursor] (wcar default-conn-manager (rcmd :HSCAN "my-hash" cursor)))
+    (fn rf [acc k v] (assoc acc k v))))
+
 ;;;; Scratch
 
 ;; TODO For command docstrings
