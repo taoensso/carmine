@@ -308,6 +308,51 @@
             ;; TODO Try publish error message?
             ))))))
 
+;;;;
+
+(defn scan-reduce
+  "For use with `scan`, `hscan`, `zscan`, etc.
+   Takes:
+     - (fn scan-fn [cursor])          -> next scan result
+     - (fn rf      [acc scan-result]) -> next accumulator
+
+  TODO Example"
+  [init scan-fn rf]
+  (loop [cursor "0" acc init]
+    (let [[next-cursor in] (scan-fn cursor)]
+      (if (= next-cursor "0")
+        (rf acc in)
+        (let [result (rf acc in)]
+          (if (reduced? result)
+            @result
+            (recur next-cursor result)))))))
+
+(comment
+  (scan-reduce []
+    (fn scan-fn [cursor] (wcar {} (scan cursor)))
+    (fn rf [acc in] (into acc in))))
+
+(defn scan-reduce-kv
+  "Like `scan-reduce` but:
+    - `rf` is (fn [acc k v]), as in `reduce-kv`.
+    - `rf` will never be called with the same key twice
+      (i.e. automatically de-duplicates elements).
+
+  TODO Example"
+  [init scan-fn rf]
+  (let [keys-seen_ (volatile! (transient #{}))]
+    (scan-reduce init scan-fn
+      (fn wrapped-rf [acc kvs]
+        (enc/reduce-kvs
+          (fn [acc k v]
+            (if (contains? @keys-seen_ k)
+              acc
+              (do
+                (vswap! keys-seen_ conj! k)
+                (enc/convey-reduced (rf acc k v)))))
+          acc
+          kvs)))))
+
 ;;;; Scratch
 
 ;; TODO For command docstrings
