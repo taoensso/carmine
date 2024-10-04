@@ -60,6 +60,14 @@ There are **breaking changes** to the **Carmine message queue API** that **may a
    To improve latency, queue workers now prioritize handling of **newly queued** messages before **re-visiting old messages** for queue maintenance (re-handling, GC, etc.).
    
    Most users shouldn't be negatively affected by this change since Carmine's message queue has never given any specific ordering guarantees (and cannot, for various reasons).
+   
+7. **Queue connections may be held longer**.
+   
+   To improve latency, queue sleeping is now **active** rather than **passive**, allowing Redis to immediately signal Carmine's message queue when new messages arrive.
+   
+   This change means that each worker thread (default 1) may now *hold a connection open* while sleeping. The maximum hold time is determined by [`:throttle-ms`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#worker) (usu. in the order of ~10-400 msecs).
+   
+   So if you have many queues and/or many queue worker threads, you *may* want to increase the maximum number of connections in your connection pool to ensure that you always have available connections.
 
 ## Architectural improvements
 
