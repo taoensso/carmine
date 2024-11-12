@@ -919,7 +919,7 @@
          (CarmineMessageQueueWorker.
            qname worker-opts conn-opts
            (atom false)
-           (enc/future-pool nthreads-handler)
+           (when (pos-int? nthreads-handler) (enc/future-pool nthreads-handler))
            (atom [])
            (atom {})
 
