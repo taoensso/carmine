@@ -674,14 +674,16 @@
 
   IWorker
   (stop [_]
-    (when (compare-and-set! running?_ true false)
+    (when (and (pos-int? (get worker-opts :nthreads-worker))
+               (compare-and-set! running?_ true false))
       (timbre/info "[Carmine/mq] Queue worker shutting down" {:qname qname})
       (run! deref @worker-futures_)
       (timbre/info "[Carmine/mq] Queue worker has shut down" {:qname qname})
       true))
 
   (start [this]
-    (when (compare-and-set! running?_ false true)
+    (when (and (pos-int? (get worker-opts :nthreads-worker))
+               (compare-and-set! running?_ false true))
       (timbre/info "[Carmine/mq] Queue worker starting" {:qname qname})
       (let [{:keys [handler monitor nthreads-worker]} worker-opts
             qk (partial qkey qname)
