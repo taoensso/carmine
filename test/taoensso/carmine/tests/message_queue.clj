@@ -320,4 +320,36 @@
                {:ready  []
                 :circle ["end-of-circle"]}))
 
-         (is (mq/stop worker))]))))
+         (is (mq/stop worker))])))
+
+  (testing "Zero-thread workers"
+    (clear-tq!)
+    (let [handler-fn
+          (fn [{:keys [mid message] :as in}]
+            (assert false "Zero-thread worker called handler!"))]
+
+      (with-open [^java.io.Closeable worker
+                  (mq/worker conn-opts tq
+                    {:auto-start false,
+                     :nthreads        0
+                     :handler handler-fn
+                     :throttle-ms    10
+                     :eoq-backoff-ms 10})]
+
+        [(is (enc/submap? (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added}))
+         (is (enc/submap? (wcar* (enqueue tq :msg2 {:mid :mid2})) {:success? true, :action :added}))
+
+         (is (enc/submap? (worker :queue-mids)
+               {:ready  ["mid2" "mid1"]
+                :circle ["end-of-circle"]}))
+
+         (is (nil? (mq/start worker)))
+         (is (not (:running? @worker)))
+
+         (sleep 1000)
+
+         (is (enc/submap? (worker :queue-mids)
+               {:ready  ["mid2" "mid1"]
+                :circle ["end-of-circle"]}))
+
+         (is (nil? (mq/stop worker)))]))))
