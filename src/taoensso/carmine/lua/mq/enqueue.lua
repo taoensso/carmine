@@ -25,10 +25,25 @@ end
 --------------------------------------------------------------------------------
 -- Return {action, error}
 
+local can_upd    = (_:can-upd?   == '1');
+local can_rq     = (_:can-rq?    == '1');
+local reset_ibo  = (_:reset-ibo? == '1');
+
 local interrupt_sleep = function ()
    if     redis.call('rpoplpush', _:qk-isleep-a, _:qk-isleep-b) then
    elseif redis.call('rpoplpush', _:qk-isleep-b, _:qk-isleep-a) then
    else   redis.call('lpush',     _:qk-isleep-a, '_'); end -- Init
+end
+
+local reset_init_backoff = function()
+   local init_bo = tonumber(_:init-bo);
+   if (init_bo ~= 0) then
+      redis.call('hset', _:qk-backoffs, _:mid, now + init_bo);
+      return true;
+   else
+      redis.call('hdel', _:qk-backoffs, _:mid);
+      return false;
+   end
 end
 
 local reset_in_queue = function()
@@ -54,9 +69,6 @@ local reset_in_requeue = function()
    end
 end
 
-local can_upd = (_:can-upd? == '1');
-local can_rq  = (_:can-rq?  == '1');
-
 local ensure_update_in_requeue = function()
    if is_rq then
       if can_upd then
@@ -74,15 +86,12 @@ end
 if (status == 'nx') then
    -- {nil, _bo, _rq} -> add to queue
 
-    -- Ensure that mid-circle is initialized
+   -- Ensure that mid-circle is initialized
    if redis.call('exists', _:qk-mid-circle) ~= 1 then
       redis.call('lpush',  _:qk-mid-circle, 'end-of-circle');
    end
 
-   -- Set the initial backoff if requested
-   local init_bo = tonumber(_:init-bo);
-   if (init_bo ~= 0) then
-      redis.call('hset',  _:qk-backoffs, _:mid, now + init_bo);
+   if reset_init_backoff() then
       redis.call('lpush', _:qk-mid-circle, _:mid); -- -> Maintenance queue
    else
       redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Priority queue
@@ -95,19 +104,27 @@ if (status == 'nx') then
 elseif (status == 'queued') then
    if can_upd then
       -- {queued, *bo, _rq} -> update in queue
+      if reset_ibo then reset_init_backoff(); end
       reset_in_queue();
+      return {'updated'};
+   elseif reset_ibo then
+      reset_init_backoff();
       return {'updated'};
    else
       return {false, 'already-queued'};
    end
+
 elseif (status == 'locked') then
+
    if can_rq then
       -- {locked, _bo, *rq} -> ensure/update in requeue
       return ensure_update_in_requeue();
    else
       return {false, 'locked'};
    end
+
 elseif (status == 'done') then
+
    if is_bo then
       if can_rq then
 	 -- {done, +bo, *rq} -> ensure/update in requeue
@@ -124,6 +141,7 @@ elseif (status == 'done') then
       interrupt_sleep();
       return ensure_update_in_requeue();
    end
+
 end
 
 return {false, 'unexpected'};
