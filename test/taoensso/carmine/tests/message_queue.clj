@@ -127,13 +127,16 @@
      (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? false, :error :already-queued}))
      (is (= (wcar* (enqueue tq :msg2 {:mid :mid2})) {:success? false, :error :already-queued}))
 
+     (is (= (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 500 :reset-init-backoff? true}))
+           {:success? true, :action :updated, :mid :mid2}) "Reset init backoff")
+
      (handle-end-of-circle "b")
 
      (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
      (is (= (wcar* (msg-status tq :mid1)) :locked))
 
-     (is (subvec? (wcar* (dequeue tq)) ["handle" "mid2" :msg2 1 default-lock-ms #_udt]))
-     (is (= (wcar* (msg-status tq :mid2)) :locked))]))
+     (is (subvec? (wcar* (dequeue tq)) ["skip" "queued-with-backoff"]))
+     (is (= (wcar* (msg-status tq :mid2))      :queued-with-backoff))]))
 
 (defn test-handler
   "Returns [<poll-reply> <handler-arg> <handle1-result>]"

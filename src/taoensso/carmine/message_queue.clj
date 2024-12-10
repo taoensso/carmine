@@ -349,8 +349,10 @@
 
   {:arglists
    '([qname message]
-     [qname message {:keys [init-backoff-ms lock-ms
-                            mid can-update? can-requeue?]}])}
+     [qname message
+      {:keys
+       [mid init-backoff-ms lock-ms
+        can-update? can-requeue? reset-init-backoff?]}])}
 
   [qname message & more]
   (let [opts ; Back compatibility: [a b & [c d]] -> [a b ?{:keys [c d]}]
@@ -368,8 +370,8 @@
             action {:success? true,  :action (keyword action), :mid mid}
             :else  {:success? false, :error  :unknown}))
 
-        {:keys [init-backoff-ms lock-ms
-                mid can-update? can-requeue?]}
+        {:keys [mid init-backoff-ms lock-ms
+                can-update? can-requeue? reset-init-backoff?]}
         opts
 
         ;;; Back compatibility
@@ -397,13 +399,14 @@
          :qk-isleep-a      (qkey qname :isleep-a)
          :qk-isleep-b      (qkey qname :isleep-b)}
 
-        {:now      (enc/now-udt)
-         :mid      mid
-         :mcnt     (car/freeze message)
-         :can-upd? (if can-update?    "1" "0")
-         :can-rq?  (if can-requeue?   "1" "0")
-         :init-bo  (or init-backoff-ms 0)
-         :lock-ms  (or lock-ms        -1)}))))
+        {:mid        mid
+         :now        (enc/now-udt)
+         :mcnt       (car/freeze message)
+         :init-bo    (or init-backoff-ms 0)
+         :lock-ms    (or lock-ms        -1)
+         :can-upd?   (if can-update?         "1" "0")
+         :can-rq?    (if can-requeue?        "1" "0")
+         :reset-ibo? (if reset-init-backoff? "1" "0")}))))
 
 (defn- dequeue
   "Processes next mid and returns:
