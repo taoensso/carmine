@@ -263,29 +263,28 @@
 
    (testing "rf parsers"
      [(testing "Against aggregates"
-        [(is (=                                                                (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))    [1 2 3 4])    "Baseline...")
-         (is (=   (com/parse-aggregates {} nil            (com/crf conj   #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  #{1 2 3 4})    "Parsed (without xform)")
-         (is (=   (com/parse-aggregates {} (filter even?) (com/crf conj   #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  #{  2   4})    "Parsed (with    xform)")
-         (is (->> (com/parse-aggregates {} (map throw!)   (com/crf conj   #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  parser-error?) "Trap xform errors")
-         (is (->> (com/parse-aggregates {} (map identity) (com/crf throw! #{}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  parser-error?) "Trap rf    errors")
-         (is (=   (com/parse-aggregates {} (map identity) (com/crf conj   #{}) (rr (xs->in+ "*4" ":1" "_"  ":2"  "_")))  #{nil 1 2})    "Nulls in aggregate")
+        [(is (=                                                                 (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))      [1 2 3 4])    "Baseline...")
+         (is (=   (com/parse-aggregates {} nil            (com/crf conj   #{0}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  #{0 1 2 3 4})    "Parsed (without xform)")
+         (is (=   (com/parse-aggregates {} (filter even?) (com/crf conj   #{0}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  #{0   2   4})    "Parsed (with    xform)")
+         (is (->> (com/parse-aggregates {} (map throw!)   (com/crf conj   #{0}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  parser-error?) "Trap xform errors")
+         (is (->> (com/parse-aggregates {} (map identity) (com/crf throw! #{0}) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4")))  parser-error?) "Trap rf    errors")
+         (is (=   (com/parse-aggregates {} (map identity) (com/crf conj   #{0}) (rr (xs->in+ "*4" ":1" "_"  ":2"  "_")))  #{nil 0 1 2})  "Nulls in aggregate")
+         (is (=   (com/parse-aggregates {} nil            (com/crf nil    #{0}) (rr (xs->in+ "*0")))                      #{0})          "Empty    aggregate")
 
+         (is (=                                                                           (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))     [1 2 3 4]) "Baseline...")
+         (is (= (com/parse-aggregates {} nil (com/crf conj! (transient #{0}) persistent!) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))) #{0 1 2 3 4}) "Using transients")
 
-         (is (=                                                                          (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))   [1 2 3 4]) "Baseline...")
-         (is (= (com/parse-aggregates {} nil (com/crf conj! (transient #{}) persistent!) (rr (xs->in+ "*4" ":1" ":2" ":3" ":4"))) #{1 2 3 4}) "Using transients")
-
-         (is (=                                                                                    (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2")) {:k1  1, :k2  2})  "Baseline...")
-         (is (= (com/parse-aggregates {}             nil (com/crf (fn [m [k v]] (assoc m k v)) {}) (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2")) {"k1" 1, "k2" 2})) "Ignore *keywordize-maps?*")
-         (is (= (com/parse-aggregates {:kv-rf? true} nil (com/crf (fn [m  k v]  (assoc m k v)) {}) (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2")) {"k1" 1, "k2" 2})) "With kv-rf")
-
+         (is (=                                                                                         (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2"))  {:k1  1, :k2  2})  "Baseline...")
+         (is (= (com/parse-aggregates {}             nil (com/crf (fn [m [k v]] (assoc m k v)) {:k0 0}) (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2"))) {:k0  0, "k1" 1, "k2" 2}) "Ignore *keywordize-maps?*")
+         (is (= (com/parse-aggregates {:kv-rf? true} nil (com/crf (fn [m  k v]  (assoc m k v)) {:k0 0}) (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2"))) {:k0  0, "k1" 1, "k2" 2}) "With kv-rf")
          (is (= (com/parse-aggregates {}
                   (filter (fn [[k v]] (even? v)))
-                  (com/crf (fn [m [k v]] (assoc m k v)) {})
-                  (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2"))) {"k2" 2}) "Aggregate map, with xform")
+                  (com/crf (fn [m [k v]] (assoc m k v)) {:k0 0})
+                  (rr (xs->in+ "%2" "+k1" ":1" "+k2" ":2"))) {:k0 0, "k2" 2}) "Aggregate map, with xform")
 
-         (is (=                                                            (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))   [[1 2] 3]) "Baseline...")
-         (is (= (com/parse-aggregates {} nil            (com/crf conj #{}) (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) #{[1 2] 3}) "No nesting (without xform)")
-         (is (= (com/parse-aggregates {} (map identity) (com/crf conj #{}) (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) #{[1 2] 3}) "No nesting (with    xform)")])
+         (is (=                                                             (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))     [[1 2] 3]) "Baseline...")
+         (is (= (com/parse-aggregates {} nil            (com/crf conj #{0}) (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) #{0 [1 2] 3}) "No nesting (without xform)")
+         (is (= (com/parse-aggregates {} (map identity) (com/crf conj #{0}) (rr (xs->in+ "*2" "*2" ":1" ":2" ":3"))) #{0 [1 2] 3}) "No nesting (with    xform)")])
 
       (testing "Against non-aggregates"
         [(is (= (com/parse-aggregates {} (map throw!) throw! (rr (xs->in+ "_")))         nil)  "No effect")
