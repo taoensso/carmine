@@ -204,26 +204,25 @@
 
         ;; Not streaming
         (let [n (Integer/parseInt size-str)]
-          (if (<= n 0) ; Empty or RESP2 null
-            (if (== n 0) to com/sentinel-null-reply)
+          (enc/cond
+            (< n 0) com/sentinel-null-reply
+            skip? (enc/reduce-n (fn [_ _] (read-reply inner-read-opts in)) 0 n)
 
-            (enc/cond
-              skip? (enc/reduce-n (fn [_ _] (read-reply inner-read-opts in)) 0 n)
+            ;; Reducing parser
+            :if-let [^Parser p (com/when-rf-parser (.-parser read-opts))]
+            (let [rf ((.-rfc p))
+                  init-acc (rf)]
+              (rf ; Complete acc
+                (enc/reduce-n
+                  (fn [acc _n]
+                    (rf acc (read-reply inner-read-opts in)))
+                  init-acc
+                  n)))
 
-              ;; Reducing parser
-              :if-let [^Parser p (com/when-rf-parser (.-parser read-opts))]
-              (let [rf ((.-rfc p))
-                    init-acc (rf)]
-                (rf ; Complete acc
-                  (enc/reduce-n
-                    (fn [acc _n]
-                      (rf acc (read-reply inner-read-opts in)))
-                    init-acc
-                    n)))
-
-              :default
-              (enc/repeatedly-into to n
-                #(read-reply inner-read-opts in)))))))))
+            (== n 0) to
+            :default
+            (enc/repeatedly-into to n
+              #(read-reply inner-read-opts in))))))))
 
 (let [keywordize (fn [x] (if (string? x) (keyword x) x))
       sentinel-end-of-aggregate-stream com/sentinel-end-of-aggregate-stream]
@@ -278,53 +277,52 @@
 
         ;; Not streaming
         (let [n (Integer/parseInt size-str)]
-          (if (<= n 0) ; Empty or RESP2 null
-            (if (== n 0) {} com/sentinel-null-reply)
+          (enc/cond
+            (< n 0) com/sentinel-null-reply
+            skip?
+            (enc/reduce-n
+              (fn [_ _]
+                (let [_k (read-reply inner-read-opts in)
+                      _v (read-reply inner-read-opts in)]
+                  nil))
+              0 n)
 
-            (enc/cond
-              skip?
-              (enc/reduce-n
-                (fn [_ _]
-                  (let [_k (read-reply inner-read-opts in)
-                        _v (read-reply inner-read-opts in)]
-                    nil))
-                0 n)
+            ;; Reducing parser
+            :if-let [^Parser p (com/when-rf-parser (.-parser read-opts))]
+            (let [rf    ((.-rfc    p))
+                  kv-rf? (.-kv-rf? p)
+                  init-acc (rf)]
+              (rf ; Complete
+                (enc/reduce-n
+                  (fn [acc _n]
+                    (let [k (read-reply inner-read-opts in) ; Without kfn!
+                          v (read-reply inner-read-opts in)]
+                      (if kv-rf?
+                        (rf acc                               k v)
+                        (rf acc (clojure.lang.MapEntry/create k v)))))
+                  init-acc
+                  n)))
 
-              ;; Reducing parser
-              :if-let [^Parser p (com/when-rf-parser (.-parser read-opts))]
-              (let [rf    ((.-rfc    p))
-                    kv-rf? (.-kv-rf? p)
-                    init-acc (rf)]
-                (rf ; Complete
-                  (enc/reduce-n
-                    (fn [acc _n]
-                      (let [k (read-reply inner-read-opts in) ; Without kfn!
-                            v (read-reply inner-read-opts in)]
-                        (if kv-rf?
-                          (rf acc                               k v)
-                          (rf acc (clojure.lang.MapEntry/create k v)))))
-                    init-acc
-                    n)))
-
-              :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
-              :default
-              (if (> n 10)
-                (persistent!
-                  (enc/reduce-n
-                    (fn [m _]
-                      (let [k (kfn (read-reply inner-read-opts in))
-                            v      (read-reply inner-read-opts in)]
-                        (assoc! m k v)))
-                    (transient {})
-                    n))
-
+            (== n 0) {}
+            :let [kfn (if (.-keywordize-maps? read-opts) keywordize identity)]
+            :default
+            (if (> n 10)
+              (persistent!
                 (enc/reduce-n
                   (fn [m _]
                     (let [k (kfn (read-reply inner-read-opts in))
                           v      (read-reply inner-read-opts in)]
-                      (assoc m k v)))
-                  {}
-                  n)))))))))
+                      (assoc! m k v)))
+                  (transient {})
+                  n))
+
+              (enc/reduce-n
+                (fn [m _]
+                  (let [k (kfn (read-reply inner-read-opts in))
+                        v      (read-reply inner-read-opts in)]
+                    (assoc m k v)))
+                {}
+                n))))))))
 
 (defn- redis-reply-error [?message]
   (let [^String message (if (nil? ?message) "" ?message)
