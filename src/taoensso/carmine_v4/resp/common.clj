@@ -402,19 +402,22 @@
 
 (comment (enc/qb 1e6 (rf-parser {} nil (fn [])))) ; 72.61
 
-(defn ^:public completing-rf
-  "Like `completing` for parser reducing fn"
-  ([rf init   ] (completing-rf rf init identity))
-  ([rf init cf]
-   (fn
-     ([]        init)
+(defn ^:public parsing-rf
+  "Advanced, experimental.
+  Alternative version of `core/completing` optimized
+  for use with `parse-aggregates`, etc."
+  ([        rf] (parsing-rf (delay (rf)) identity rf))
+  ([init    rf] (parsing-rf init         identity rf))
+  ([init cf rf]
+   (fn parsing-rf
+     ([] (force init))
      ([acc]     (cf acc))
      ([acc in]  (rf acc in))
      ([acc k v] (rf acc k v)))))
 
-(comment ((crf conj :init)))
+(comment ((parsing-rf conj :init)))
 
-(enc/defalias crf completing-rf)
+(enc/defalias prf parsing-rf)
 
 ;;;; Reply parsing public API
 
@@ -470,7 +473,7 @@
   Argument to parser may be affected by special read
   modes (`as-bytes`, etc.).
 
-  See also `unparsed`, `parse`, `completing-rf`."
+  See also `unparsed`, `parse`, `parsing-rf`."
   [opts ?xform rf & body]
   `(binding [*parser* (rf-parser ~opts ~?xform ~rf)]
      ~@body))

@@ -43,7 +43,7 @@
   com/unparsed
   com/parse
   com/parse-aggregates
-  com/completing-rf
+  com/parsing-rf
   ;;
   com/as-?long
   com/as-?double
