@@ -34,39 +34,33 @@
 (defn- read-blob
   "$<length>\r\n<bytes>\r\n -> ?<binary safe String or other>"
   [read-mode read-markers? ^DataInputStream in]
-  (let [size-str (.readLine in)]
+  (enc/cond
+    :let [size-str (.readLine in)]
 
-    (if-let [stream? (= size-str "?")]
-      ;; Streaming
-      (read-streaming-blob read-mode in)
+    :if-let [streaming? (= size-str "?")]
+    (read-streaming-blob read-mode in) ; Streaming
 
-      ;; Not streaming
-      (let [n (Integer/parseInt size-str)]
-        (if (<= n 0) ; Empty or RESP2 null
-          (if (== n 0)
-            (if (identical? read-mode :bytes) (byte-array 0) "") ; Empty
-            com/sentinel-null-reply)
+    :let [n (Integer/parseInt size-str)]
 
-          ;; Not empty
-          (if-let [marker (and read-markers? (com/read-blob-?marker in n))]
+    (<= n 0) ; Empty or RESP2 null
+    (if (== n 0)
+      (if (identical? read-mode :bytes) (byte-array 0) "") ; Empty
+      com/sentinel-null-reply)
 
-            ;; Marked
-            (read-marked-blob read-mode marker n in)
+    :if-let [marker (and read-markers? (com/read-blob-?marker in n))]
+    (read-marked-blob read-mode marker n in) ; Marked
 
-            ;; Unmarked
-            (if (identical? read-mode :skip)
+    (identical? read-mode :skip) ; Skip
+    (do
+      (.skipBytes       in n)
+      (com/discard-crlf in)
+      com/sentinel-skipped-reply)
 
-              ;; Skip
-              (do
-                (.skipBytes       in n)
-                (com/discard-crlf in)
-                com/sentinel-skipped-reply)
-
-              ;; Don't skip
-              (let [ba (byte-array n)]
-                (.readFully       in ba 0 n)
-                (com/discard-crlf in)
-                (complete-blob read-mode ba)))))))))
+    :else
+    (let [ba (byte-array n)]
+      (.readFully       in ba 0 n)
+      (com/discard-crlf in)
+      (complete-blob read-mode ba))))
 
 (let [discard-stream-separator com/discard-stream-separator
       discard-crlf             com/discard-crlf]
