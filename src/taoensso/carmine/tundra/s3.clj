@@ -36,7 +36,7 @@
          (s3/create-bucket creds bucket)
          (recur k v))
        (instance? Exception reply) reply
-       :else (ex-info (format "Unexpected reply: %s" reply) {:reply reply}))))
+       :else (truss/ex-info (str "Unexpected reply: " reply) {:reply reply}))))
 
   (fetch-keys [this ks]
     (let [fetch1

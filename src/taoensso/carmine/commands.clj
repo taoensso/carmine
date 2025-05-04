@@ -197,10 +197,9 @@
            "}")})
 
       (catch Throwable t
-        (throw
-          (ex-info "Failed to generate Carmine command spec"
-            {:redis-command-spec redis-command-spec}
-            t)))))
+        (truss/ex-info! "Failed to generate Carmine command spec"
+          {:redis-command-spec redis-command-spec}
+          t))))
 
   (comment
     (get-in                           (get-redis-command-spec :local)  [:as-map :XTRIM])
@@ -287,9 +286,8 @@
   (if-let [edn (enc/slurp-resource "carmine-commands.edn")]
     (try
       (enc/read-edn edn)
-      (catch Exception e
-        (throw (ex-info "Failed to read Carmine commands edn" {} e))))
-    (throw (ex-info "Failed to find Carmine commands edn" {}))))
+      (catch Exception e (truss/ex-info! "Failed to read Carmine commands edn" {} e)))
+    (do                  (truss/ex-info! "Failed to find Carmine commands edn" {}))))
 
 (defmacro defcommands []
   `(do ~@(map (fn [[k v]] `(defcommand ~k ~v)) command-spec)))

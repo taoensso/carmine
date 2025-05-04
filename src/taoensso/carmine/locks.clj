@@ -8,6 +8,7 @@
 
   Ref. <http://goo.gl/5UalQ> for implementation details."
   (:require
+   [taoensso.truss   :as truss]
    [taoensso.carmine :as car :refer [wcar]]))
 
 (def ^:private lkey (partial car/key :carmine :lock))
@@ -72,9 +73,9 @@
          {:result (do ~@body)} ; Wrapped to distinguish nil body result
          (catch Throwable t# (throw t#))
          (finally
-          (when-not (release-lock conn-opts# lock-name# uuid#)
-            (throw (ex-info (str "Lock expired before it was released: " lock-name#)
-              {:lock-name lock-name#}))))))))
+          (when-not (release-lock conn-opts# ~lock-name uuid#)
+            (truss/ex-info! (str "Lock expired before it was released: " ~lock-name)
+              {:lock-name ~lock-name})))))))
 
 (comment
   (timbre/set-level! :debug)

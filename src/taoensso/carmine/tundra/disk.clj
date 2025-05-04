@@ -1,12 +1,16 @@
 (ns taoensso.carmine.tundra.disk
   "Simple disk-based DataStore implementation for Tundra."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.encore         :as enc]
-            [taoensso.timbre         :as timbre]
-            [taoensso.carmine.tundra :as tundra])
-  (:import  [taoensso.carmine.tundra IDataStore]
-            [java.nio.file CopyOption Files LinkOption OpenOption Path Paths
-             StandardCopyOption StandardOpenOption NoSuchFileException]))
+  (:require
+   [taoensso.encore         :as enc]
+   [taoensso.truss          :as truss]
+   [taoensso.timbre         :as timbre]
+   [taoensso.carmine.tundra :as tundra])
+
+  (:import
+   [taoensso.carmine.tundra IDataStore]
+   [java.nio.file CopyOption Files LinkOption OpenOption Path Paths
+    StandardCopyOption StandardOpenOption NoSuchFileException]))
 
 ;;;; Private utils
 
@@ -49,7 +53,7 @@
        (if (mkdirs path) (recur k v) result)
 
        (instance? Exception result) result
-       :else (ex-info (format "Unexpected result: %s" result) {:result result})))))
+       :else (truss/ex-info (str "Unexpected result: " result) {:result result})))))
 
 (defn disk-datastore
   "Alpha - subject to change.

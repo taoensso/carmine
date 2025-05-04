@@ -6,6 +6,7 @@
   (:require
    [clojure.string            :as str]
    [taoensso.encore           :as enc]
+   [taoensso.truss            :as truss]
    [taoensso.carmine.protocol :as protocol])
 
   (:import
@@ -44,8 +45,7 @@
 
         ;; Ref. https://github.com/redis/redis/issues/420
         (when (not= resp (if (:listener? this) ["ping" ""] "PONG"))
-          (throw
-            (ex-info "Unexpected PING response" {:resp resp}))))
+          (truss/ex-info! "Unexpected PING response" {:resp resp})))
 
       (catch Exception ex
         (when-let [f (get-in spec [:instrument :on-conn-error])]
@@ -198,7 +198,7 @@
 
     :instrument nil ; noop (ignore)
 
-    (throw (ex-info (str "Unknown pool option: " k) {:option k})))
+    (truss/ex-info! (str "Unknown pool option: " k) {:option k}))
   pool)
 
 (def conn-pool
@@ -280,4 +280,4 @@
           (let [pool (conn-pool :mem/fresh pool-opts)]
             [pool (get-conn pool spec)])))
       (catch Exception e
-        (throw (ex-info "Carmine connection error" {} e))))))
+        (truss/ex-info! "Carmine connection error" {} e)))))

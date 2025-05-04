@@ -463,7 +463,7 @@
           :alpha (recur (conj out "ALPHA") args)
           :asc   (recur (conj out "ASC")   args)
           :desc  (recur (conj out "DESC")  args)
-          (throw (ex-info (str "Unknown sort argument: " type) {:type type})))))))
+          (truss/ex-info! (str "Unknown sort argument: " type) {:type type}))))))
 
 (defn sort*
   "Like `sort` but supports idiomatic Clojure arguments: :by pattern,
@@ -858,9 +858,8 @@
   [conn-opts max-cas-attempts & body]
   `(let [n# ~max-cas-attempts]
      (atomic* ~conn-opts n# (do ~@body)
-       (throw
-         (ex-info (str "`atomic` failed after " n# " attempts")
-           {:nattempts n#})))))
+       (truss/ex-info! (str "`atomic` failed after " n# " attempts")
+         {:nattempts n#}))))
 
 (comment
   ;; Error before exec (=> syntax, etc.)
@@ -1182,10 +1181,9 @@
            (if-not (nil? result#) ; Was [] with < Carmine v3
              (remember result#)
              (if (= idx# max-idx#)
-               (throw
-                 (ex-info (format "`ensure-atomically` failed after %s attempt(s)"
-                            idx#)
-                   {:nattempts idx#}))
+               (truss/ex-info!
+                 (str "`ensure-atomically` failed after " idx# " attempt(s)")
+                 {:nattempts idx#})
                (recur (inc idx#))))))))
 
   (defn ^:deprecated hmget* "DEPRECATED: Use `parse-map` instead."

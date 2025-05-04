@@ -18,7 +18,8 @@
 (def ^:dynamic *context* "Current dynamic Context"         nil)
 (def ^:dynamic *parser*  "ifn (with optional meta) or nil" nil)
 (def no-context-ex
-  (ex-info "Redis commands must be called within the context of a connection to Redis server (see `wcar`)" {}))
+  (truss/ex-info "Redis commands must be called within the context of a connection to Redis server (see `wcar`)"
+    {}))
 
 (defmacro with-context "Implementation detail"
   [conn & body]
@@ -46,7 +47,7 @@
 
 (defn- ensure-reserved-first-byte [^bytes ba]
   (if (and (> (alength ba) 0) (zero? (aget ba 0)))
-    (throw (ex-info "Args can't begin with null terminator (byte 0)" {:ba ba}))
+    (truss/ex-info! "Args can't begin with null terminator (byte 0)" {:ba ba})
     ba))
 
 ;;;; Redis<->Clj type coercion
@@ -60,9 +61,8 @@
     (enc/bytes?           x) (WrappedRaw. x)
     (instance? WrappedRaw x) x
     :else
-    (throw
-      (ex-info "Raw arg must be byte[]"
-        {:given x :type (type x)}))))
+    (truss/ex-info! "Raw arg must be byte[]"
+      {:given x :type (type x)})))
 
 (defprotocol     IByteStr (byte-str [x] "Coerces arbitrary Clojure val to Redis bytestring"))
 (extend-protocol IByteStr
@@ -144,7 +144,7 @@
       (let [err-str    (.readLine in)
             err-prefix (re-find #"^\S+" err-str) ; "ERR", "WRONGTYPE", etc.
             err-prefix (when err-prefix (keyword (str/lower-case err-prefix)))]
-        (ex-info err-str (if-not err-prefix {} {:prefix err-prefix})))
+        (truss/ex-info err-str (if-not err-prefix {} {:prefix err-prefix})))
 
       (int \*)
       (let [bulk-count (Integer/parseInt (.readLine in))]
@@ -197,12 +197,11 @@
 
               (catch Exception e
                 (let [message (.getMessage e)]
-                  (ex-info (str "Bad reply data: " message)
+                  (truss/ex-info (str "Bad reply data: " message)
                     {:message message} e)))))))
 
-      (throw
-        (ex-info (str "Server returned unknown reply type: " reply-type)
-          {:reply-type reply-type})))))
+      (truss/ex-info! (str "Server returned unknown reply type: " reply-type)
+        {:reply-type reply-type}))))
 
 (let [not-found (Object.)]
   (defn get-parsed-reply "Implementation detail"
@@ -233,7 +232,7 @@
             (?parser unparsed-reply)
             (catch Exception e
               (let [message (.getMessage e)]
-                (ex-info (str "Parser error: " message)
+                (truss/ex-info (str "Parser error: " message)
                   {:message message} e)))))))))
 
 ;;;; Parsers

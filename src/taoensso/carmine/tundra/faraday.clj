@@ -4,11 +4,14 @@
   Use AWS Data Pipeline to setup scheduled backups of DynamoDB table(s) to S3
   (there is a template pipeline for exactly this purpose)."
   {:author "Peter Taoussanis"}
-  (:require [taoensso.encore         :as enc]
-            [taoensso.timbre         :as timbre]
-            [taoensso.faraday        :as far]
-            [taoensso.carmine.tundra :as tundra])
-  (:import  [taoensso.carmine.tundra IDataStore]))
+  (:require
+   [taoensso.encore         :as enc]
+   [taoensso.truss          :as truss]
+   [taoensso.timbre         :as timbre]
+   [taoensso.faraday        :as far]
+   [taoensso.carmine.tundra :as tundra])
+
+  (:import [taoensso.carmine.tundra IDataStore]))
 
 (def default-table :faraday.tundra.datastore.default.prod)
 (defn ensure-table ; Slow, so we won't do automatically
@@ -48,7 +51,7 @@
                  (enc/map-vals :frozen-val)
                  (reduce merge {}))
             (catch Throwable t (zipmap ks (repeat t))))]
-      (mapv #(get vals-map % (ex-info "Missing value" {})) ks))))
+      (mapv #(get vals-map % (truss/ex-info "Missing value" {})) ks))))
 
 (defn faraday-datastore
   "Alpha - subject to change.

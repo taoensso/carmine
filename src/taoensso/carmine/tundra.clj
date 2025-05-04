@@ -160,15 +160,11 @@
                            (count ks-missing))
                 (let [n-dvals-missing (count dvals-missing)
                       n-ks-missing    (count ks-missing)]
-                  (throw
-                    (ex-info
-                      (format (str "Bad `fetch-keys` result:"
-                                " unexpected val count (got %s, expected %s)."
-                                " Bad DataStore implementation?")
-                        n-dvals-missing
-                        n-ks-missing)
-                      {:n-dvals-missing n-dvals-missing
-                       :n-ks-missing    n-ks-missing}))))
+                  (truss/ex-info!
+                    (format "Bad `fetch-keys` result: unexpected val count (got %s, expected %s). Bad DataStore implementation?"
+                      n-dvals-missing n-ks-missing)
+                    {:n-dvals-missing n-dvals-missing
+                     :n-ks-missing    n-ks-missing})))
 
               dvals-missing (if (nil? freezer) dvals-missing
                                 (->> dvals-missing
@@ -181,7 +177,7 @@
                            (if (throwable? dv) (car/return dv)
                                (if-not (enc/bytes? dv)
                                  (car/return
-                                   (ex-info "Malformed fetch data" {:dv dv}))
+                                   (truss/ex-info "Malformed fetch data" {:dv dv}))
                                  (car/restore k (or redis-ttl-ms 0) (car/raw dv)))))
                          ks-missing)
                    (car/with-replies :as-pipeline)
@@ -199,7 +195,7 @@
                            {}))]
 
           (when-not (empty? errors)
-            (let [ex (ex-info "Failed to ensure some key(s)" errors)]
+            (let [ex (truss/ex-info "Failed to ensure some key(s)" errors)]
               (timbre/error ex) (throw ex)))
           nil))))
 
@@ -221,7 +217,7 @@
         ks-not-missing)
 
       (when-not (empty? ks-missing)
-        (let [ex (ex-info "Some dirty key(s) were missing" {:ks ks-missing})]
+        (let [ex (truss/ex-info "Some dirty key(s) were missing" {:ks ks-missing})]
           (timbre/error ex) (throw ex)))
       nil))
 
@@ -260,8 +256,8 @@
                   {:status :error
                    :throwable
                    (cond
-                    (nil? put-reply) (ex-info "Key doesn't exist" {:k k})
-                    :else (ex-info "Bad put-reply" {:k k :put-reply put-reply}))})))))))))
+                    (nil? put-reply) (truss/ex-info "Key doesn't exist" {:k k})
+                    :else            (truss/ex-info "Bad put-reply"     {:k k :put-reply put-reply}))})))))))))
 ;;;;
 
 (defn tundra-store

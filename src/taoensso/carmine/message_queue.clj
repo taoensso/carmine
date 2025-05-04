@@ -421,10 +421,9 @@
           (fn?     eoq-backoff-ms) (mapv           eoq-backoff-ms (range 5))
           (number? eoq-backoff-ms) (repeat 5 (long eoq-backoff-ms))
           :else
-          (throw
-            (ex-info
-              (str "[Carmine/mq] Unexpected `eoq-backoff-ms` arg: " eoq-backoff-ms)
-              {:arg (enc/typed-val eoq-backoff-ms)})))]
+          (truss/ex-info!
+            (str "[Carmine/mq] Unexpected `eoq-backoff-ms` arg: " eoq-backoff-ms)
+            {:arg (enc/typed-val eoq-backoff-ms)}))]
 
     (car/lua @lua-dequeue_
       {:qk-messages      (qkey qname :messages)
@@ -587,7 +586,7 @@
             (let [msg  "[Carmine/mq] Handler returned `:error` status"
                   data {:qname qname, :mid mid, :attempt attempt, :message mcontent}]
 
-              (timbre/error (ex-info msg data) msg
+              (timbre/error (truss/ex-info msg data) msg
                 (dissoc data :message))))
 
           ;; else
@@ -603,9 +602,8 @@
       ;; else
       (do
         (inc-nstat! nstats_ :poll/unexpected)
-        (throw
-          (ex-info "[Carmine/mq] Unexpected poll reply"
-            {:reply (enc/typed-val poll-reply)}))))))
+        (truss/ex-info! "[Carmine/mq] Unexpected poll reply"
+          {:reply (enc/typed-val poll-reply)})))))
 
 ;;;; Workers
 
@@ -666,9 +664,8 @@
         (stats/summary-stats-clear! ssb-handling-time-ns)
         nil)
 
-      (throw
-        (ex-info "[Carmine/mq] Unexpected queue worker command"
-          {:command (enc/typed-val cmd)}))))
+      (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
+        {:command (enc/typed-val cmd)})))
 
   IWorker
   (stop [_]
