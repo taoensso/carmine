@@ -49,12 +49,7 @@
 
     :plugins
     [[lein-pprint  "1.3.2"]
-     [lein-ancient "0.7.0"]
-     [com.taoensso.forks/lein-codox "0.10.11"]]
-
-    :codox
-    {:language #{:clojure #_:clojurescript}
-     :base-language :clojure}}}
+     [lein-ancient "0.7.0"]]}}
 
   :aliases
   {"start-dev"     ["with-profile" "+dev" "repl" ":headless"]
