@@ -2,8 +2,9 @@
   "Low-level RESP protocol tests.
   These don't need a running Redis server."
   (:require
-   [clojure.test     :as test :refer [deftest testing is]]
-   [taoensso.encore  :as enc  :refer [throws?]]
+   [clojure.test     :as test  :refer [deftest testing is]]
+   [taoensso.encore  :as enc]
+   [taoensso.truss   :as truss :refer [throws?]]
    [taoensso.nippy   :as nippy]
 
    [taoensso.carmine-v4.resp.common :as com

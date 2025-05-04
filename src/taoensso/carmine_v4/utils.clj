@@ -1,6 +1,8 @@
 (ns ^:no-doc taoensso.carmine-v4.utils
   "Private ns, implementation detail."
-  (:require [taoensso.encore :as enc]))
+  (:require
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]))
 
 (comment (remove-ns 'taoensso.carmine-v4.utils))
 
@@ -77,21 +79,21 @@
 
 (defn cb-notify!
   "Notifies callbacks by calling them with @data_."
-  ([cb      data_] (when cb (enc/catching (cb (force data_)))))
+  ([cb      data_] (when cb (truss/catching (cb (force data_)))))
   ([cb1 cb2 data_]
-   (when cb1 (enc/catching (cb1 (force data_))))
-   (when cb2 (enc/catching (cb2 (force data_)))))
+   (when cb1 (truss/catching (cb1 (force data_))))
+   (when cb2 (truss/catching (cb2 (force data_)))))
 
   ([cb1 cb2 cb3 data_]
-   (when cb1 (enc/catching (cb1 (force data_))))
-   (when cb2 (enc/catching (cb2 (force data_))))
-   (when cb3 (enc/catching (cb3 (force data_))))))
+   (when cb1 (truss/catching (cb1 (force data_))))
+   (when cb2 (truss/catching (cb2 (force data_))))
+   (when cb3 (truss/catching (cb3 (force data_))))))
 
 (let [get-data_
       (fn [error cbid]
         (let [data (assoc (ex-data error) :cbid cbid)
               data
-              (if-let [cause (or (get data :cause) (enc/ex-cause error))]
+              (if-let [cause (or (get data :cause) (ex-cause error))]
                 (assoc data :cause cause)
                 (do    data))]
           (delay data)))]

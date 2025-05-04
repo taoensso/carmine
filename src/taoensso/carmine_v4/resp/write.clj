@@ -3,6 +3,7 @@
   (:refer-clojure :exclude [bytes])
   (:require
    [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
    [taoensso.nippy  :as nippy]
    [taoensso.carmine-v4.resp.common :as com
     :refer [with-out with-out->str]])
@@ -242,7 +243,7 @@
   ;; => Vector for destructuring (undocumented)
   ([freeze-opts clj-val & more]
    (let [freeze-opts
-         (enc/have [:or nil? map?]
+         (truss/have [:or nil? map?]
            (if (identical? freeze-opts :dynamic)
              core/*freeze-opts*
              freeze-opts))]

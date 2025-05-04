@@ -2,9 +2,9 @@
   "Private ns, implementation detail.
   Implementation of the Redis RESP3 protocol,
   Ref. <https://github.com/redis/redis-specifications/blob/master/protocol/RESP3.md>"
-  (:refer-clojure :exclude [binding])
   (:require
-   [taoensso.encore :as enc :refer [binding]]
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
    [taoensso.carmine-v4.resp.common :as com]
    [taoensso.carmine-v4.resp.read   :as read]
    [taoensso.carmine-v4.resp.write  :as write])
@@ -184,7 +184,7 @@
      (flush-pending-reqs parent-ctx))
 
    (let [new-ctx (Ctx. false natural-replies? (LinkedList.) (LinkedList.) nil in out)]
-     (binding [*ctx* new-ctx] (body-fn))
+     (enc/binding* [*ctx* new-ctx] (body-fn))
      (flush-pending-reqs       new-ctx)
      (complete-replies as-vec? new-ctx)))
 
@@ -194,7 +194,7 @@
      (flush-pending-reqs parent-ctx))
 
    (let [new-ctx (Ctx. true natural-replies? (LinkedList.) (LinkedList.) conn-opts nil nil)]
-     (binding [*ctx* new-ctx] (body-fn))
+     (enc/binding* [*ctx* new-ctx] (body-fn))
      (flush-pending-reqs       new-ctx)
      (complete-replies as-vec? new-ctx)))
 
@@ -208,7 +208,7 @@
              (Ctx. true  natural-replies? (LinkedList.) (LinkedList.) (.-conn-opts parent-ctx) nil nil)
              (Ctx. false natural-replies? (LinkedList.) (LinkedList.) nil (.-in parent-ctx) (.-out parent-ctx)))]
 
-       (binding [*ctx* new-ctx] (body-fn))
+       (enc/binding* [*ctx* new-ctx] (body-fn))
        (flush-pending-reqs       new-ctx)
        (complete-replies as-vec? new-ctx)))))
 

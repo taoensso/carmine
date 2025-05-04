@@ -5,6 +5,7 @@
   (:refer-clojure :exclude [bytes])
   (:require
    [taoensso.encore  :as enc]
+   [taoensso.truss   :as truss]
    [taoensso.carmine :as v3-core]
    [taoensso.carmine
     [connections :as v3-conns]

@@ -5,7 +5,8 @@
     - Throw detailed error messages when issues occur."
   (:require
    [clojure.string  :as str]
-   [taoensso.encore :as enc :refer [have have?]]
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss :refer [have have?]]
    [taoensso.carmine-v4.utils :as utils])
 
   (:import
@@ -164,7 +165,7 @@
       (have? [:or nil? fn?] :in                 (vals cbs))
 
       (when socket-opts (set-socket-opts! (java.net.Socket.) socket-opts)) ; Dry run
-      (have? [:ks<= #{:init-size-in :init-size-out}] buffer-opts)
+      (have? [:ks<= #{:init-size-in :init-size-out}]         buffer-opts)
 
       (if in-sentinel-opts?
         (have? [:ks<= #{:commands :auth :resp3? #_:client-name #_:select-db}] init)

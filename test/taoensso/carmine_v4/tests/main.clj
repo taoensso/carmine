@@ -3,7 +3,8 @@
   These need a running Redis server."
   (:require
    [clojure.test        :as test :refer [deftest testing is]]
-   [taoensso.encore     :as enc  :refer [throws?]]
+   [taoensso.encore     :as enc]
+   [taoensso.truss      :as truss :refer [throws?]]
    [taoensso.carmine    :as v3-core]
    [taoensso.carmine-v4          :as car  :refer [wcar with-replies]]
    [taoensso.carmine-v4.resp     :as resp]
@@ -194,7 +195,7 @@
 
     (Thread/sleep 1000) ; Wait for wcar to start but not complete
     [(is (true? (car/conn-manager-close! mgr 0 {}))) ; Interrupt pool conns
-     (is (instance? java.net.SocketException (enc/ex-cause (enc/throws @f)))
+     (is (instance? java.net.SocketException (ex-cause (truss/throws @f)))
        "Close with zero timeout interrupts blocking blpop")]))
 
 (deftest _wcar-basics

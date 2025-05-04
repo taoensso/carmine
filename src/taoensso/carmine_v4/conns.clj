@@ -1,9 +1,9 @@
 (ns ^:no-doc taoensso.carmine-v4.conns
   "Private ns, implementation detail.
   Carmine connection handling code."
-  (:refer-clojure :exclude [binding])
   (:require
-   [taoensso.encore :as enc :refer [have have? binding]]
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
    [taoensso.carmine-v4.utils :as utils]
    [taoensso.carmine-v4.resp  :as resp]
    [taoensso.carmine-v4.opts  :as opts])
@@ -221,7 +221,7 @@
     (debug! :conn-close! data)
     (when (compare-and-set! open?_ true false)
       (let [t0         (System/currentTimeMillis)
-            closed?    (enc/catching (do (.close socket) true))
+            closed?    (truss/catching (do (.close socket) true))
             elapsed-ms (- (System/currentTimeMillis) t0)]
 
         (utils/cb-notify!
@@ -302,8 +302,8 @@
            {:server (enc/typed-val server)})))))
 
   (^Conn [conn-opts t0 master-name host port]
-   (let [host (have string? host)
-         port (enc/as-int   port)
+   (let [host (truss/have string? host)
+         port (enc/as-int         port)
 
          {:keys [#_server socket-opts buffer-opts]} conn-opts
          {:keys [init-size-in init-size-out]
@@ -419,7 +419,7 @@
 
             (when timeout-udt (>= (System/currentTimeMillis) ^long timeout-udt))
             (do ; Give up waiting
-              (run! #(enc/catching (conn-close! % close-data)) conns)
+              (run! #(truss/catching (conn-close! % close-data)) conns)
               false)
 
             :else (do (Thread/sleep 100) (recur conns))))))))
@@ -592,15 +592,15 @@
             ;; Always test `conn-resolved?` before returning, it's cheap
             ;; and needed for correct clearing behaviour after master change
             (if (conn-resolved? conn :use-cache)
-              (do                                                        (.returnObject     pool conn))
-              (binding [*mgr-close-data* {:mgr this, :via 'mgr-borrow!}] (.invalidateObject pool conn)))
+              (do                                                             (.returnObject     pool conn))
+              (enc/binding* [*mgr-close-data* {:mgr this, :via 'mgr-borrow!}] (.invalidateObject pool conn)))
 
             result)
 
           (catch Throwable t
             ;; We're conservative here and invalidate conn for ANY cause since even if
             ;; conn is intact, it may be in an unexpected state
-            (binding [*mgr-close-data* {:mgr this, :via 'mgr-borrow!, :cause t}]
+            (enc/binding* [*mgr-close-data* {:mgr this, :via 'mgr-borrow!, :cause t}]
               (.invalidateObject pool conn))
             (throw t))
 
@@ -664,8 +664,8 @@
                     (let [t0 (System/currentTimeMillis)]
                       (try
                         (if-let [cbs sentinel-mgr-cbs]
-                          (binding [sentinel/*mgr-cbs* cbs] (DefaultPooledObject. (new-conn conn-opts)))
-                          (do                               (DefaultPooledObject. (new-conn conn-opts))))
+                          (enc/binding* [sentinel/*mgr-cbs* cbs] (DefaultPooledObject. (new-conn conn-opts)))
+                          (do                                    (DefaultPooledObject. (new-conn conn-opts))))
 
                         (catch Throwable t
                           (.getAndIncrement n-failed*)

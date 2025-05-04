@@ -3,7 +3,8 @@
   Implementation of the Redis Cluster protocol,
   Ref. <https://redis.io/docs/reference/cluster-spec/>"
   (:require
-   [taoensso.encore :as enc :refer [have have?]]
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
    ;;[taoensso.carmine-v4.utils :as utils]
    ;;[taoensso.carmine-v4.conns :as conns]
    [taoensso.carmine-v4.resp.common :as com]

@@ -3,7 +3,8 @@
   Implementation of the Redis Sentinel protocol,
   Ref. <https://redis.io/docs/reference/sentinel-clients/>"
   (:require
-   [taoensso.encore :as enc :refer [have have?]]
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
    [taoensso.carmine-v4.utils :as utils]
    [taoensso.carmine-v4.conns :as conns]
    [taoensso.carmine-v4.resp  :as resp]
@@ -154,7 +155,7 @@ sentinel down-after-milliseconds %3$s 60000"
   ISentinelSpec
   (sentinel-opts [_] sentinel-opts)
   (update-addrs! [this master-name cbs kind f]
-    (have? [:el #{:master :replicas :sentinels}] kind)
+    (truss/have? [:el #{:master :replicas :sentinels}] kind)
     (let [master-name (enc/as-qname master-name)
           master?     (identical? kind :master)]
 
@@ -471,10 +472,10 @@ sentinel down-after-milliseconds %3$s 60000"
            (fn [m master-name addrs]
              (assoc m (enc/as-qname master-name)
                {:sentinels (reset-addrs addrs)}))
-           {} (have map? sentinel-addrs-map))]
+           {} (truss/have map? sentinel-addrs-map))]
 
      (SentinelSpec.
-       (have [:or nil? map?] sentinel-opts)
+       (truss/have [:or nil? map?] sentinel-opts)
        (atom addrs-state)
        (atom {})
        (atom {})))))

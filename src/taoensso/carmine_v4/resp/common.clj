@@ -1,8 +1,8 @@
 (ns ^:no-doc taoensso.carmine-v4.resp.common
   "Private ns, implementation detail."
-  (:refer-clojure :exclude [binding])
   (:require
-   [taoensso.encore :as enc :refer [binding]]
+   [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
    [taoensso.carmine-v4.classes])
 
   (:import
@@ -154,8 +154,8 @@
 (defn discard-crlf
   [^DataInputStream in]
   ;; (.skip 2)
-  (let [s (.readLine in)]
-    (if (.isEmpty s)
+  (let [s (.readLine in)] ; May be nil!
+    (if (= s "")
       true
       (throw
         (ex-info "[Carmine] Missing CRLF"
@@ -180,7 +180,7 @@
 (defmacro ^:public skip-replies
   "Establishes special read mode that discards any Redis replies
   to requests in body."
-  [& body] `(binding [*read-mode* :skip] ~@body))
+  [& body] `(enc/binding* [*read-mode* :skip] ~@body))
 
 (defmacro ^:public normal-replies
   "Cancels any active special read mode for body."
@@ -188,7 +188,7 @@
   `(let [body-fn (fn [] ~@body)]
      (enc/if-not *read-mode*
        (do                        (body-fn)) ; Common case optimization
-       (binding [*read-mode* nil] (body-fn)))))
+       (enc/binding* [*read-mode* nil] (body-fn)))))
 
 (def ^:dynamic    *natural-replies?* false)
 (defmacro ^:public natural-replies
@@ -198,17 +198,17 @@
   `(let [body-fn (fn [] ~@body)]
      (if *natural-replies?*
        (do                                (body-fn)) ; Common case optimization
-       (binding [*natural-replies?* true] (body-fn)))))
+       (enc/binding* [*natural-replies?* true] (body-fn)))))
 
 (defmacro ^:public as-bytes
   "Establishes special read mode that returns raw byte arrays
   for any blob-type Redis replies to requests in body."
-  [& body] `(binding [*read-mode* :bytes] ~@body))
+  [& body] `(enc/binding* [*read-mode* :bytes] ~@body))
 
 (defmacro ^:public thaw
   "Establishes special read mode that will attempt Nippy thawing
   for any blob-type Redis replies to requests in body."
-  [thaw-opts & body] `(binding [*read-mode* (ReadThawed. ~thaw-opts)] ~@body))
+  [thaw-opts & body] `(enc/binding* [*read-mode* (ReadThawed. ~thaw-opts)] ~@body))
 
 (deftype ReadThawed [thaw-opts])
 (defn read-mode->?thaw-opts [read-mode]
@@ -352,7 +352,7 @@
   ([        error-data] (safe-parser-xrf (volatile! nil) error-data))
   ([caught_ error-data]
    (fn [rf]
-     (enc/catching-rf
+     (truss/catching-rf
        (fn error-fn [extra-data cause] (vreset! caught_ (parser-error cause (conj error-data extra-data))))
        (fn
          ([]        (or @caught_ (rf)))
@@ -426,7 +426,7 @@
 (defmacro ^:public unparsed
   "Cancels any active reply parsers for body.
   See also `parse`, `parse-aggregates`."
-  [& body] `(binding [*parser* nil] ~@body))
+  [& body] `(enc/binding* [*parser* nil] ~@body))
 
 (defmacro ^:public parse
   "Establishes given reply parser for body,
@@ -448,7 +448,7 @@
 
   See also `unparsed`, `parse-aggregates`."
   [opts f & body]
-  `(binding [*parser* (fn-parser ~opts ~f)]
+  `(enc/binding* [*parser* (fn-parser ~opts ~f)]
      ~@body))
 
 (defmacro ^:public parse-aggregates
@@ -477,7 +477,7 @@
 
   See also `unparsed`, `parse`, `parsing-rf`."
   [opts ?xform rf & body]
-  `(binding [*parser* (rf-parser ~opts ~?xform ~rf)]
+  `(enc/binding* [*parser* (rf-parser ~opts ~?xform ~rf)]
      ~@body))
 
 (let [opts {:read-mode nil}] ; Sensible assumption?
@@ -490,10 +490,10 @@
   (def as-kw-parser      (fn-parser opts enc/as-kw)))
 
 (do
-  (defmacro ^:public as-?long   [& body] "Establishes reply parser for body: coerce replies to long, or nil."      `(binding [*parser* as-?long-parser]   ~@body))
-  (defmacro ^:public as-?double [& body] "Establishes reply parser for body: coerce replies to double, or nil."    `(binding [*parser* as-?double-parser] ~@body))
-  (defmacro ^:public as-?kw     [& body] "Establishes reply parser for body: coerce replies to keyword, or nil."   `(binding [*parser* as-?kw-parser]     ~@body))
+  (defmacro ^:public as-?long   [& body] "Establishes reply parser for body: coerce replies to long, or nil."      `(enc/binding* [*parser* as-?long-parser]   ~@body))
+  (defmacro ^:public as-?double [& body] "Establishes reply parser for body: coerce replies to double, or nil."    `(enc/binding* [*parser* as-?double-parser] ~@body))
+  (defmacro ^:public as-?kw     [& body] "Establishes reply parser for body: coerce replies to keyword, or nil."   `(enc/binding* [*parser* as-?kw-parser]     ~@body))
 
-  (defmacro ^:public as-long    [& body] "Establishes reply parser for body: coerce replies to long, or throw."    `(binding [*parser* as-long-parser]    ~@body))
-  (defmacro ^:public as-double  [& body] "Establishes reply parser for body: coerce replies to double, or throw."  `(binding [*parser* as-double-parser]  ~@body))
-  (defmacro ^:public as-kw      [& body] "Estbalishes reply parser for body: coerce replies to keyword, or throw." `(binding [*parser* as-kw-parser]      ~@body)))
+  (defmacro ^:public as-long    [& body] "Establishes reply parser for body: coerce replies to long, or throw."    `(enc/binding* [*parser* as-long-parser]    ~@body))
+  (defmacro ^:public as-double  [& body] "Establishes reply parser for body: coerce replies to double, or throw."  `(enc/binding* [*parser* as-double-parser]  ~@body))
+  (defmacro ^:public as-kw      [& body] "Estbalishes reply parser for body: coerce replies to keyword, or throw." `(enc/binding* [*parser* as-kw-parser]      ~@body)))

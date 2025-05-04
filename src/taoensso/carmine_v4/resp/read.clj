@@ -2,6 +2,7 @@
   "Private ns, implementation detail."
   (:require
    [taoensso.encore :as enc]
+   [taoensso.truss  :as truss]
    [taoensso.nippy  :as nippy]
    [taoensso.carmine-v4.resp.common :as com
     :refer [xs->in+ throw!]])
