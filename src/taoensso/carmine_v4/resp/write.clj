@@ -177,10 +177,9 @@
   blob markers with special semantics (`ba-npy`, etc.)."
   [^String s]
   (when (and (not (.isEmpty s)) (== ^int (.charAt s 0) 0))
-    (throw
-      (ex-info "[Carmine] String args can't begin with null (char 0)"
-        {:eid :carmine.write/null-reserved
-         :arg s}))))
+    (truss/ex-info! "[Carmine] String args can't begin with null (char 0)"
+      {:eid :carmine.write/null-reserved
+       :arg s})))
 
 (defn- write-bulk-str [^BufferedOutputStream out s]
   (reserve-null!                       s)
@@ -204,10 +203,9 @@
      ba
      (if (enc/bytes? ba)
        (WriteBytes.  ba)
-       (throw
-         (ex-info "[Carmine] `bytes` expects a byte-array argument"
-           {:eid :carmine.write/unsupported-arg-type
-            :arg (enc/typed-val ba)})))))
+       (truss/ex-info! "[Carmine] `bytes` expects a byte-array argument"
+         {:eid :carmine.write/unsupported-arg-type
+          :arg (enc/typed-val ba)}))))
 
   ;; => Vector for destructuring (undocumented)
   ([ba & more] (mapv bytes (cons ba more))))
@@ -278,10 +276,9 @@
 
       non-native-type!
       (fn [arg]
-        (throw
-          (ex-info "[Carmine] Trying to send argument of non-native type to Redis while `*auto-freeze?` is false"
-            {:eid :carmine.write/non-native-arg-type
-             :arg (enc/typed-val arg)})))]
+        (truss/ex-info! "[Carmine] Trying to send argument of non-native type to Redis while `*auto-freeze?` is false"
+          {:eid :carmine.write/non-native-arg-type
+           :arg (enc/typed-val arg)}))]
 
   (extend-protocol IRedisArg
     String               (write-bulk-arg [s  out] (write-bulk-str out            s))

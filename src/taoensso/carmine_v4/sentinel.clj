@@ -226,7 +226,7 @@ sentinel down-after-milliseconds %3$s 60000"
               (get core/*conn-cbs*      :on-resolve-error)
               (get       *mgr-cbs*      :on-resolve-error)
               (get            cbs       :on-resolve-error)
-              (ex-info "[Carmine] [Sentinel] No Sentinel server addresses configured for requested master"
+              (truss/ex-info "[Carmine] [Sentinel] No Sentinel server addresses configured for requested master"
                 {:eid :carmine.sentinel/no-sentinel-addrs-in-spec
                  :master-name   master-name
                  :sentinel-spec this
@@ -415,7 +415,7 @@ sentinel down-after-milliseconds %3$s 60000"
                              ") > " resolve-timeout-ms " timeout")])
 
                         (complete-resolve!
-                          (ex-info "[Carmine] [Sentinel] Timed out while trying to resolve requested master"
+                          (truss/ex-info "[Carmine] [Sentinel] Timed out while trying to resolve requested master"
                             {:eid :carmine.sentinel/resolve-timeout
                              :master-name     master-name
                              :sentinel-spec   this

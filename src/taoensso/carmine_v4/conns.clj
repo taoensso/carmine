@@ -92,7 +92,7 @@
               (if (conn-resolved? this :use-cache)
                 true
                 (do
-                  (vreset! error_ (ex-info "`Conn` incorrectly resolved" {}))
+                  (vreset! error_ (truss/ex-info "`Conn` incorrectly resolved" {}))
                   false))
 
               (let [current-timeout-ms (.getSoTimeout socket)
@@ -115,7 +115,7 @@
                       true
                       (do
                         (vreset! error_
-                          (ex-info "Unexpected PING reply"
+                          (truss/ex-info "Unexpected PING reply"
                             {:reply (enc/typed-val reply)}))
                         false)))
                   false)))
@@ -207,7 +207,7 @@
               (utils/cb-notify-and-throw!    :on-conn-error
                 (get core/*conn-cbs*         :on-conn-error)
                 (utils/get-at conn-opts :cbs :on-conn-error)
-                (ex-info "[Carmine] Error initializing connection"
+                (truss/ex-info "[Carmine] Error initializing connection"
                   {:eid :carmine.conns/conn-init-error
                    :host       host
                    :port       port
@@ -297,9 +297,9 @@
 
          (new-conn conn-opts t0 master-name host port))
 
-       (throw ; Shouldn't be possible after validation
-         (ex-info "[Carmine] Unexpected `:server` type"
-           {:server (enc/typed-val server)})))))
+       ;; Shouldn't be possible after validation
+       (truss/ex-info! "[Carmine] Unexpected `:server` type"
+         {:server (enc/typed-val server)}))))
 
   (^Conn [conn-opts t0 master-name host port]
    (let [host (truss/have string? host)
@@ -329,7 +329,7 @@
          (utils/cb-notify-and-throw!    :on-conn-error
            (get core/*conn-cbs*         :on-conn-error)
            (utils/get-at conn-opts :cbs :on-conn-error)
-           (ex-info "[Carmine] Error creating new connection"
+           (truss/ex-info "[Carmine] Error creating new connection"
              {:eid :carmine.conns/new-conn-error
               :host        host
               :port        port
@@ -429,15 +429,14 @@
     (future (Thread/sleep 200) (conn-close! c1 {}))
     (drain-conns! #{c1} 100 {})))
 
-(defn- throw-mgr-closed! [mgr] (throw (ex-info "[Carmine] Cannot borrow from closed `ConnManager`" {:mgr mgr})))
+(defn- throw-mgr-closed! [mgr] (truss/ex-info! "[Carmine] Cannot borrow from closed `ConnManager`" {:mgr mgr}))
 (defn- throw-mgr-borrow-error! [mgr conn-opts t0 t]
-  (throw
-    (ex-info "[Carmine] Error borrowing connection from `ConnManager`"
-      {:eid :carmine.conns/borrow-conn-error
-       :mgr        mgr
-       :conn-opts  conn-opts
-       :elapsed-ms (when t0 (- (System/currentTimeMillis) ^long t0))}
-      t)))
+  (truss/ex-info! "[Carmine] Error borrowing connection from `ConnManager`"
+    {:eid :carmine.conns/borrow-conn-error
+     :mgr        mgr
+     :conn-opts  conn-opts
+     :elapsed-ms (when t0 (- (System/currentTimeMillis) ^long t0))}
+    t))
 
 (deftype ConnManagerUnpooled
   [mgr-opts conn-opts closed?_ active-conns_

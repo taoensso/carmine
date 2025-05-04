@@ -435,11 +435,10 @@
                      (with-meta       content attrs)
                      (WithAttributes. content attrs)
                      #_
-                     (throw
-                       (ex-info "[Carmine] Unexpected attributes reply"
-                         {:eid :carmine.read/unexpected-attributes
-                          :content    (enc/typed-val content)
-                          :attributes (enc/typed-val attrs)})))))
+                     (truss/ex-info! "[Carmine] Unexpected attributes reply"
+                       {:eid :carmine.read/unexpected-attributes
+                        :content    (enc/typed-val content)
+                        :attributes (enc/typed-val attrs)}))))
 
                (int \>) ; Push ✓
                (let [v (read-aggregate-by-ones [] com/read-opts-natural read-reply in)]
@@ -451,14 +450,13 @@
                  ;; Continue to actual reply
                  (read-reply read-opts in))
 
-               (throw
-                 (ex-info "[Carmine] Unexpected reply kind"
-                   {:eid :carmine.read/unexpected-reply-kind
-                    :read-opts (com/describe-read-opts read-opts)
-                    :kind
-                    (enc/assoc-when
-                      {:as-byte kind-b :as-char (byte kind-b)}
-                      :end-of-stream? (== kind-b -1))})))
+               (truss/ex-info! "[Carmine] Unexpected reply kind"
+                 {:eid :carmine.read/unexpected-reply-kind
+                  :read-opts (com/describe-read-opts read-opts)
+                  :kind
+                  (enc/assoc-when
+                    {:as-byte kind-b :as-char (byte kind-b)}
+                    :end-of-stream? (== kind-b -1))}))
 
              (catch Throwable t
                (com/reply-error "[Carmine] Unexpected reply error"

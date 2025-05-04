@@ -59,12 +59,11 @@
         (let [[conn-time latency bandwidth] (have vector? v)]
           (.setPerformancePreferences s (int conn-time) (int latency) (int bandwidth)))
 
-        (throw
-          (ex-info "[Carmine] Unknown socket option specified"
-            {:eid      :carmine.conns/unknown-socket-option
-             :opt-key  (enc/typed-val k)
-             :opt-val  (enc/typed-val v)
-             :all-opts socket-opts}))))
+        (truss/ex-info! "[Carmine] Unknown socket option specified"
+          {:eid      :carmine.conns/unknown-socket-option
+           :opt-key  (enc/typed-val k)
+           :opt-val  (enc/typed-val v)
+           :all-opts socket-opts})))
     socket-opts)
   s)
 
@@ -109,12 +108,11 @@
 
           (:setSwallowedExceptionListener :swallowed-exception-listener)
           (.setSwallowedExceptionListener p v)
-          (throw
-            (ex-info "[Carmine] Unknown pool option specified"
-              {:eid      :carmine.conns/unknown-pool-option
-               :opt-key  (enc/typed-val k)
-               :opt-val  (enc/typed-val v)
-               :all-opts pool-opts}))))
+          (truss/ex-info! "[Carmine] Unknown pool option specified"
+            {:eid      :carmine.conns/unknown-pool-option
+             :opt-key  (enc/typed-val k)
+             :opt-val  (enc/typed-val v)
+             :all-opts pool-opts})))
       pool-opts))
   p)
 
@@ -187,28 +185,26 @@
                 (#{:master-name :sentinel-spec               }
                  #{:master-name :sentinel-spec :sentinel-opts}) {:server (parse-sentinel-server server)}
 
-                (do (throw (ex-info "Unexpected `:server` keys" {:keys (keys server)}))))
-              :else (throw (ex-info "Unexpected `:server` type" {:type (type server)})))
+                (do (truss/ex-info! "Unexpected `:server` keys" {:keys (keys server)})))
+              :else (truss/ex-info! "Unexpected `:server` type" {:type (type server)}))
 
             (catch Throwable t
-              (throw
-                (ex-info "[Carmine] Invalid Redis server specification in connection options"
-                  {:eid      :carmine.conn-opts/invalid-server
-                   :server   (enc/typed-val server)
-                   :expected '(or uri-string [host port] {:keys [host port]}
-                                {:keys [master-name sentinel-spec sentinel-opts]})}
-                  t)))))))
+              (truss/ex-info! "[Carmine] Invalid Redis server specification in connection options"
+                {:eid      :carmine.conn-opts/invalid-server
+                 :server   (enc/typed-val server)
+                 :expected '(or uri-string [host port] {:keys [host port]}
+                              {:keys [master-name sentinel-spec sentinel-opts]})}
+                t))))))
 
     (catch Throwable t
-      (throw
-        (ex-info "[Carmine] Invalid connection options"
-          {:eid       :carmine.conn-opts/invalid
-           :conn-opts (assoc (enc/typed-val conn-opts) :id (get conn-opts :id))
-           :purpose
-           (if in-sentinel-opts?
-             :conn-to-sentinel-server
-             :conn-to-redis-server)}
-          t)))))
+      (truss/ex-info! "[Carmine] Invalid connection options"
+        {:eid       :carmine.conn-opts/invalid
+         :conn-opts (assoc (enc/typed-val conn-opts) :id (get conn-opts :id))
+         :purpose
+         (if in-sentinel-opts?
+           :conn-to-sentinel-server
+           :conn-to-redis-server)}
+        t))))
 
 ;;;;
 
@@ -274,13 +270,12 @@
               (do    sentinel-opts))
 
             (catch Throwable t
-              (throw
-                (ex-info "[Carmine] Invalid Sentinel options"
-                  {:eid :carmine.sentinel-opts/invalid
-                   :sentinel-opts
-                   (assoc (enc/typed-val sentinel-opts)
-                     :id (get sentinel-opts :id))}
-                  t)))))]
+              (truss/ex-info! "[Carmine] Invalid Sentinel options"
+                {:eid :carmine.sentinel-opts/invalid
+                 :sentinel-opts
+                 (assoc (enc/typed-val sentinel-opts)
+                   :id (get sentinel-opts :id))}
+                t))))]
 
     (assoc server
       :master-name   master-name

@@ -104,7 +104,7 @@
 
 ;;;; Errors
 
-(defn throw! [x] (throw (ex-info "Simulated throw" {:arg (enc/typed-val x)})))
+(defn throw! [x] (truss/ex-info! "Simulated throw" {:arg (enc/typed-val x)}))
 
 (defn reply-error
   "Returns a exception that's an instance of both `ExceptionInfo` and `ReplyError`.
@@ -146,10 +146,9 @@
     (let [read-b (.readByte in)] ; -1 if nothing to read
       (if (== ref-b read-b)
         true
-        (throw
-          (ex-info "[Carmine] Missing stream separator"
-            {:eid :carmine.read/missing-stream-separator
-             :read {:as-byte read-b :as-char (char read-b)}}))))))
+        (truss/ex-info! "[Carmine] Missing stream separator"
+          {:eid :carmine.read/missing-stream-separator
+           :read {:as-byte read-b :as-char (char read-b)}})))))
 
 (defn discard-crlf
   [^DataInputStream in]
@@ -157,10 +156,9 @@
   (let [s (.readLine in)] ; May be nil!
     (if (= s "")
       true
-      (throw
-        (ex-info "[Carmine] Missing CRLF"
-          {:eid :carmine.read/missing-crlf
-           :read s})))))
+      (truss/ex-info! "[Carmine] Missing CRLF"
+        {:eid :carmine.read/missing-crlf
+         :read s}))))
 
 ;;;; Sentinels
 ;; We avoid keywords for flow control due to risk of malicious user data

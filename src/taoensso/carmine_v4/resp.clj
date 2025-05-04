@@ -52,16 +52,14 @@
 ;; - Use `throw-no-ctx!` if necessary
 
 (defn- throw-no-ctx! [called]
-  (throw
-    (ex-info "[Carmine] Called Redis command/s without `wcar` or `with-car` context."
-      {:eid :carmine/no-context
-       :called called})))
+  (truss/ex-info! "[Carmine] Called Redis command/s without `wcar` or `with-car` context."
+    {:eid :carmine/no-context
+     :called called}))
 
 (defn- throw-cluster-not-supported! [command]
-  (throw
-    (ex-info "[Carmine] Called Redis command in Redis Cluster context that does not support Cluster."
-      {:eid :carmine/cluster-not-supported
-       :command command})))
+  (truss/ex-info! "[Carmine] Called Redis command in Redis Cluster context that does not support Cluster."
+    {:eid :carmine/cluster-not-supported
+     :command command}))
 
 (let [read-opts-natural com/read-opts-natural]
   (defn- get-read-opts [^Ctx ctx]
@@ -234,7 +232,7 @@
         ;; 4. Read from all shards
         ;; 5. Handle cluster errors, with possible retries
         ;; 6. Stitch back replies in correct order
-        (throw (ex-info "TODO: Cluster support not yet implemented" {})))
+        (truss/ex-info! "TODO: Cluster support not yet implemented" {}))
 
         (let [^LinkedList pending-reqs* (.-pending-reqs* ctx)
               n-pending-reqs (.size pending-reqs*)]
@@ -316,7 +314,7 @@
 
     (if (.-cluster? ctx)
       ;; TODO Any special handling needed here?
-      (throw (ex-info "TODO: Cluster support not yet implemented" {}))
+      (truss/ex-info! "TODO: Cluster support not yet implemented" {})
 
       (let [^LinkedList pending-replies* (.-pending-replies* ctx)
             n-replies (.size pending-replies*)]
@@ -355,9 +353,8 @@
           #{        :natural-replies} [{:natural-replies? true} bn]
           #{:as-vec :natural-replies} [{:as-vec?          true
                                         :natural-replies? true} bn]
-          (throw
-            (ex-info "[Carmine] Unexpected reply-opts in body"
-              {:opts (enc/typed-val b1)})))
+          (truss/ex-info! "[Carmine] Unexpected reply-opts in body"
+            {:opts (enc/typed-val b1)}))
 
         (map? b1) [b1    bn]
         :else     [nil body]))))

@@ -106,4 +106,4 @@
 
 (comment
   (cb-notify-and-throw! :cbid1 println
-    (ex-info "Error msg" {:x :X} (Exception. "Cause"))))
+    (truss/ex-info "Error msg" {:x :X} (Exception. "Cause"))))
