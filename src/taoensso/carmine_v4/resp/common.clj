@@ -62,7 +62,9 @@
   (defn xs->in+ ^DataInputStream [& xs] (ba->in (xseq->ba true  xs)))
   (defn xs->in  ^DataInputStream [& xs] (ba->in (xseq->ba false xs)))
   (defn xs->ba+           ^bytes [& xs]         (xseq->ba true  xs))
-  (defn xs->ba            ^bytes [& xs]         (xseq->ba false xs)))
+  (defn xs->ba            ^bytes [& xs]         (xseq->ba false xs))
+  (defn xs->str          ^String [& xs] (enc/utf8-ba->str (xseq->ba false xs)))
+  (defn xs->str+         ^String [& xs] (enc/utf8-ba->str (xseq->ba true  xs))))
 
 (defn skip1 ^DataInputStream [^DataInputStream in] (.skipBytes in 1) in)
 

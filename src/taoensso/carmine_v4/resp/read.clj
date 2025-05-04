@@ -44,7 +44,9 @@
 
     (<= n 0) ; Empty or RESP2 null
     (if (== n 0)
-      (if (identical? read-mode :bytes) (byte-array 0) "") ; Empty
+      (do
+        (com/discard-crlf in)
+        (if (identical? read-mode :bytes) (byte-array 0) ""))
       com/sentinel-null-reply)
 
     :if-let [marker (and read-markers? (com/read-blob-?marker in n))]
@@ -75,7 +77,10 @@
         (discard-stream-separator in)
         (let [n (Integer/parseInt (.readLine in))]
           (if (== n 0)
-            com/sentinel-skipped-reply ; Stream complete
+            ;; Stream complete
+            (do
+              (discard-crlf in)
+              com/sentinel-skipped-reply)
 
             ;; Stream continues
             (do
@@ -94,7 +99,9 @@
             (if (== n 0)
 
               ;; Stream complete
-              (complete-blob read-mode (.toByteArray baos))
+              (do
+                (discard-crlf in)
+                (complete-blob read-mode (.toByteArray baos)))
 
               ;; Stream continues
               (let [ba (byte-array n)]

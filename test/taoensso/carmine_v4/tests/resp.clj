@@ -29,9 +29,12 @@
 (deftest _with-out->in  [(is (= (.readLine (com/with-out->in (.write out (enc/str->utf8-ba "hello\r\n")))) "hello"))])
 (deftest _skip1         [(is (= (.readLine (com/skip1 (com/with-out->in (.write out (enc/str->utf8-ba "+hello\r\n"))))) "hello"))])
 
-(deftest _xs->ba
-  [(is (= (enc/utf8-ba->str (com/xs->ba  "a" "b" 1 (byte-array [(int \A) (int \B)]) \C [\d \e])) "ab1ABCde"))
-   (is (= (enc/utf8-ba->str (com/xs->ba+ "a" "b" 1 (byte-array [(int \A) (int \B)]) \C [\d \e])) "a\r\nb\r\n1\r\nAB\r\nC\r\nde\r\n"))])
+(deftest _xs-utils
+  [(is (= (com/xs->str  "a" "b" 1 (byte-array [(int \A) (int \B)]) \C [\d \e]) "ab1ABCde"))
+   (is (= (com/xs->str+ "a" "b" 1 (byte-array [(int \A) (int \B)]) \C [\d \e]) "a\r\nb\r\n1\r\nAB\r\nC\r\nde\r\n"))
+   (is (= (com/xs->str+ "$5" "hello")  "$5\r\nhello\r\n"))
+   (is (= (com/xs->str+ "$5\r\nhello") "$5\r\nhello\r\n"))
+   (is (= (com/xs->str+ "$0\r\n")      "$0\r\n\r\n"))])
 
 (defn- test-blob-?marker [s]
   (let [^bytes ba (enc/str->utf8-ba s)
@@ -103,17 +106,21 @@
 
 (deftest _read-reply
   [(testing "Basics"
-     [(is (= (rr (xs->in+ "*10" "+simple string" ":1" ",1" ",1.5" ",inf" ",-inf" "(1" "#t" "#f" "_"))
-             ["simple string" 1 1.0 1.5 ##Inf ##-Inf 1N true false nil]))
+     [(is (= "" (rr (xs->in+ "$0\r\n"))) "Empty blob")
+      (is (= [] (rr (xs->in+ "*0")))     "Empty array")
+      (is (=    (rr (xs->in+ "*10" "+simple string" ":1" ",1" ",1.5" ",inf" ",-inf" "(1" "#t" "#f" "_"))
+            ["simple string" 1 1.0 1.5 ##Inf ##-Inf 1N true false nil]))
 
+      (is (= (rr (xs->in+ "$5" "hello"))     "hello"))
       (is (= (rr (xs->in+ "$7" "hello\r\n")) "hello\r\n") "Binary safe")
-      (is (= (rr (xs->in+ "$?" ";5" "hello" ";9" " world!\r\n" ";0")) "hello world!\r\n") "Streaming")])
+      (is (= (rr (xs->in+ "$?" ";5" "hello" ";9" " world!\r\n" ";0\r\n")) "hello world!\r\n") "Streaming")])
 
    (testing "Basic aggregates"
      [(is (=                                          (rr (xs->in+ "*3" ":1" ":2" "+3"))          [1 2 "3"]))
       (is (= (binding [core/*keywordize-maps?* true]  (rr (xs->in+ "%2" "+k1" "+v1" ":2" "+v2"))) {:k1  "v1", 2 "v2"}))
       (is (= (binding [core/*keywordize-maps?* false] (rr (xs->in+ "%2" "+k1" "+v1" ":2" "+v2"))) {"k1" "v1", 2 "v2"}))
-      (is (= (rr (xs->in+ "*3" ":1" "$?" ";4" "bulk" ";6" "string" ";0" ",1.5")) [1 "bulkstring" 1.5]))
+      (is (= (rr (xs->in+ "*3" ":1" "$?" ";4" "bulk" ";6" "string" ";0\r\n" ",1.5")) [1 "bulkstring" 1.5]))
+      (is (= (rr (xs->in+ "*3" "$0\r\n" "*0" "+simple string")) ["" [] "simple string"]) "Empties in aggregates")
 
       (is (=                        (rr (xs->in+ "*2" ":1" "$3" [\a \b \c])) [1 "abc"]) "Baseline...")
       (is (let [[x y] (com/as-bytes (rr (xs->in+ "*2" ":1" "$3" [\a \b \c])))]
@@ -294,11 +301,11 @@
 
 (deftest _read-blob
   [(testing "Basics"
-     [(is (= ""                      (#'read/read-blob nil              nil (xs->in+  0))) "As default: empty blob")
-      (is (empty-bytes?              (#'read/read-blob :bytes           nil (xs->in+  0))) "As bytes:   empty blob")
-      (is (= com/sentinel-null-reply (#'read/read-blob nil              nil (xs->in+ -1))) "As default: RESP2 null")
-      (is (= com/sentinel-null-reply (#'read/read-blob :bytes           nil (xs->in+ -1))) "As bytes:   RESP2 null")
-      (is (= com/sentinel-null-reply (#'read/read-blob (ReadThawed. {}) nil (xs->in+ -1))) "As thawed:  RESP2 null")
+     [(is (= ""                      (#'read/read-blob nil              nil (xs->in+ "0\r\n"))) "As default: empty blob")
+      (is (empty-bytes?              (#'read/read-blob :bytes           nil (xs->in+ "0\r\n"))) "As bytes:   empty blob")
+      (is (= com/sentinel-null-reply (#'read/read-blob nil              nil (xs->in+ -1)))      "As default: RESP2 null")
+      (is (= com/sentinel-null-reply (#'read/read-blob :bytes           nil (xs->in+ -1)))      "As bytes:   RESP2 null")
+      (is (= com/sentinel-null-reply (#'read/read-blob (ReadThawed. {}) nil (xs->in+ -1)))      "As thawed:  RESP2 null")
 
       (is (=                   (#'read/read-blob nil    nil (xs->in+ 5 "hello"))  "hello"))
       (is (= (enc/utf8-ba->str (#'read/read-blob :bytes nil (xs->in+ 5 "hello"))) "hello"))
@@ -313,12 +320,12 @@
          (is (throws? :common pattern (#'read/read-blob :bytes nil (com/str->in "5\r\nhello__"))))])])
 
    (testing "Streaming"
-     [(is (=                   (#'read/read-blob nil    nil (xs->in+ "?" ";5" "hello" ";1" " " ";6" "world!" ";0"))  "hello world!"))
-      (is (= (enc/utf8-ba->str (#'read/read-blob :bytes nil (xs->in+ "?" ";5" "hello" ";1" " " ";6" "world!" ";0"))) "hello world!"))
+     [(is (=                   (#'read/read-blob nil    nil (xs->in+ "?" ";5" "hello" ";1" " " ";6" "world!" ";0\r\n"))  "hello world!"))
+      (is (= (enc/utf8-ba->str (#'read/read-blob :bytes nil (xs->in+ "?" ";5" "hello" ";1" " " ";6" "world!" ";0\r\n"))) "hello world!"))
 
       (let [pattern {:eid :carmine.read/missing-stream-separator}]
-        [(is (throws? :common pattern (#'read/read-blob nil    nil (xs->in+ "?" ";5" "hello" "1" " " ";6" "world!" ";0"))))
-         (is (throws? :common pattern (#'read/read-blob :bytes nil (xs->in+ "?" ";5" "hello" "1" " " ";6" "world!" ";0"))))])])
+        [(is (throws? :common pattern (#'read/read-blob nil    nil (xs->in+ "?" ";5" "hello" "1" " " ";6" "world!" ";0\r\n"))))
+         (is (throws? :common pattern (#'read/read-blob :bytes nil (xs->in+ "?" ";5" "hello" "1" " " ";6" "world!" ";0\r\n"))))])])
 
    (testing "Marked blobs"
      ;; See also `common/_read-blob-?marker` tests
