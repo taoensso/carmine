@@ -22,7 +22,6 @@
    :c1.12    {:dependencies [[org.clojure/clojure "1.12.0"]]}
    :c1.11    {:dependencies [[org.clojure/clojure "1.11.4"]]}
    :c1.10    {:dependencies [[org.clojure/clojure "1.10.3"]]}
-   :c1.9     {:dependencies [[org.clojure/clojure "1.9.0"]]}
 
    :graal-tests
    {:source-paths ["test"]
@@ -56,6 +55,6 @@
    ;; "build-once" ["do" ["clean"] ["cljsbuild" "once"]]
    "deploy-lib"    ["do" #_["build-once"] ["deploy" "clojars"] ["install"]]
 
-   "test-clj"     ["with-profile" "+c1.12:+c1.11:+c1.10:+c1.9" "test"]
-   ;; "test-cljs" ["with-profile" "+c1.12" "cljsbuild"         "test"]
+   "test-clj"     ["with-profile" "+c1.12:+c1.11:+c1.10" "test"]
+   ;; "test-cljs" ["with-profile" "+c1.12" "cljsbuild"   "test"]
    "test-all"     ["do" ["clean"] ["test-clj"] #_["test-cljs"]]})
