@@ -311,59 +311,75 @@
 
 ;;;;
 
+(defn ^:no-doc dummy-scan-fn
+  "Private, don't use. For unit tests, etc."
+  [num-steps elements-fn]
+  (let [c (java.util.concurrent.atomic.AtomicLong. (long num-steps))]
+    (fn [cursor]
+      (let [idx (.addAndGet c -1)]
+        (if (<= idx 0)
+          ["0" (elements-fn idx)]
+          ["x" (elements-fn idx)])))))
+
 (defn ^:no-doc scan-reduce-elements
-  "Low-level, for use with `scan`, `hscan`, `zscan`, etc.
-  Private, don't use.
+  "Private, don't use.
+  Low-level, for use with `scan`, `hscan`, `zscan`, etc.
   Takes:
     - (fn scan-fn [cursor])       -> next scan result
     - (fn rf      [acc elements]) -> next accumulator
-
-  Does no deduplication, the same element may be encountered more than once."
-  [init scan-fn rf]
-  (loop [cursor "0" acc init]
-    (let [[next-cursor next-in] (scan-fn cursor)]
-      (if (= next-cursor "0")
-        (rf acc next-in)
-        (let [result (rf acc next-in)]
-          (if (reduced? result)
-            @result
-            (recur next-cursor result)))))))
+  Acts as `transduce` when given `xform`."
+  ([      init scan-fn rf] (scan-reduce-elements nil init scan-fn rf))
+  ([xform init scan-fn rf]
+   (let [rf (if xform (xform rf) rf)
+         rv
+         (loop [cursor "0" acc init]
+           (let [[next-cursor next-in] (scan-fn cursor)]
+             (if (= next-cursor "0")
+               (rf acc next-in)
+               (let [result (rf acc next-in)]
+                 (if (reduced? result)
+                   @result
+                   (recur next-cursor result))))))]
+     (if xform (rf rv) rv))))
 
 (defn scan-reduce
   "TODO Docstring, example, tests.
   Takes:
     - (fn scan-fn [cursor])      -> next scan result
     - (fn rf      [acc element]) -> next accumulator
-
-  Deduplicates, ensuring that `rf` is called only once per unique element."
-  [init scan-fn rf]
-  (let [seen_ (volatile! (transient #{}))]
-    (scan-reduce-elements init scan-fn
-      (fn wrapped-rf [acc elements]
-        (reduce
-          (fn [acc element]
-            (if (contains? @seen_ element)
-              acc
-              (do
-                (vswap! seen_ conj! element)
-                (enc/convey-reduced (rf acc element)))))
-          acc elements)))))
+  Acts as `transduce` when given `xform`."
+  ([      init scan-fn rf] (scan-reduce nil init scan-fn rf))
+  ([xform init scan-fn rf]
+   (let [rf (if xform (xform rf) rf)
+         rv
+         (scan-reduce-elements nil init scan-fn
+           (fn wrapped-rf [acc elements]
+             (reduce
+               (fn [acc element] (enc/convey-reduced (rf acc element)))
+               acc elements)))]
+     (if xform (rf rv) rv))))
 
 (comment
-  (scan-reduce []
-    (fn scan-fn [cursor] (wcar default-conn-manager (rcmd :SCAN cursor :MATCH "*")))
-    (fn rf [acc in] (conj acc in))))
+  (count
+    (scan-reduce (distinct) []
+      (fn scan-fn [cursor] (wcar default-conn-manager (rcmd :SCAN cursor :MATCH "*")))
+      (completing (fn rf [acc in] (conj acc in)))))
+
+  (count
+    (scan-reduce (distinct) []
+      (dummy-scan-fn 8 (fn [_] (repeatedly 8 #(rand-int 10))))
+      (completing (fn rf [acc in] (conj acc in))))))
 
 (defn scan-reduce-kv
   "TODO Docstring, example, tests.
   Takes:
     - (fn scan-fn [cursor])  -> next scan result
     - (fn rf      [acc k v]) -> next accumulator
-
-  Deduplicates, ensuring that `rf` is called only once per unique key."
+  Auto de-duplicates so that `rf` won't be called >once
+  for the same key."
   [init scan-fn rf]
   (let [seen_ (volatile! (transient #{}))]
-    (scan-reduce-elements init scan-fn
+    (scan-reduce-elements nil init scan-fn
       (fn wrapped-rf [acc kvs]
         (enc/reduce-kvs
           (fn [acc k v]
