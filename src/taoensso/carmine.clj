@@ -81,7 +81,9 @@
          :ssl-fn :default ; [1]
          :username \"alice\"
          :password \"secret\"
-         :timeout-ms 6000
+         :timeout-ms 6000 ; Conn + read timeout in milliseconds
+         :conn-timeout-ms 5000 ; Conn timeout only in milliseconds
+         :read-timeout-ms 4000 ; Read timeout only in milliseconds
          :db 3}
 
     `pool` may be:
