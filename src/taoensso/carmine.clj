@@ -73,37 +73,45 @@
 
   `conn-opts` arg is a map of `:spec`, `:pool` keys.
 
-    `spec` describes the connection details, e.g.:
+    `:spec` describes the connection details, e.g.:
       - {:host \"127.0.0.1\" :port 6379} ; Default
       - {:uri \"redis://username:password@host.foo.com:9475/3\" ; /3 for db 3
       - {:host \"127.0.0.1\"
          :port 6379
-         :ssl-fn :default ; [1]
          :username \"alice\"
          :password \"secret\"
-         :timeout-ms 6000
-         :db 3}
+         :db 3
 
-    `pool` may be:
-      - The `:none` keyword (=> don't pool connections)
-      - A custom pool you've created manually with `connection-pool`
-      - A map of pool-opts as provided to `connection-pool` (a pool
-        will be automatically created, then reused on subsequent
-        calls with the same opts)
+         :ssl-fn :default ; (fn [^java.net.Socket]) => secure `java.net.Socket`
+                          ; `:default` => use `taoensso.carmine.connections/default-ssl-fn`.
 
-      If no `pool` value is specified, a default pool will be created
-      then reused.
+         :conn-timeout-ms 5000 ; Timeout (msecs) when connecting              (nil => no timeout)
+         :read-timeout-ms 4000 ; Timeout (msecs) when reading from connection (nil => no timeout)
+         ;; :timeout-ms   6000 ; Legacy: controls both `:conn` and `:read` timeouts
+        }
 
-  Note that because of thread-binding, you'll probably want to avoid lazy
-  Redis commands in `wcar`'s body. Compare:
-    `(wcar {} (for   [k [:k1 :k2]] (car/set k :val))` ; Lazy,  0 commands run
-    `(wcar {} (doseq [k [:k1 :k2]] (car/set k :val))` ; Eager, 2 commands run
+    `:pool` may be:
+      - Unspecified/nil (=> use default pool)
+      - `:none` (=> don't pool connections)
+      - A custom pool created with `connection-pool`
+      - A custom pool implementing `taoensso.carmine.connections/IConnectionPool`
+      - A map of pool opts as provided to `connection-pool` (=> will create then
+        reuse a pool with these pool opts).
 
-  See also `connection-pool`, `with-replies`.
+  Timeouts:
+    No connection timeouts are applied by default. It's often a good
+    idea to provide at least a `:conn-timeout-ms` value.
 
-  [1] Optional `ssl-fn` conn opt takes and returns a `java.net.Socket`:
-    (fn [{:keys [^Socket socket host port]}]) -> ^Socket
-    `:default` => use `taoensso.carmine.connections/default-ssl-fn`."
+    `:read-timeout-ms` can also be useful, but note that this will
+    impact reads on blocking commands (BLPOP, etc.).
+
+  Lazy commands:
+    Redis commands must execute while `wcar` bindings are present, so
+    you usu. want to avoid lazy commands:
+      `(wcar {} (doseq [k [:k1 :k2]] (car/set k :val))` ; Eager: 2 commands run (good)
+      `(wcar {} (for   [k [:k1 :k2]] (car/set k :val))` ; Lazy:  0 commands run (bad)
+
+  See also `connection-pool`, `with-replies`."
 
   {:arglists '([conn-opts :as-pipeline & body] [conn-opts & body])}
   [conn-opts & args] ; [conn-opts & [a1 & an :as args]]
