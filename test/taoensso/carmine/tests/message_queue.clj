@@ -2,9 +2,9 @@
   (:require
    [clojure.test     :as test :refer [deftest testing is]]
    [taoensso.encore  :as enc]
-   [taoensso.encore  :as truss]
    [taoensso.carmine :as car  :refer [wcar]]
-   [taoensso.carmine.message-queue :as mq]))
+   [taoensso.carmine.message-queue :as mq]
+   [taoensso.carmine.tests.config :as config]))
 
 (comment
   (remove-ns      'taoensso.carmine.tests.message-queue)
@@ -27,7 +27,7 @@
 
 ;;;; Config, etc.
 
-(def conn-opts {})
+(def conn-opts config/conn-opts)
 (defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
 
 (def tq "carmine-test-queue")

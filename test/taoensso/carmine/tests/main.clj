@@ -5,9 +5,9 @@
    [taoensso.encore  :as enc]
    [taoensso.truss   :as truss :refer [throws?]]
    [taoensso.carmine :as car   :refer [wcar]]
-   [taoensso.carmine.commands   :as commands]
-   [taoensso.carmine.protocol   :as protocol]
-   [taoensso.carmine.benchmarks :as benchmarks]))
+   [taoensso.carmine.commands     :as commands]
+   [taoensso.carmine.protocol     :as protocol]
+   [taoensso.carmine.tests.config :as config]))
 
 (comment
   (remove-ns      'taoensso.carmine.tests.main)
@@ -15,8 +15,9 @@
 
 ;;;; Config, etc.
 
-(def conn-opts {})
+(def conn-opts config/conn-opts)
 (defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
+(defmacro atomic* [max-cas-attempts & body] `(car/atomic conn-opts ~max-cas-attempts ~@body))
 
 (def tkey (partial car/key :carmine :temp :test))
 (defn clear-tkeys! []
@@ -411,7 +412,7 @@
           (car/psubscribe "channel*" "chan*" "other*"))]
 
     (wcar* (car/publish "channel1" "Message to `channel1`"))
-    (Thread/sleep 1000)
+    (Thread/sleep 5000)
     (car/close-listener listener)
 
     [(is (= @f1_ [[:f1 [ "subscribe" "channel1" 1]] [:f1 [ "message"            "channel1" "Message to `channel1`"]]]))
@@ -524,7 +525,7 @@
   (let [_ (clear-tkeys!)]
     [(testing "Basic Case"
        (is (= ["1" "2" ["3" "4"] "5"]
-             (wcar {}
+             (wcar*
                (car/echo 1)
                (car/echo 2)
                (car/return (car/with-replies (car/echo 3) (car/echo 4)))
@@ -532,7 +533,7 @@
 
      (testing "Nested 'with-replies' case"
        (is (= ["1" "2" ["3" "4" ["5" "6"]] "7"]
-             (wcar {}
+             (wcar*
                (car/echo 1)
                (car/echo 2)
                (car/return (car/with-replies (car/echo 3) (car/echo 4)
@@ -541,7 +542,7 @@
 
      (testing "'with-replies' vs parsers case"
        (is (= ["A" "b" ["c" "D"] ["E" "F"] "g"]
-             (wcar {}
+             (wcar*
                (car/parse str/upper-case (car/echo :a))
                (car/echo :b)
                (car/return (car/with-replies (car/echo :c) (car/parse str/upper-case (car/echo :d))))
@@ -552,7 +553,7 @@
 
      (testing "Nested 'with-replies' vs parsers case"
        (is (= ["a" "b" ["c" "d" ["e" "f"]] "g"]
-             (wcar {}
+             (wcar*
                (car/echo :a)
                (car/echo :b)
                (car/return
@@ -570,65 +571,65 @@
   (let [_ (clear-tkeys!)]
     [(testing "Basic parsing"
        (is (= ["PONG" "pong" "pong" "PONG"]
-             (wcar {} (car/ping) (car/parse str/lower-case
+             (wcar* (car/ping) (car/parse str/lower-case
                                    (car/ping)
                                    (car/ping))
                (car/ping)))))
 
      (testing "Cancel parsing"
-       (is (= "YoLo" (wcar {} (->> (car/echo "YoLo")
+       (is (= "YoLo" (wcar* (->> (car/echo "YoLo")
                                 (car/parse nil)
                                 (car/parse str/upper-case))))))
 
      (testing "No auto-composition: last-applied (inner) parser wins"
-       (is (= "yolo" (wcar {} (->> (car/echo "YoLo")
+       (is (= "yolo" (wcar* (->> (car/echo "YoLo")
                                 (car/parse str/lower-case)
                                 (car/parse str/upper-case))))))
 
      (testing "Dynamic composition: prefer inner"
-       (is (= "yolo" (wcar {} (->> (car/echo "YoLo")
+       (is (= "yolo" (wcar* (->> (car/echo "YoLo")
                                 (car/parse (car/parser-comp str/lower-case
                                              protocol/*parser*))
                                 (car/parse str/upper-case))))))
 
      (testing "Dynamic composition: prefer outer"
-       (is (= "YOLO" (wcar {} (->> (car/echo "YoLo")
+       (is (= "YOLO" (wcar* (->> (car/echo "YoLo")
                                 (car/parse (car/parser-comp protocol/*parser*
                                              str/lower-case))
                                 (car/parse str/upper-case))))))
 
      (testing "Dynamic composition with metadata ('return' uses metadata and auto-composes)"
-       (is (= "yolo" (wcar {} (->> (car/return "YoLo")
+       (is (= "yolo" (wcar* (->> (car/return "YoLo")
                                 (car/parse str/lower-case ))))))
 
      (testing "Exceptions pass through by default"
-       (is (throws? Exception (wcar {} (->> (car/return (Exception. "boo")) (car/parse keyword)))))
-       (is (vector? (wcar {} (->> (do (car/return (Exception. "boo"))
+       (is (throws? Exception (wcar* (->> (car/return (Exception. "boo")) (car/parse keyword)))))
+       (is (vector? (wcar* (->> (do (car/return (Exception. "boo"))
                                       (car/return (Exception. "boo")))
                                (car/parse keyword))))))
 
      (testing "Parsers can elect to handle exceptions, even over 'return'"
-       (is (= "Oh noes!" (wcar {} (->> (car/return (Exception. "boo"))
+       (is (= "Oh noes!" (wcar* (->> (car/return (Exception. "boo"))
                                     (car/parse
                                       (-> #(if (instance? Exception %) "Oh noes!" %)
                                         (with-meta {:parse-exceptions? true}))))))))
 
      (testing "Lua ('with-replies') errors bypass normal parsers"
-       (is (throws? Exception (wcar {} (->> (car/lua "invalid" {:_ :_} {})
+       (is (throws? Exception (wcar* (->> (car/lua "invalid" {:_ :_} {})
                                          (car/parse keyword)))))
 
        (is (instance? enc/bytes-class
              ;; But _do_ maintain raw parsing metadata:
-             (do (wcar {} (car/set (tkey "binkey")
+             (do (wcar* (car/set (tkey "binkey")
                             (.getBytes "Foobar" "UTF-8")))
-                 (wcar {} (-> (car/lua "return redis.call('get', _:k)"
+                 (wcar* (-> (car/lua "return redis.call('get', _:k)"
                                 {:k (tkey "binkey")} {})
                             (car/parse-raw)))))))
 
      (testing "Parsing passes 'with-replies' barrier"
        (is (= [["ONE" "three"] "two"]
              (let [p_ (promise)]
-               [(wcar {} (car/echo "ONE")
+               [(wcar* (car/echo "ONE")
                   (car/parse str/lower-case
                     (deliver p_ (car/with-replies (car/echo "TWO")))
                     (car/echo "THREE")))
@@ -642,57 +643,57 @@
 
 (deftest request-queues-tests
   (let [_ (clear-tkeys!)]
-    [(is (= ["OK" "echo"] (wcar {} (car/set (tkey "rq1")
-                                     (wcar {} (car/echo "echo")))
+    [(is (= ["OK" "echo"] (wcar* (car/set (tkey "rq1")
+                                     (wcar* (car/echo "echo")))
                             (car/get (tkey "rq1")))))
 
      (is (= "rq2-val"
            (let [p_ (promise)]
-             (wcar {} (car/del (tkey "rq2")))
-             (wcar {} (car/set (tkey "rq2") "rq2-val")
+             (wcar* (car/del (tkey "rq2")))
+             (wcar* (car/set (tkey "rq2") "rq2-val")
                ;; Nested `wcar` here should trigger eager sending of queued writes
                ;; above (to simulate immediate-write commands):
-               (deliver p_ (wcar {} (car/get (tkey "rq2")))))
+               (deliver p_ (wcar* (car/get (tkey "rq2")))))
              (deref p_ 0 ::timeout))))]))
 
 (deftest atomic-tests
   (let [_ (clear-tkeys!)]
     [(testing "Bad cases"
-       [(is (throws? Exception (car/atomic {} 1))
+       [(is (throws? Exception (atomic* 1))
           "Multi command is missing")
 
-        (is (= (car/atomic {} 1 (car/multi)) [["OK"] nil])
+        (is (= (atomic* 1 (car/multi)) [["OK"] nil])
           "Empty multi case")
 
-        (is (throws? Exception (car/atomic {} 1 (car/multi) (car/discard)))
+        (is (throws? Exception (atomic* 1 (car/multi) (car/discard)))
           "Like missing multi case")])
 
      (testing "Basic tests"
-       [(is (= [["OK" "QUEUED"] "PONG"] (car/atomic {} 1 (car/multi) (car/ping))))
+       [(is (= [["OK" "QUEUED"] "PONG"] (atomic* 1 (car/multi) (car/ping))))
         (is (= [["OK" "QUEUED" "QUEUED"] ["PONG" "PONG"]]
-              (car/atomic {} 1 (car/multi) (car/ping) (car/ping))))
+              (atomic* 1 (car/multi) (car/ping) (car/ping))))
         (is (= [["echo" "OK" "QUEUED"] "PONG"]
-              (car/atomic {} 1 (car/return "echo") (car/multi) (car/ping))))])
+              (atomic* 1 (car/return "echo") (car/multi) (car/ping))))])
 
      (testing "Exception case"
        [(is (throws? ArithmeticException ;; Nb be specific here to distinguish from other exs!
-              (car/atomic {} 1
+              (atomic* 1
                 (car/multi)
                 (car/ping)
                 (/ 1 0)    ; Throws client-side
                 (car/ping))))
 
-        (is (throws? Exception (car/atomic {} 1
+        (is (throws? Exception (atomic* 1
                                  (car/multi)
                                  (car/redis-call [:invalid]) ; Server-side error, before exec
                                  (car/ping))))])
 
      (testing "Multi Ping case"
-       [(is (= "PONG" (-> (car/atomic {} 1 (car/multi) (car/multi) (car/ping))
+       [(is (= "PONG" (-> (atomic* 1 (car/multi) (car/multi) (car/ping))
                         second))
           "Ignores extra multi [error] while queuing:")
 
-        (is (= "PONG" (-> (car/atomic {} 1
+        (is (= "PONG" (-> (atomic* 1
                             (car/multi)
                             (car/parse (constantly "foo") (car/ping)))
                                         ; No parsers
@@ -700,7 +701,7 @@
 
      (testing "Misc"
        [(is (throws? Exception
-              (car/atomic {} 5
+              (atomic* 5
                 (car/watch (tkey :watched))
                 (car/set (tkey :watched) (rand))
                 (car/multi)
@@ -708,15 +709,15 @@
 
         ;; As above, with contending write by different connection:
         (is (throws? Exception
-              (car/atomic {} 5
+              (atomic* 5
                 (car/watch (tkey :watched))
-                (wcar {} (car/set (tkey :watched) (rand)))
+                (wcar* (car/set (tkey :watched) (rand)))
                 (car/multi)
                 (car/ping))))
 
         (is (= [[["OK" "OK" "QUEUED"] "PONG"] 3]
               (let [idx (atom 1)]
-                [(car/atomic {} 3
+                [(atomic* 3
                    (car/watch (tkey :watched))
                    (when (< @idx 3)
                      (swap! idx inc)
@@ -726,7 +727,7 @@
                  @idx])))
 
         (is (throws? ArithmeticException ;; Correct (unmasked) error
-              (car/atomic {} 1 (/ 1 0))))])]))
+              (atomic* 1 (/ 1 0))))])]))
 
 (deftest cluster-key-hashing-tests
   [(is (= [12182 5061 4813] [(commands/keyslot "foo")
@@ -764,17 +765,17 @@
 
 (deftest bin-args-tests
   (let [_ (clear-tkeys!)]
-    [(wcar {} (car/set (tkey "bin-arg") (.getBytes "Foobar" "UTF-8")))
+    [(wcar* (car/set (tkey "bin-arg") (.getBytes "Foobar" "UTF-8")))
      (is (= (seq (.getBytes "Foobar" "UTF-8"))
-            (seq (wcar {} (car/get (tkey "bin-arg"))))))]))
+            (seq (wcar* (car/get (tkey "bin-arg"))))))]))
 
 (deftest cas-tests
   (let [_ (clear-tkeys!)]
     [(is (= ["OK" 1 0 1 1 "final-val"]
            (let [tk  (tkey "cas-k")
                  cas (partial car/compare-and-set tk)]
-             ;; (wcar {} (car/del tk))
-             (wcar {}
+             ;; (wcar* (car/del tk))
+             (wcar*
                (car/set tk 0)
                (cas 0      1)
                (cas 22     23)  ; Will be ignored
@@ -788,8 +789,8 @@
 
            (let [tk      (tkey "swap1")
                  big-val [:this :is :a :big :value :needs :sha]]
-             ;; (wcar {} (car/del tk)) ; Debug
-             (wcar {}
+             (wcar* (car/del tk)) ; Clean up key before test
+             (wcar*
                (car/swap tk (fn [?old nx?] (if nx? "state1" "_")))
                (car/swap tk (fn [?old nx?] (if nx? "_" "state2")))
                (car/swap tk (fn [?old _]   (if (= ?old "state2")  "state3" "_")))
@@ -801,39 +802,71 @@
                (car/set  tk big-val)
                (car/swap tk (fn [?old nx?] (conj ?old :woo)))
 
-               (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+               (car/swap tk (fn [?old nx?] (wcar* (car/set tk "non-tx-value")) "tx-value")
                  1 :aborted)
-               (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+               (car/swap tk (fn [?old nx?] (wcar* (car/set tk "non-tx-value")) "tx-value")
                  2 :aborted)
 
                (car/set tk big-val)
-               (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+               (car/swap tk (fn [?old nx?] (wcar* (car/set tk "non-tx-value")) "tx-value")
                  1 :aborted)
-               (car/swap tk (fn [?old nx?] (wcar {} (car/set tk "non-tx-value")) "tx-value")
+               (car/swap tk (fn [?old nx?] (wcar* (car/set tk "non-tx-value")) "tx-value")
                  2 :aborted)))))
 
      (is (= ["nx" 1 1 "3" "tx-value1" :aborted "tx-value3"
              0 ["nx" "val2" "tx-value3" "val4"]]
            (let [tk (tkey "swap2")]
-             ;; (wcar {} (car/del tk)) ; Debug
-             (wcar {}
+             (wcar* (car/del tk)) ; Clean up key before test
+             (wcar*
                (car/hswap tk "field1" (fn [?old-val nx?] (if nx? "nx" "ex")))
                (car/hset  tk "field2" "val2")
                (car/hset  tk "field3" 3)
                (car/hswap tk "field3" (fn [?old-val nx?] ?old-val))
 
                (car/hswap tk "field3"
-                 (fn [?old nx?] (wcar {} (car/hset tk "field4" "non-tx-value1")) "tx-value1")
+                 (fn [?old nx?] (wcar* (car/hset tk "field4" "non-tx-value1")) "tx-value1")
                  1 :aborted)
                (car/hswap tk "field3"
-                 (fn [?old nx?] (wcar {} (car/hset tk "field3" "non-tx-value2")) "tx-value2")
+                 (fn [?old nx?] (wcar* (car/hset tk "field3" "non-tx-value2")) "tx-value2")
                  1 :aborted)
                (car/hswap tk "field3"
-                 (fn [?old nx?] (wcar {} (car/hset tk "field3" "non-tx-value3")) "tx-value3")
+                 (fn [?old nx?] (wcar* (car/hset tk "field3" "non-tx-value3")) "tx-value3")
                  2 :aborted)
 
                (car/hset  tk "field4" "val4")
                (car/hvals tk)))))]))
 
-(deftest benchmarks-tests
-  (is (benchmarks/bench {})))
+;;;; Benching
+
+(def  bench-data (apply str (repeat 100 "x")))
+(def  bench-key  "carmine:temp:benchmark:data-key")
+
+(defn bench [conn-opts warmup-laps timed-laps]
+  (println)
+  (println "Benching (this can take some time)")
+  (println (str "Laps: " (format "%.0e" warmup-laps) " + " (format "%.0e" timed-laps) "..."))
+  (println "----------------------------------")
+
+  (let [results
+        {:wcar      (enc/bench timed-laps {:warmup-laps warmup-laps} (wcar conn-opts "Do nothing"))
+         :ping/n1   (enc/bench timed-laps {:warmup-laps warmup-laps} (wcar conn-opts                  (car/ping)))
+         :ping/n100 (enc/bench timed-laps {:warmup-laps warmup-laps} (wcar conn-opts (dotimes [_ 100] (car/ping))))
+         :set       (enc/bench timed-laps {:warmup-laps warmup-laps} (wcar conn-opts (car/set bench-key bench-data)))
+         :get       (enc/bench timed-laps {:warmup-laps warmup-laps} (wcar conn-opts (car/get bench-key)))
+         :roundtrip (enc/bench timed-laps {:warmup-laps warmup-laps} (wcar conn-opts
+                                                                       (car/set bench-key bench-data)
+                                                                       (car/get bench-key)))}]
+
+    (println results)
+    (println)
+    (println "Done! (Time for cake?)")
+    results))
+
+(deftest benching (is (bench conn-opts 5e3 1e5)))
+
+(comment
+  ;; 2025-11-06 on 2020 MBP M1
+  ;; {:wcar 65, :ping/n1 74,   :ping/n100 133,  :set 89,   :get 76,   :roundtrip 78}   ; Unpooled/1e3
+  ;; {:wcar 87, :ping/n1 2223, :ping/n100 6659, :set 2269, :get 2249, :roundtrip 2413} ;   Pooled/1e5
+  (bench (assoc conn-opts :pool :none) 5e3 1e5)
+  (bench        conn-opts              5e3 1e5))

@@ -4,8 +4,8 @@
    [taoensso.encore  :as enc]
    [taoensso.truss   :as truss]
    [taoensso.carmine :as car  :refer [wcar]]
-   [taoensso.carmine.locks    :refer
-    [acquire-lock release-lock with-lock]]))
+   [taoensso.carmine.locks    :refer [acquire-lock release-lock with-lock]]
+   [taoensso.carmine.tests.config :as config]))
 
 (comment
   (remove-ns      'taoensso.carmine.tests.locks)
@@ -13,7 +13,7 @@
 
 ;;;; Config, etc.
 
-(def conn-opts {})
+(def conn-opts config/conn-opts)
 (def timeout-ms 2000)
 
 (defn sleep [n] (Thread/sleep (int n)) (str "slept " n "msecs"))
@@ -22,12 +22,12 @@
 
 (deftest basic-locking-tests
   (let [lock-name "test:1"
-        act-op1 (acquire-lock {} lock-name timeout-ms 2000)
-        act-op2 (acquire-lock {} lock-name timeout-ms 200)
+        act-op1 (acquire-lock conn-opts lock-name timeout-ms 2000)
+        act-op2 (acquire-lock conn-opts lock-name timeout-ms 200)
         act-op3
         (do
           (sleep 1000)
-          (acquire-lock {} lock-name timeout-ms 2000))]
+          (acquire-lock conn-opts lock-name timeout-ms 2000))]
 
     [(is (string? act-op1) "Should acquire lock and return UUID owner string")
      (is (nil?    act-op2) "Should not acquire lock and return nil")
@@ -58,7 +58,7 @@
 
 (deftest locking-scope-tests
   (let [lock-name "test:4"]
-    (try (with-lock {} conn-opts lock-name timeout-ms (throw (Exception.)))
+    (try (with-lock conn-opts lock-name timeout-ms (throw (Exception.)))
          (catch Exception e nil))
 
     (is (string? (acquire-lock conn-opts lock-name timeout-ms 2000))
@@ -72,7 +72,8 @@
 
 (deftest with-lock-expiry-tests
   [(testing "Case 1"
-     (is (truss/throws? clojure.lang.ExceptionInfo (with-lock {} 9 500 2000 (sleep 1000)))
+     (is (truss/throws? clojure.lang.ExceptionInfo
+           (with-lock conn-opts 9 500 2000 (sleep 1000)))
        "Since lock expired before being released, it should throw an exception."))
 
   (testing "Case 2"
