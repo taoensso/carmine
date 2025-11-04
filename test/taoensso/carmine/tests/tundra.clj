@@ -4,19 +4,24 @@
    [taoensso.carmine :as car  :refer [wcar]]
    [taoensso.carmine.message-queue :as mq]
    [taoensso.carmine.tundra        :as tundra]
-   [taoensso.carmine.tundra.disk   :as tdisk]))
+   [taoensso.carmine.tundra.disk   :as tdisk]
+   [taoensso.carmine.tests.config :as config]))
 
 (comment
   (remove-ns      'taoensso.carmine.tests.tundra)
   (test/run-tests 'taoensso.carmine.tests.tundra))
 
-(defmacro wcar* [& body] `(car/wcar {} ~@body))
+;; Import shared test configuration from config namespace
+(def conn-opts config/conn-opts)
+
+;; Define macro in this namespace that uses the imported conn-opts
+(defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
 (def tkey (partial car/key :carmine :tundra :test))
 (def tqname "carmine-tundra-tests")
 (def mqname (format "tundra:%s" (name tqname))) ; Nb has prefix
 
 (defn clean-up! []
-  (mq/queues-clear!! {} mqname)
+  (mq/queues-clear!! conn-opts mqname)
   (when-let [ks (seq (wcar* (car/keys (tkey :*))))]
     (wcar* (apply car/del ks)
            (apply car/srem @#'tundra/k-evictable ks)))
@@ -81,7 +86,7 @@
   (is (= [[:clj-val] [:clj-val] [:clj-val-new]]
          (let [_       (clean-up!)
                tstore  (tundra/tundra-store dstore {:tqname tqname})
-               tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100})]
+               tworker (tundra/worker tstore conn-opts {:eoq-backoff-ms 100 :throttle-ms 100})]
 
            (sleep :c1)
            (wcar* (car/mset (tkey 0) [:clj-val]
@@ -113,7 +118,7 @@
 (deftest tundra-api-test-3
   (is (= [-1 -1 -1] ; nil eviction timeout (default) is respected!
          (let [tstore  (tundra/tundra-store dstore {:tqname tqname})
-               tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100})]
+               tworker (tundra/worker tstore conn-opts {:eoq-backoff-ms 100 :throttle-ms 100})]
 
            (sleep :c1)
            (wcar* (car/mset (tkey 0) "0" (tkey 1) "1" (tkey 2) "1") ; Clears timeouts
@@ -136,7 +141,7 @@
          (let [_       (clean-up!)
                tstore  (tundra/tundra-store dstore {:redis-ttl-ms (* 1000 60 60 24)
                                                     :tqname tqname})
-               tworker (tundra/worker tstore {} {:eoq-backoff-ms 100 :throttle-ms 100
+               tworker (tundra/worker tstore conn-opts {:eoq-backoff-ms 100 :throttle-ms 100
                                                  :auto-start false})]
 
            (sleep :c1)
@@ -154,4 +159,4 @@
                        (car/pttl (tkey 0))))])))))
 
 (comment (clean-up!)
-         (mq/queue-status {} mqname))
+         (mq/queue-status conn-opts mqname))

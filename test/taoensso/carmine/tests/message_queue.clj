@@ -2,9 +2,9 @@
   (:require
    [clojure.test     :as test :refer [deftest testing is]]
    [taoensso.encore  :as enc]
-   [taoensso.encore  :as truss]
    [taoensso.carmine :as car  :refer [wcar]]
-   [taoensso.carmine.message-queue :as mq]))
+   [taoensso.carmine.message-queue :as mq]
+   [taoensso.carmine.tests.config :as config]))
 
 (comment
   (remove-ns      'taoensso.carmine.tests.message-queue)
@@ -27,7 +27,10 @@
 
 ;;;; Config, etc.
 
-(def conn-opts {})
+;; Import shared test configuration from config namespace
+(def conn-opts config/conn-opts)
+
+;; Define macro in this namespace that uses the imported conn-opts
 (defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
 
 (def tq "carmine-test-queue")

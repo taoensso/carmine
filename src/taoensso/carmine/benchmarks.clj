@@ -5,9 +5,9 @@
 
 (def bench-data  (apply str (repeat 100 "x")))
 (def bench-key   "carmine:temp:benchmark:data-key")
-(defmacro bench* [& body] `(enc/bench 10000 {:warmup-laps 5000} ~@body))
 
-(defn bench [{:keys [laps unpooled?] :or {laps 1}}]
+(defn bench [{:keys [laps unpooled? conn-opts n-commands warmup-laps]
+              :or {laps 1 conn-opts {} n-commands 10000 warmup-laps 5000}}]
   (println)
   (println "Benching (this can take some time)")
   (println "----------------------------------")
@@ -17,18 +17,18 @@
 
     (when unpooled?
       (println
-       {:wcar-unpooled  (bench* (wcar {:pool :none} "Do nothing"))
-        :ping-unpooled  (bench* (wcar {:pool :none} (car/ping)))}))
+       {:wcar-unpooled  (enc/bench n-commands {:warmup-laps warmup-laps} (wcar (assoc conn-opts :pool :none) "Do nothing"))
+        :ping-unpooled  (enc/bench n-commands {:warmup-laps warmup-laps} (wcar (assoc conn-opts :pool :none) (car/ping)))}))
 
     (println
-     {:wcar      (bench* (wcar {} "Do nothing"))
-      :ping      (bench* (wcar {} (car/ping)))
-      :set       (bench* (wcar {} (car/set bench-key bench-data)))
-      :get       (bench* (wcar {} (car/get bench-key)))
-      :roundtrip (bench* (wcar {} (car/ping)
-                                  (car/set bench-key bench-data)
-                                  (car/get bench-key)))
-      :ping-pipelined (bench* (wcar {} (dorun (repeatedly 100 car/ping))))}))
+     {:wcar      (enc/bench n-commands {:warmup-laps warmup-laps} (wcar conn-opts "Do nothing"))
+      :ping      (enc/bench n-commands {:warmup-laps warmup-laps} (wcar conn-opts (car/ping)))
+      :set       (enc/bench n-commands {:warmup-laps warmup-laps} (wcar conn-opts (car/set bench-key bench-data)))
+      :get       (enc/bench n-commands {:warmup-laps warmup-laps} (wcar conn-opts (car/get bench-key)))
+      :roundtrip (enc/bench n-commands {:warmup-laps warmup-laps} (wcar conn-opts (car/ping)
+                                                                         (car/set bench-key bench-data)
+                                                                         (car/get bench-key)))
+      :ping-pipelined (enc/bench n-commands {:warmup-laps warmup-laps} (wcar conn-opts (dorun (repeatedly 100 car/ping))))}))
 
   (println)
   (println "Done! (Time for cake?)")
