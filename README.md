@@ -26,6 +26,7 @@ See [here][GitHub releases] for earlier releases.
 - Auto **de/serialization** of Clojure data types via [Nippy](https://www.taoensso.com/nippy)
 - Fast, simple [message queue](../../wiki/3-Message-queue) API
 - Fast, simple [distributed lock](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.locks) API
+- Redis High Availability supported through Redis Enterprise and Redis Cloud
 
 ## Documentation
 
