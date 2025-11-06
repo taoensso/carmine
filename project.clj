@@ -10,16 +10,16 @@
   :test-paths ["test" #_"src"]
 
   :dependencies
-  [[com.taoensso/encore              "3.145.0"]
-   [com.taoensso/nippy               #_"3.5.0" "3.6.0-alpha1"]
-   [com.taoensso/timbre              "6.7.0"]
+  [[com.taoensso/encore              "3.158.0"]
+   [com.taoensso/nippy               "3.6.0"]
+   [com.taoensso/timbre              "6.8.0"]
    [org.apache.commons/commons-pool2 "2.12.1"]
-   [commons-codec/commons-codec      "1.18.0"]]
+   [commons-codec/commons-codec      "1.20.0"]]
 
   :profiles
   {;; :default [:base :system :user :provided :dev]
-   :provided {:dependencies [[org.clojure/clojure "1.12.0"]]}
-   :c1.12    {:dependencies [[org.clojure/clojure "1.12.0"]]}
+   :provided {:dependencies [[org.clojure/clojure "1.12.3"]]}
+   :c1.12    {:dependencies [[org.clojure/clojure "1.12.3"]]}
    :c1.11    {:dependencies [[org.clojure/clojure "1.11.4"]]}
    :c1.10    {:dependencies [[org.clojure/clojure "1.10.3"]]}
 
@@ -44,7 +44,7 @@
      [org.clojure/data.json  "2.5.1"]
      [com.taoensso/faraday   "1.12.3"]
      [clj-aws-s3             "0.3.10"]
-     [ring/ring-core         "1.14.1"]]
+     [ring/ring-core         "1.15.3"]]
 
     :plugins
     [[lein-pprint  "1.3.2"]

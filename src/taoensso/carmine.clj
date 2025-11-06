@@ -16,7 +16,7 @@
     (connections :as conns)
     (commands    :as commands)]))
 
-(enc/assert-min-encore-version [3 145 0])
+(enc/assert-min-encore-version [3 158 0])
 
 ;;;; Logging config
 
