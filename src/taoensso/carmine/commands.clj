@@ -103,8 +103,8 @@
     [source]
     (let [json
           (case source
-            ;; Ref. <https://github.com/redis/redis-doc/blob/master/commands.json>
-            :online (slurp (java.net.URL. "https://raw.githubusercontent.com/redis/redis-doc/master/commands.json"))
+            ;; Ref. <https://github.com/redis/docs/blob/main/data/commands.json>
+            :online (slurp (java.net.URL. "https://raw.githubusercontent.com/redis/docs/refs/heads/main/data/commands.json"))
             :local  (enc/slurp-resource "redis-commands.json"))]
 
       {:as-map  (clojure.data.json/read-str json :key-fn keyword),

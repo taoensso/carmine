@@ -1758,6 +1758,10 @@
             [
                 "6.2.0",
                 "`LADDR` option."
+            ],
+            [
+                "8.0.0",
+                "`MAXAGE` option."
             ]
         ],
         "acl_categories": [
@@ -1873,6 +1877,14 @@
                                         "token": "NO"
                                     }
                                 ]
+                            },
+                            {
+                                "name": "maxage",
+                                "type": "integer",
+                                "display_text": "maxage",
+                                "token": "MAXAGE",
+                                "since": "8.0.0",
+                                "optional": true
                             }
                         ]
                     }
@@ -5447,6 +5459,10 @@
         "replaced_by": "`GEOSEARCH` and `GEOSEARCHSTORE` with the `BYRADIUS` and `FROMMEMBER` arguments",
         "history": [
             [
+                "6.2.0",
+                "Added the `ANY` option for `COUNT`."
+            ],
+            [
                 "7.0.0",
                 "Added support for uppercase unit names."
             ]
@@ -5660,6 +5676,16 @@
         "complexity": "O(N+log(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
         "deprecated_since": "6.2.0",
         "replaced_by": "`GEOSEARCH` with the `BYRADIUS` and `FROMMEMBER` arguments",
+        "history": [
+            [
+                "6.2.0",
+                "Added the `ANY` option for `COUNT`."
+            ],
+            [
+                "7.0.0",
+                "Added support for uppercase unit names."
+            ]
+        ],
         "acl_categories": [
             "@read",
             "@geo",
@@ -5812,6 +5838,10 @@
             [
                 "6.2.0",
                 "Added the `ANY` option for `COUNT`."
+            ],
+            [
+                "7.0.0",
+                "Added support for uppercase unit names."
             ]
         ],
         "acl_categories": [
@@ -6936,6 +6966,245 @@
             "fast"
         ]
     },
+    "HEXPIRE": {
+        "summary": "Set expiry for hash field using relative time to expire (seconds)",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@write",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -5,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RW": true,
+                "update": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "seconds",
+                "type": "integer",
+                "display_text": "seconds"
+            },
+            {
+                "name": "condition",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "nx",
+                        "type": "pure-token",
+                        "display_text": "nx",
+                        "token": "NX"
+                    },
+                    {
+                        "name": "xx",
+                        "type": "pure-token",
+                        "display_text": "xx",
+                        "token": "XX"
+                    },
+                    {
+                        "name": "gt",
+                        "type": "pure-token",
+                        "display_text": "gt",
+                        "token": "GT"
+                    },
+                    {
+                        "name": "lt",
+                        "type": "pure-token",
+                        "display_text": "lt",
+                        "token": "LT"
+                    }
+                ]
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "write",
+            "denyoom",
+            "fast"
+        ]
+    },
+    "HEXPIREAT": {
+        "summary": "Set expiry for hash field using an absolute Unix timestamp (seconds)",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@write",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -5,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RW": true,
+                "update": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "unix-time-seconds",
+                "type": "unix-time",
+                "display_text": "unix-time-seconds"
+            },
+            {
+                "name": "condition",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "nx",
+                        "type": "pure-token",
+                        "display_text": "nx",
+                        "token": "NX"
+                    },
+                    {
+                        "name": "xx",
+                        "type": "pure-token",
+                        "display_text": "xx",
+                        "token": "XX"
+                    },
+                    {
+                        "name": "gt",
+                        "type": "pure-token",
+                        "display_text": "gt",
+                        "token": "GT"
+                    },
+                    {
+                        "name": "lt",
+                        "type": "pure-token",
+                        "display_text": "lt",
+                        "token": "LT"
+                    }
+                ]
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "write",
+            "denyoom",
+            "fast"
+        ]
+    },
+    "HEXPIRETIME": {
+        "summary": "Returns the expiration time of a hash field as a Unix timestamp, in seconds.",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@read",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -4,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RO": true,
+                "access": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "readonly",
+            "fast"
+        ]
+    },
     "HGET": {
         "summary": "Returns the value of a field in a hash.",
         "since": "2.0.0",
@@ -7029,6 +7298,135 @@
         ],
         "hints": [
             "nondeterministic_output_order"
+        ]
+    },
+    "HGETF": {
+        "summary": "For each specified field, returns its value and optionally set the field's remaining expiration time in seconds / milliseconds",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@write",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -5,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RW": true,
+                "update": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "condition",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "nx",
+                        "type": "pure-token",
+                        "display_text": "nx",
+                        "token": "NX"
+                    },
+                    {
+                        "name": "xx",
+                        "type": "pure-token",
+                        "display_text": "xx",
+                        "token": "XX"
+                    },
+                    {
+                        "name": "gt",
+                        "type": "pure-token",
+                        "display_text": "gt",
+                        "token": "GT"
+                    },
+                    {
+                        "name": "lt",
+                        "type": "pure-token",
+                        "display_text": "lt",
+                        "token": "LT"
+                    }
+                ]
+            },
+            {
+                "name": "expiration",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "seconds",
+                        "type": "integer",
+                        "display_text": "seconds",
+                        "token": "EX"
+                    },
+                    {
+                        "name": "milliseconds",
+                        "type": "integer",
+                        "display_text": "milliseconds",
+                        "token": "PX"
+                    },
+                    {
+                        "name": "unix-time-seconds",
+                        "type": "unix-time",
+                        "display_text": "unix-time-seconds",
+                        "token": "EXAT"
+                    },
+                    {
+                        "name": "unix-time-milliseconds",
+                        "type": "unix-time",
+                        "display_text": "unix-time-milliseconds",
+                        "token": "PXAT"
+                    },
+                    {
+                        "name": "persist",
+                        "type": "pure-token",
+                        "display_text": "persist",
+                        "token": "PERSIST"
+                    }
+                ]
+            },
+            {
+                "name": "fields",
+                "type": "string",
+                "display_text": "fields"
+            },
+            {
+                "name": "count",
+                "type": "integer",
+                "display_text": "count"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "write",
+            "denyoom",
+            "fast"
         ]
     },
     "HINCRBY": {
@@ -7349,6 +7747,355 @@
             "deprecated"
         ]
     },
+    "HPERSIST": {
+        "summary": "Removes the expiration time for each specified field",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@read",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -4,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RO": true,
+                "access": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "readonly",
+            "fast"
+        ]
+    },
+    "HPEXPIRE": {
+        "summary": "Set expiry for hash field using relative time to expire (milliseconds)",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@write",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -5,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RW": true,
+                "update": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "milliseconds",
+                "type": "integer",
+                "display_text": "milliseconds"
+            },
+            {
+                "name": "condition",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "nx",
+                        "type": "pure-token",
+                        "display_text": "nx",
+                        "token": "NX"
+                    },
+                    {
+                        "name": "xx",
+                        "type": "pure-token",
+                        "display_text": "xx",
+                        "token": "XX"
+                    },
+                    {
+                        "name": "gt",
+                        "type": "pure-token",
+                        "display_text": "gt",
+                        "token": "GT"
+                    },
+                    {
+                        "name": "lt",
+                        "type": "pure-token",
+                        "display_text": "lt",
+                        "token": "LT"
+                    }
+                ]
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "write",
+            "denyoom",
+            "fast"
+        ]
+    },
+    "HPEXPIREAT": {
+        "summary": "Set expiry for hash field using an absolute Unix timestamp (milliseconds)",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@write",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -5,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RW": true,
+                "update": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "unix-time-milliseconds",
+                "type": "unix-time",
+                "display_text": "unix-time-milliseconds"
+            },
+            {
+                "name": "condition",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "nx",
+                        "type": "pure-token",
+                        "display_text": "nx",
+                        "token": "NX"
+                    },
+                    {
+                        "name": "xx",
+                        "type": "pure-token",
+                        "display_text": "xx",
+                        "token": "XX"
+                    },
+                    {
+                        "name": "gt",
+                        "type": "pure-token",
+                        "display_text": "gt",
+                        "token": "GT"
+                    },
+                    {
+                        "name": "lt",
+                        "type": "pure-token",
+                        "display_text": "lt",
+                        "token": "LT"
+                    }
+                ]
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "write",
+            "denyoom",
+            "fast"
+        ]
+    },
+    "HPEXPIRETIME": {
+        "summary": "Returns the expiration time of a hash field as a Unix timestamp, in msec.",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@read",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -4,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RO": true,
+                "access": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "readonly",
+            "fast"
+        ]
+    },
+    "HPTTL": {
+        "summary": "Returns the TTL in milliseconds of a hash field.",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@read",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -4,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RO": true,
+                "access": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
+            }
+        ],
+        "command_flags": [
+            "readonly",
+            "fast"
+        ]
+    },
     "HRANDFIELD": {
         "summary": "Returns one or more random fields from a hash.",
         "since": "6.2.0",
@@ -7470,6 +8217,13 @@
                 "display_text": "count",
                 "token": "COUNT",
                 "optional": true
+            },
+            {
+                "name": "novalues",
+                "type": "pure-token",
+                "display_text": "novalues",
+                "token": "NOVALUES",
+                "optional": true
             }
         ],
         "command_flags": [
@@ -7522,6 +8276,191 @@
                 "type": "key",
                 "display_text": "key",
                 "key_spec_index": 0
+            },
+            {
+                "name": "data",
+                "type": "block",
+                "multiple": true,
+                "arguments": [
+                    {
+                        "name": "field",
+                        "type": "string",
+                        "display_text": "field"
+                    },
+                    {
+                        "name": "value",
+                        "type": "string",
+                        "display_text": "value"
+                    }
+                ]
+            }
+        ],
+        "command_flags": [
+            "write",
+            "denyoom",
+            "fast"
+        ]
+    },
+    "HSETF": {
+        "summary": "For each specified field, returns its value and optionally set the field's remaining expiration time in seconds / milliseconds",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@write",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -6,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RW": true,
+                "update": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "create key option",
+                "type": "pure-token",
+                "display_text": "create key option",
+                "token": "DC",
+                "optional": true
+            },
+            {
+                "name": "create option",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "dcf",
+                        "type": "pure-token",
+                        "display_text": "dcf",
+                        "token": "DCF"
+                    },
+                    {
+                        "name": "dof",
+                        "type": "pure-token",
+                        "display_text": "dof",
+                        "token": "DOF"
+                    }
+                ]
+            },
+            {
+                "name": "return option",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "getnew",
+                        "type": "pure-token",
+                        "display_text": "getnew",
+                        "token": "GETNEW"
+                    },
+                    {
+                        "name": "getold",
+                        "type": "pure-token",
+                        "display_text": "getold",
+                        "token": "GETOLD"
+                    }
+                ]
+            },
+            {
+                "name": "condition",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "nx",
+                        "type": "pure-token",
+                        "display_text": "nx",
+                        "token": "NX"
+                    },
+                    {
+                        "name": "xx",
+                        "type": "pure-token",
+                        "display_text": "xx",
+                        "token": "XX"
+                    },
+                    {
+                        "name": "gt",
+                        "type": "pure-token",
+                        "display_text": "gt",
+                        "token": "GT"
+                    },
+                    {
+                        "name": "lt",
+                        "type": "pure-token",
+                        "display_text": "lt",
+                        "token": "LT"
+                    }
+                ]
+            },
+            {
+                "name": "expiration",
+                "type": "oneof",
+                "optional": true,
+                "arguments": [
+                    {
+                        "name": "seconds",
+                        "type": "integer",
+                        "display_text": "seconds",
+                        "token": "EX"
+                    },
+                    {
+                        "name": "milliseconds",
+                        "type": "integer",
+                        "display_text": "milliseconds",
+                        "token": "PX"
+                    },
+                    {
+                        "name": "unix-time-seconds",
+                        "type": "unix-time",
+                        "display_text": "unix-time-seconds",
+                        "token": "EXAT"
+                    },
+                    {
+                        "name": "unix-time-milliseconds",
+                        "type": "unix-time",
+                        "display_text": "unix-time-milliseconds",
+                        "token": "PXAT"
+                    },
+                    {
+                        "name": "keepttl",
+                        "type": "pure-token",
+                        "display_text": "keepttl",
+                        "token": "KEEPTTL"
+                    }
+                ]
+            },
+            {
+                "name": "fvs",
+                "type": "string",
+                "display_text": "fvs"
+            },
+            {
+                "name": "count",
+                "type": "integer",
+                "display_text": "count"
             },
             {
                 "name": "data",
@@ -7643,6 +8582,61 @@
                 "name": "field",
                 "type": "string",
                 "display_text": "field"
+            }
+        ],
+        "command_flags": [
+            "readonly",
+            "fast"
+        ]
+    },
+    "HTTL": {
+        "summary": "Returns the TTL in seconds of a hash field.",
+        "since": "8.0.0",
+        "group": "hash",
+        "complexity": "O(N) where N is the number of arguments to the command",
+        "acl_categories": [
+            "@read",
+            "@hash",
+            "@fast"
+        ],
+        "arity": -4,
+        "key_specs": [
+            {
+                "begin_search": {
+                    "type": "index",
+                    "spec": {
+                        "index": 1
+                    }
+                },
+                "find_keys": {
+                    "type": "range",
+                    "spec": {
+                        "lastkey": 0,
+                        "keystep": 1,
+                        "limit": 0
+                    }
+                },
+                "RO": true,
+                "access": true
+            }
+        ],
+        "arguments": [
+            {
+                "name": "key",
+                "type": "key",
+                "display_text": "key",
+                "key_spec_index": 0
+            },
+            {
+                "name": "numfields",
+                "type": "integer",
+                "display_text": "numfields"
+            },
+            {
+                "name": "field",
+                "type": "string",
+                "display_text": "field",
+                "multiple": true
             }
         ],
         "command_flags": [
@@ -12668,7 +13662,7 @@
                         "limit": 0
                     }
                 },
-                "RW": true,
+                "OW": true,
                 "update": true
             },
             {
@@ -14289,6 +15283,7 @@
         "complexity": "O(1)",
         "acl_categories": [
             "@slow",
+            "@blocking",
             "@connection"
         ],
         "arity": 3,
@@ -14304,6 +15299,9 @@
                 "display_text": "timeout"
             }
         ],
+        "command_flags": [
+            "blocking"
+        ],
         "hints": [
             "request_policy:all_shards",
             "response_policy:agg_min"
@@ -14316,6 +15314,7 @@
         "complexity": "O(1)",
         "acl_categories": [
             "@slow",
+            "@blocking",
             "@connection"
         ],
         "arity": 4,
@@ -14337,7 +15336,7 @@
             }
         ],
         "command_flags": [
-            "noscript"
+            "blocking"
         ],
         "hints": [
             "request_policy:all_shards",
@@ -14935,7 +15934,7 @@
                 "optional": true
             },
             {
-                "name": "entries-read",
+                "name": "entriesread",
                 "type": "integer",
                 "display_text": "entries-read",
                 "token": "ENTRIESREAD",
@@ -15213,7 +16212,7 @@
         "history": [
             [
                 "7.2.0",
-                "Added the `inactive` field."
+                "Added the `inactive` field, and changed the meaning of `idle`."
             ]
         ],
         "acl_categories": [
