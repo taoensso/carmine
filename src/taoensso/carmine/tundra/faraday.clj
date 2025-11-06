@@ -7,7 +7,6 @@
   (:require
    [taoensso.encore         :as enc]
    [taoensso.truss          :as truss]
-   [taoensso.timbre         :as timbre]
    [taoensso.faraday        :as far]
    [taoensso.carmine.tundra :as tundra])
 

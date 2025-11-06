@@ -6,7 +6,6 @@
    [aws.sdk.s3              :as s3]
    [taoensso.encore         :as enc]
    [taoensso.truss          :as truss]
-   [taoensso.timbre         :as timbre]
    [taoensso.carmine.tundra :as tundra])
 
   (:import

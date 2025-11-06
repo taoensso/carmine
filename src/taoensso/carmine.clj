@@ -8,28 +8,15 @@
    [clojure.string       :as str]
    [taoensso.encore      :as enc]
    [taoensso.truss       :as truss]
-   [taoensso.timbre      :as timbre]
    [taoensso.nippy       :as nippy]
    [taoensso.nippy.tools :as nippy-tools]
+   [taoensso.trove       :as trove]
    [taoensso.carmine
     (protocol    :as protocol)
     (connections :as conns)
     (commands    :as commands)]))
 
 (enc/assert-min-encore-version [3 158 0])
-
-;;;; Logging config
-
-(defn set-min-log-level!
-  "Sets Timbre's minimum log level for internal Carmine namespaces.
-  Possible levels: #{:trace :debug :info :warn :error :fatal :report}.
-  Default level: `:warn`."
-  [level]
-  (timbre/set-ns-min-level! "taoensso.carmine.*" level)
-  (timbre/set-ns-min-level! "taoensso.carmine"   level)
-  nil)
-
-(defonce ^:private __set-default-log-level (set-min-log-level! :warn))
 
 ;;;; Connections
 
@@ -599,7 +586,7 @@
 
             true
             (catch Throwable t
-              (timbre/error  t "Listener (error) handler exception")
+              (trove/log! {:level :error, :id :carmine.listener/handler-exception, :error t})
               false)))
 
         done!
@@ -611,12 +598,12 @@
                 (or
                   (handle-error :conn-broken throwable)
                   (if-let [t throwable]
-                    (timbre/error t "Listener connection broken")
-                    (timbre/error   "Listener connection broken"))))
+                    (trove/log! {:level :error, :id :carmine.listener/connection-broken, :error t})
+                    (trove/log! {:level :error, :id :carmine.listener/connection-broken}))))
 
               (or ; Closing
                 (handle-error :conn-closed nil)
-                (timbre/error "Listener connection closed"))))
+                (trove/log! {:level :info, :id :carmine.listener/connection-closed}))))
 
           nil ; Never handle as msg
           )
@@ -644,7 +631,7 @@
                     (catch Throwable t
                       (or
                         (handle-error :handler-ex t)
-                        (timbre/error t "Listener handler exception")))))
+                        (trove/log! {:level :error, :id :carmine.listener/handler-exception, :error t})))))
 
                 (recur)))))
 

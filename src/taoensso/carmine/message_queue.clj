@@ -45,22 +45,10 @@
    [taoensso.truss        :as truss]
    [taoensso.encore.stats :as stats]
    [taoensso.carmine      :as car :refer [wcar]]
-   [taoensso.timbre       :as timbre]))
+   [taoensso.trove        :as trove]))
 
 ;;;; TODO/later
 ;; - Use Redis v7 functions instead of lua?
-
-;;;; Logging config
-
-(defn set-min-log-level!
-  "Sets Timbre's minimum log level for internal Carmine message queue namespaces.
-  Possible levels: #{:trace :debug :info :warn :error :fatal :report}.
-  Default level: `:info`."
-  [level]
-  (timbre/set-ns-min-level! "taoensso.carmine.message-queue" level)
-  nil)
-
-(defonce ^:private __set-default-log-level (set-min-log-level! :info))
 
 ;;;; Utils
 
@@ -586,19 +574,19 @@
           :error
           (do
             (fin mid true nil)
-            (let [msg  "[Carmine/mq] Handler returned `:error` status"
-                  data {:qname qname, :mid mid, :attempt attempt, :message mcontent}]
-
-              (timbre/error (truss/ex-info msg data) msg
-                (dissoc data :message))))
+            (trove/log!
+              {:level :error, :id :carmine.mq/handler-error,
+               :data {:qname qname, :mid mid, :attempt attempt, :message mcontent}}))
 
           ;; else
           (do
             (fin mid true nil) ; For backwards-comp with old API
-            (timbre/warn "[Carmine/mq] Handler returned unexpected status"
-              {:qname qname, :mid mid, :attempt attempt, :message mcontent,
-               :handler-result (enc/typed-val result)
-               :handler-status (enc/typed-val status)})))
+            (trove/log!
+              {:level :warn, :id :carmine.mq/unexpected-handler-status
+               :data
+               {:qname qname, :mid mid, :attempt attempt, :message mcontent,
+                :handler-result (enc/typed-val result)
+                :handler-status (enc/typed-val status)}})))
 
         [:handled status])
 
@@ -673,16 +661,17 @@
   IWorker
   (stop [_]
     (when (and (pos-int? (get worker-opts :nthreads-worker))
-               (compare-and-set! running?_ true false))
-      (timbre/info "[Carmine/mq] Queue worker shutting down" {:qname qname})
+            (compare-and-set! running?_ true false))
+
+      (trove/log! {:level :info, :id :carmine.mq/worker-will-shut-down, :data {:qname qname}})
       (run! deref @worker-futures_)
-      (timbre/info "[Carmine/mq] Queue worker has shut down" {:qname qname})
+      (trove/log! {:level :info, :id :carmine.mq/worker-did-shut-down,  :data {:qname qname}})
       true))
 
   (start [this]
     (when (and (pos-int? (get worker-opts :nthreads-worker))
                (compare-and-set! running?_ false true))
-      (timbre/info "[Carmine/mq] Queue worker starting" {:qname qname})
+      (trove/log! {:level :info, :id :carmine.mq/worker-starting, :data {:qname qname}})
       (let [{:keys [handler monitor nthreads-worker]} worker-opts
             qk (partial qkey qname)
 
@@ -706,8 +695,10 @@
                     loop-error!
                     (fn [throwable]
                       (let [^long nce (nconsecutive-errors*)]
-                        (timbre/error throwable "[Carmine/mq] Worker error, will backoff & retry."
-                          {:qname qname, :thread-id thread-idx, :nconsecutive-errors (inc nce)}))
+                        (trove/log!
+                          {:level :error, :id :carmine.mq/worker-error, :msg "Will backoff and retry",
+                           :data {:qname qname, :thread-id thread-idx, :nconsecutive-errors (inc nce)},
+                           :error throwable}))
                       (reset! loop-error-backoff?_ true))]
 
                 (when (> thread-idx 0)
@@ -723,9 +714,13 @@
                                 (exp-backoff (min 12 nce)
                                   {:factor (or (throttle-ms-fn) 200)})]
 
-                            (timbre/info "[Carmine/mq] Worker thread backing off due to worker error/s"
-                              {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
-                               :backoff-ms backoff-ms})
+                            (trove/log!
+                              {:level :error, :id :carmine.mq/worker-backoff,
+                               :msg "Thread will back off due to worker error/s",
+                               :data
+                               {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
+                                :backoff-ms backoff-ms}})
+
                             (Thread/sleep (int backoff-ms))))))
 
                     (try
@@ -790,8 +785,9 @@
               udt-last-warning (long @udt-last-warning_)]
           (when (> (- instant udt-last-warning) (long (or warn-backoff-ms 0)))
             (when (compare-and-set! udt-last-warning_ udt-last-warning instant)
-              (timbre/warn "[Carmine/mq] Message queue monitor-fn size warning"
-                {:qname qname, :queue-size {:max max-queue-size, :current queue-size}}))))))))
+              (trove/log!
+                {:level :warn, :id :carmine.mq/monitor-size-warning,
+                 :data {:qname qname, :queue-size {:max max-queue-size, :current queue-size}}}))))))))
 
 (defn default-throttle-ms-fn
   "Default/example (fn [queue-size]) -> ?throttle-msecs"
@@ -883,7 +879,7 @@
             nthreads-worker nthreads-handler] :as worker-opts
 
      :or
-     {handler (fn [m] (timbre/info m) {:status :success})
+     {handler (fn [m] (trove/log! {:level :info, :id :carmine.mq/logging-handler, :data m}) {:status :success})
       monitor (monitor-fn qname 1000 (enc/ms :hours 6))
       lock-ms (enc/ms :mins 60)
       nthreads-worker  1

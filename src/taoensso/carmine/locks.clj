@@ -78,7 +78,6 @@
               {:lock-name ~lock-name})))))))
 
 (comment
-  (timbre/set-level! :debug)
   (with-lock {} "my-lock" 2000 500 (Thread/sleep 1000) "m")     ; {:result "m"}
   (with-lock {} "my-lock" 2000 500 (Thread/sleep 1000) (/ 1 0)) ; ex
   (with-lock {} "my-lock" 2000 500 (Thread/sleep 2500) "m")     ; ex

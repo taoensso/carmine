@@ -4,7 +4,6 @@
   (:require
    [taoensso.encore         :as enc]
    [taoensso.truss          :as truss]
-   [taoensso.timbre         :as timbre]
    [taoensso.carmine.tundra :as tundra])
 
   (:import

@@ -12,7 +12,7 @@
   :dependencies
   [[com.taoensso/encore              "3.158.0"]
    [com.taoensso/nippy               "3.6.0"]
-   [com.taoensso/timbre              "6.8.0"]
+   [com.taoensso/trove               "1.1.0"]
    [org.apache.commons/commons-pool2 "2.12.1"]
    [commons-codec/commons-codec      "1.20.0"]]
 

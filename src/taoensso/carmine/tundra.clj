@@ -12,7 +12,7 @@
    [taoensso.truss       :as truss]
    [taoensso.nippy       :as nippy]
    [taoensso.nippy.tools :as nippy-tools]
-   [taoensso.timbre      :as timbre]
+   [taoensso.trove       :as trove]
    [taoensso.carmine     :as car :refer [wcar]]
    [taoensso.carmine.message-queue :as mq])
 
@@ -114,11 +114,13 @@
             (->> (mapv #(when %2 %1) ks-missing evictable-replies)
                  (filterv identity))]
 
-        (timbre/tracef "extend-exists-missing-ks: %s"
-          [:existance-replies existance-replies
-           :ks-missing        ks-missing
-           :evictable-replies evictable-replies
-           :evictable-ks-missing evictable-ks-missing])
+        (trove/log!
+          {:level :trace, :id :carmine.tundra/extend-exists-missing-ks
+           :data
+           {:existance-replies    existance-replies
+            :ks-missing           ks-missing
+            :evictable-replies    evictable-replies
+            :evictable-ks-missing evictable-ks-missing}})
 
         evictable-ks-missing))))
 
@@ -145,11 +147,11 @@
           ks (prep-ks ks)
           ks-missing (extend-exists-missing-ks redis-ttl-ms ks :only-evictable)]
 
-      (timbre/tracef "ensure-ks*: %s" {:ks ks
-                                       :ks-missing ks-missing})
+      (trove/log!
+        {:level :trace, :id :carmine.tundra/ensure-ks,
+         :data {:ks ks, :ks-missing ks-missing, :fetch? (not (empty? ks-missing))}})
 
       (when-not (empty? ks-missing)
-        (timbre/tracef "Fetching missing evictable keys: %s" ks-missing)
         (let [;;; [] e/o #{<dumpval> <throwable>}:
               throwable?    #(instance? Throwable %)
               dvals-missing (try (fetch-keys-delayed datastore
@@ -196,7 +198,8 @@
 
           (when-not (empty? errors)
             (let [ex (truss/ex-info "Failed to ensure some key(s)" errors)]
-              (timbre/error ex) (throw ex)))
+              (trove/log! {:level :error, :id :carmine.tundra/ensure-ks-failed, :error ex})
+              (throw ex)))
           nil))))
 
   (dirty* [tstore ks]
@@ -205,9 +208,12 @@
           ks-missing     (extend-exists-missing-ks redis-ttl-ms ks)
           ks-not-missing (->> ks (filterv (complement (set ks-missing))))]
 
-      (timbre/tracef "dirty*: %s" {:ks ks
-                                   :ks-missing ks-missing
-                                   :ks-not-missing ks-not-missing})
+      (trove/log!
+        {:level :trace, :id :carmine.tundra/dirty,
+         :data
+         {:ks             ks
+          :ks-missing     ks-missing
+          :ks-not-missing ks-not-missing}})
 
       (enc/run!
         (fn [k]
@@ -218,7 +224,8 @@
 
       (when-not (empty? ks-missing)
         (let [ex (truss/ex-info "Some dirty key(s) were missing" {:ks ks-missing})]
-          (timbre/error ex) (throw ex)))
+          (trove/log! {:level :error, :id :carmine.tundra/missing-dirty-ks, :error ex})
+          (throw ex)))
       nil))
 
   (worker [tstore conn-opts wopts]
@@ -238,8 +245,9 @@
                                (#(if (nil? %) nil
                                    (put-key datastore (>urlsafe-str k) %)))))]
 
-              (timbre/tracef "Worker loop: %s" {:k message
-                                                :put-reply put-reply})
+              (trove/log!
+                {:level :trace, :id :carmine.tundra/worker-loop,
+                 :data {:k message, :put-reply put-reply}})
 
               (if (true? put-reply)
                 (do (wcar conn-opts (car/sadd k-evictable k)
