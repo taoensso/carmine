@@ -2,6 +2,43 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.5.0` (2025-11-06)
+
+- **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.5.0)
+- **Versioning**: [Break Versioning](https://www.taoensso.com/break-versioning)
+
+This is a **major maintenance release** with many improvements. It includes a [breaking change](https://github.com/taoensso/carmine/commit/ee75844c6515f6e692fd6fdb2c6fe57ee7aaede1) regarding Carmine's logging. Please report any unexpected problems to the [Slack channel](http://taoensso.com/carmine/slack) or [GitHub](https://github.com/taoensso/carmine/issues).
+
+A big thanks to all contributors and testers on this release! 🙏
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Since `v3.4.1` (2024-05-30)
+
+### Changes
+
+- **➤ \[mod] [BREAKING]** Switch logging: [Timbre](https://www.taoensso.com/timbre) -> [Trove](https://www.taoensso.com/trove) \[ee75844c]
+- \[mod] Drop support for Clojure 1.9 \[70a60652]
+
+### New
+
+- \[new] First publicly available experimental Carmine v4 core for early testers (currently undocumented)
+- \[new] Update command spec \[52c0cc0d]
+- \[new] Now use [Truss contextual exceptions](https://github.com/taoensso/truss#contextual-exceptions) for all errors \[3c5ede77]
+- \[new] \[#322] Tests: use shared config, make benchmarks easier to tune (@kaizer113) \[3a21e98b]
+- \[new] \[mq] Add experimental `:reset-init-backoff?` opt for debouncing, etc. \[983fde98]
+- \[new] \[mq] [#315] [#316] Allow zero-thread workers (@adam-jijo-swym) \[7e9adce1]
+- \[new] \[#313] Replace lua code with native command (@GabrielHVM) \[ed109343]
+- \[doc] \[#314] Fix wiki typos (@mardukbp) \[6c20de1d]
+- \[doc] \[#317] `wcar` docstring improvements \[d4265aad]
+- \[doc] Add migration info re: v3.3 MQ holding connections longer \[8dc6fc14]
+
+### Fixes
+
+- None
+
+---
+
 # `v3.4.1` (2024-05-30)
 
 > **Dep**: Carmine is [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.4.1).  
