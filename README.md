@@ -1,5 +1,8 @@
 <a href="https://www.taoensso.com/clojure" title="More stuff by @ptaoussanis at www.taoensso.com"><img src="https://www.taoensso.com/open-source.png" alt="Taoensso open source" width="340"/></a>  
-[**API**][cljdoc] | [**Wiki**][GitHub wiki] | [Latest releases](#latest-releases) | [Slack channel][]
+[**API**][cljdoc] | [**Wiki**][GitHub wiki] | [Slack][] | Latest release: [v3.4.1](../../releases/tag/v3.4.1) (2024-05-30)
+
+[![Main tests][Main tests SVG]][Main tests URL]
+[![Graal tests][Graal tests SVG]][Graal tests URL]
 
 # Carmine
 
@@ -8,15 +11,6 @@
 Redis and Clojure are individually awesome, and **even better together**.
 
 Carmine is a mature Redis client for Clojure that offers an idiomatic Clojure API with plenty of **speed**, **power**, and **ease-of-use**.
-
-## Latest release/s
-
-- `2024-05-30` `v3.4.1`: [release info](../../releases/tag/v3.4.1) (⚠️ v3.4.0+ contains [**security fix**](https://github.com/taoensso/nippy/security/advisories/GHSA-vw78-267v-588h))
-
-[![Main tests][Main tests SVG]][Main tests URL]
-[![Graal tests][Graal tests SVG]][Graal tests URL]
-
-See [here][GitHub releases] for earlier releases.
 
 ## Why Carmine?
 
@@ -27,19 +21,31 @@ See [here][GitHub releases] for earlier releases.
 - Fast, simple [message queue](../../wiki/3-Message-queue) API
 - Fast, simple [distributed lock](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.locks) API
 
+## Compatibility
+
+Redis is available in a few different flavours depending on your needs:
+
+|                                                                                           | Features                            | Support?            |
+| ----------------------------------------------------------------------------------------- | ----------------------------------- | ------------------- |
+| Single node                                                                               | Simplest setup                      | Yes                 |
+| Redis [Sentinel](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/) | High availability                   | No (possibly later) |
+| Redis [Cluster](https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/)   | High availability, sharding         | No (possibly later) |
+| Redis [Enterprise](https://redis.io/docs/latest/operate/rs/)                              | High availability, sharding         | Yes                 |
+| Redis [Cloud](https://redis.io/cloud/)                                                    | High availability, sharding, hosted | Yes                 |
+
 ## Documentation
 
 - [Wiki][GitHub wiki] (getting started, usage, etc.)
-- API reference via [cljdoc]
-- Support: [Slack channel][] or [GitHub issues][]
+- API reference via [cljdoc][cljdoc]
+- Support: [Slack][] or [GitHub issues][]
 
 ## Funding
 
-You can [help support][sponsor] continued work on this project, thank you!! 🙏
+You can [help support][sponsor] continued work on this project and [others][my work], thank you!! 🙏
 
 ## License
 
-Copyright &copy; 2014-2024 [Peter Taoussanis][].  
+Copyright &copy; 2014-2025 [Peter Taoussanis][].  
 Licensed under [EPL 1.0](LICENSE.txt) (same as Clojure).
 
 <!-- Common -->
@@ -47,10 +53,11 @@ Licensed under [EPL 1.0](LICENSE.txt) (same as Clojure).
 [GitHub releases]: ../../releases
 [GitHub issues]:   ../../issues
 [GitHub wiki]:     ../../wiki
-[Slack channel]: https://www.taoensso.com/carmine/slack
+[Slack]: https://www.taoensso.com/carmine/slack
 
 [Peter Taoussanis]: https://www.taoensso.com
 [sponsor]:          https://www.taoensso.com/sponsor
+[my work]:          https://www.taoensso.com/clojure-libraries
 
 <!-- Project -->
 
