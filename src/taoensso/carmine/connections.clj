@@ -43,8 +43,8 @@
                 (protocol/with-replies
                   (taoensso.carmine/ping))))]
 
-        ;; Ref. https://github.com/redis/redis/issues/420
-        (when (not= resp (if (:listener? this) ["ping" ""] "PONG"))
+        ;; Ref. <https://github.com/redis/redis/issues/420>
+        (when-not (contains? #{"PONG" ["pong" ""]} resp)
           (truss/ex-info! "Unexpected PING response" {:resp resp})))
 
       (catch Exception ex

@@ -303,6 +303,81 @@
              ["message"   "ps-baz" "three"]]
            @received_))]))
 
+(deftest pubsub-read-timeout-probe-test
+  ;; A listener conn with a read timeout must survive quiet periods via
+  ;; write-only ping probes (never a read-back check, which could consume an
+  ;; in-flight message as the "ping reply" and break the listener).
+  (let [received_ (atom [])
+        listener
+        (car/with-new-pubsub-listener
+          (assoc (:spec conn-opts) :read-timeout-ms 100)
+          {"ps-probe" #(swap! received_ conj %)}
+          (car/subscribe "ps-probe"))]
+
+    (sleep 650) ; Several read timeouts + probes while idle
+    [(is (= @(:status_ listener) :running)
+       "Listener survives idle read timeouts via write-only probes")
+     (is (= (wcar* (car/publish "ps-probe" "still-alive")) 1))
+     (sleep 400)
+     (do (car/close-listener listener) :close-listener)
+     (is (= (some #(= % ["message" "ps-probe" "still-alive"]) @received_) true)
+       "Messages still delivered after idle probe cycles")]))
+
+(deftest pubsub-probe-preserves-inflight-message-test
+  ;; Deterministic regression for the timeout-probe race: the server delivers
+  ;; a pub/sub MESSAGE between the client's probe PING and that probe's PONG.
+  ;; The old read-back probe consumed the message as its "ping reply" and
+  ;; broke the listener; the write-only probe must deliver it and stay alive.
+  (let [server (java.net.ServerSocket. 0)
+        port   (.getLocalPort server)
+        server-f
+        (future
+          (with-open [server server
+                      sock ^java.net.Socket (.accept server)]
+            (.setSoTimeout sock 5000)
+            (let [in  (.getInputStream  sock)
+                  out (.getOutputStream sock)
+                  write!
+                  (fn [^String s]
+                    (.write out (.getBytes s "UTF-8")) (.flush out))
+                  read-until!
+                  (fn [^String target]
+                    (let [sb (StringBuilder.)]
+                      (loop []
+                        (let [b (.read in)]
+                          (when-not (== b -1)
+                            (.append sb (char b))
+                            (when-not (.contains (.toString sb) target)
+                              (recur)))))))]
+              (try
+                (read-until! "ps-fake") ; Complete SUBSCRIBE command
+                (write! "*3\r\n$9\r\nsubscribe\r\n$7\r\nps-fake\r\n:1\r\n")
+                (read-until! "PING") ; The listener's write-only timeout probe
+                ;; An in-flight message lands BEFORE the probe's pong:
+                (write! "*3\r\n$7\r\nmessage\r\n$7\r\nps-fake\r\n$5\r\nhello\r\n")
+                (write! "*2\r\n$4\r\npong\r\n$0\r\n\r\n")
+                ;; Keep answering later idle probes while the client asserts
+                (dotimes [_ 10]
+                  (read-until! "PING")
+                  (write! "*2\r\n$4\r\npong\r\n$0\r\n\r\n"))
+                :done
+                (catch Throwable _ :closed)))))
+        received_ (atom [])
+        listener
+        (car/with-new-pubsub-listener
+          {:host "127.0.0.1", :port port, :read-timeout-ms 150}
+          {"ps-fake" #(swap! received_ conj %)}
+          (car/subscribe "ps-fake"))]
+    (try
+      (sleep 800)
+      [(is (= (some #(= % ["message" "ps-fake" "hello"]) @received_) true)
+         "The in-flight message racing the probe is delivered, not consumed")
+       (is (= @(:status_ listener) :running)
+         "The listener survives the probe/message race")]
+      (finally
+        (car/close-listener listener)
+        (deref server-f 3000 nil)))))
+
 (deftest pubsub-unsubscribe-test
   (let [received_ (atom [])
         listener
