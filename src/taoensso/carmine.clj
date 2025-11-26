@@ -495,10 +495,15 @@
 
 (defmacro with-open-listener
   "Evaluates body within the context of given listener's pre-existing persistent
-  connection."
+  connection. Writes are flushed under a lock shared with the listener's
+  internal keepalive/probe pings so they can never interleave mid-command."
   [listener & body]
-  `(protocol/with-context (:connection ~listener) ~@body
-     (protocol/execute-requests (not :get-replies) nil)))
+  `(let [listener# ~listener
+         conn#     (:connection listener#)]
+     (protocol/with-context conn#
+       ~@body
+       (locking (:out conn#)
+         (protocol/execute-requests (not :get-replies) nil)))))
 
 (defn- get-ping-fn
   "Returns (fn ping-fn [action]) with actions:
@@ -540,7 +545,7 @@
       (do                      {                                                 :raw v}))))
 
 (comment
-  (parse-listener-msg ["ping" ""])
+  (parse-listener-msg ["pong" ""])
   (parse-listener-msg ["message" "chan1" "payload"]))
 
 (defn -call-with-new-listener
@@ -556,6 +561,7 @@
         future_     (atom nil)
         listener_   (atom nil)
         done?_      (atom false)
+        awaiting-pong?_ (atom false) ; Read-timeout probe in flight?
 
         {:keys [in] :as conn}
         (conns/make-new-connection
@@ -617,11 +623,32 @@
                 (when-let [pfn ?ping-fn] (pfn :reset!)) ; Record activity on conn
                 (when-let [msg
                            (try
-                             (protocol/get-unparsed-reply in {})
+                             (let [msg (protocol/get-unparsed-reply in {})]
+                               (reset! awaiting-pong?_ false) ; Any frame proves liveness
+                               msg)
 
-                             (catch java.net.SocketTimeoutException _
-                               (when-let [ex (conns/-conn-error conn)]
-                                 (done! ex)))
+                             (catch java.net.SocketTimeoutException ex
+                               ;; NB we deliberately do NOT read a probe reply
+                               ;; here: an in-flight pub/sub message would be
+                               ;; consumed as the probe's reply (dropping the
+                               ;; message and killing the listener). Instead
+                               ;; send a WRITE-ONLY ping and keep reading
+                               ;; normally: any next frame (incl. the pong,
+                               ;; delivered to the handler like `:ping-ms`
+                               ;; pongs) proves the conn alive. A second full
+                               ;; read timeout with no frames at all => broken.
+                               (if @awaiting-pong?_
+                                 (done!
+                                   (truss/ex-info "Listener connection unresponsive (no reply to ping probe within read timeout)"
+                                     {} ex))
+                                 (do
+                                   (reset! awaiting-pong?_ true)
+                                   (try
+                                     (protocol/with-context conn (ping)
+                                       (locking (:out conn)
+                                         (protocol/execute-requests (not :get-replies) nil)))
+                                     nil
+                                     (catch Exception ex2 (done! ex2))))))
 
                              (catch Exception ex
                                (done! ex)))]
@@ -642,8 +669,11 @@
     (reset! listener_ listener)
     (reset! future_   msg-polling-future)
 
+    ;; The reader future is already running: all writer flushes (this initial
+    ;; body, keepalive/probe pings, `with-open-listener`) share one lock
     (protocol/with-context conn (body-fn)
-      (protocol/execute-requests (not :get-replies) nil))
+      (locking (:out conn)
+        (protocol/execute-requests (not :get-replies) nil)))
 
     (when-let [pfn ?ping-fn]
       (let [sleep-msecs (+ (long ping-ms) 100)
@@ -655,7 +685,8 @@
                   (when (pfn :reset!?) ; Should ping now?
                     (try
                       (protocol/with-context conn (ping)
-                        (protocol/execute-requests (not :get-replies) nil))
+                        (locking (:out conn)
+                          (protocol/execute-requests (not :get-replies) nil)))
                       (catch Exception ex
                         (done! ex))))
                   (recur))))]
