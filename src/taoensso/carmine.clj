@@ -1210,34 +1210,38 @@
                (truss/ex-info!
                  (str "`ensure-atomically` failed after " idx# " attempt(s)")
                  {:nattempts idx#})
-               (recur (inc idx#))))))))
+               (recur (inc idx#)))))))))
 
-  (defn ^:deprecated hmget* "DEPRECATED: Use `parse-map` instead."
-    [key field & more]
-    (let [fields (cons field more)
-          inner-parser (when-let [p protocol/*parser*] #(mapv p %))
-          outer-parser #(zipmap fields %)]
-      (->> (apply hmget key fields)
-        (parse (parser-comp outer-parser inner-parser)))))
+;; Not deprecated (Ref. #324), so outside `enc/deprecated` to
+;; survive `taoensso.elide-deprecated` builds
+(defn hmget*
+  "Like `hmget` but returns {k v} map."
+  [key field & more]
+  (let [fields (cons field more)
+        inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+        outer-parser #(zipmap fields %)]
+    (->> (apply hmget key fields)
+      (parse (parser-comp outer-parser inner-parser)))))
 
-  (defn ^:deprecated hgetall* "DEPRECATED: Use `parse-map` instead."
-    [key & [keywordize?]]
-    (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
-          outer-parser (if keywordize?
-                         #(enc/map-keys keyword (apply hash-map %))
-                         #(apply hash-map %))]
-      (->> (hgetall key)
-        (parse (parser-comp outer-parser inner-parser)))))
+(defn hgetall*
+  "Like `hgetall` but returns {k v} map."
+  [key & [keywordize?]]
+  (let [inner-parser (when-let [p protocol/*parser*] #(mapv p %))
+        outer-parser (if keywordize?
+                       #(enc/map-keys keyword (apply hash-map %))
+                       #(apply hash-map %))]
+    (->> (hgetall key)
+      (parse (parser-comp outer-parser inner-parser)))))
 
-  (comment
-    (wcar {} (hgetall* "hkey"))
-    (wcar {} (parse (fn [kvs] (enc/reduce-kvs assoc {} kvs))
-               (hgetall "hkey")))
+(comment
+  (wcar {} (hgetall* "hkey"))
+  (wcar {} (parse (fn [kvs] (enc/reduce-kvs assoc {} kvs))
+             (hgetall "hkey")))
 
-    (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
-    (wcar {} (hmset* "hkey" {})) ; ex
-    (wcar {} (hmget* "hkey" :a :b))
-    (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
-    (wcar {} (hmget* "hkey" "a" "b"))
-    (wcar {} (hgetall* "hkey"))
-    (wcar {} (parse str/upper-case (hgetall* "hkey")))))
+  (wcar {} (hmset* "hkey" {:a "aval" :b "bval" :c "cval"}))
+  (wcar {} (hmset* "hkey" {})) ; ex
+  (wcar {} (hmget* "hkey" :a :b))
+  (wcar {} (parse str/upper-case (hmget* "hkey" :a :b)))
+  (wcar {} (hmget* "hkey" "a" "b"))
+  (wcar {} (hgetall* "hkey"))
+  (wcar {} (parse str/upper-case (hgetall* "hkey"))))
