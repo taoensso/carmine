@@ -958,8 +958,6 @@
     (println "Done! (Time for cake?)")
     results))
 
-(deftest benching (is (bench conn-opts 5e3 1e5)))
-
 (comment
   ;; 2025-11-06 on 2020 MBP M1
   ;; {:wcar 65, :ping/n1 74,   :ping/n100 133,  :set 89,   :get 76,   :roundtrip 78}   ; Unpooled/1e3
