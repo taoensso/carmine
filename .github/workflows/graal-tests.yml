@@ -1,32 +1,47 @@
 name: Graal tests
-on: [push, pull_request]
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  tests:
     strategy:
+      fail-fast: false
       matrix:
-        java: ['17']
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        java: ['17', '21']
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: graalvm/setup-graalvm@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: graalvm/setup-graalvm@0def53c0fd8534bc13416c9469f5be45265824fd # v1.6.3
         with:
-          version: 'latest'
           java-version: ${{ matrix.java }}
-          components: 'native-image'
+          distribution: graalvm-community
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: DeLaGuardo/setup-clojure@12.5
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
         with:
-          lein: latest
-          bb: latest
+          lein: 2.12.0 # Pinned 2026-06-11: `latest` (2.13.0) currently breaks setup-clojure's Windows lein.ps1 shim
+          bb: 1.12.218
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.m2/repository
-          key: deps-${{ hashFiles('deps.edn') }}
-          restore-keys: deps-
+          key: graal-deps-${{ runner.os }}-java-${{ matrix.java }}-${{ hashFiles('project.clj') }}
+          restore-keys: |
+            graal-deps-${{ runner.os }}-java-${{ matrix.java }}-
+            graal-deps-${{ runner.os }}-
+            deps-${{ runner.os }}-
 
-      - run: bb graal-tests
+      - name: Run Graal tests
+        run: bb graal-tests
