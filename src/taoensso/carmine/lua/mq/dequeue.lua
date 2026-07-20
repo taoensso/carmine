@@ -27,10 +27,11 @@ if ((not mid) or (mid == 'end-of-circle')) then -- Uninit'd or eoq
    local eoq_backoff_ms = tonumber(eoq_ms_tab[math.min(5, (ndry_runs + 1))]);
    redis.call('incr', _:qk-ndry-runs);
 
-   local isleep_on = nil;
-   if (redis.call('llen', _:qk-isleep-b) > 0) then isleep_on = 'b'; else isleep_on = 'a'; end
+   -- Discard signals already accounted for by this atomic poll. Any later
+   -- enqueue leaves one persistent sentinel on A or B for the blocking client.
+   redis.call('del', _:qk-isleep-a, _:qk-isleep-b);
 
-   return {'sleep', 'end-of-circle', isleep_on, eoq_backoff_ms};
+   return {'sleep', 'end-of-circle', 'a', eoq_backoff_ms};
 end
 
 -- From msg_status.lua ---------------------------------------------------------
