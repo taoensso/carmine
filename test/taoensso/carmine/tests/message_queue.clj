@@ -589,3 +589,181 @@
              [:handled :success]))
        (is (= (wcar* (msg-status tq :mid1)) :queued)
          "Re-asserted message survives the stale finalization")])))
+
+(deftest worker-hardening
+  (testing "Monitor retains the six-element handle reply"
+    (clear-tq!)
+    (let [handled (promise)
+          monitored (promise)]
+      (with-open [^java.io.Closeable worker
+                  (mq/worker conn-opts tq
+                    {:auto-start false
+                     :handler (fn [_] (deliver handled true) {:status :success})
+                     :monitor
+                     (fn [{:keys [poll-reply]}]
+                       (when (= (get poll-reply 0) "handle")
+                         (deliver monitored poll-reply)))
+                     :throttle-ms 1, :eoq-backoff-ms 20})]
+        (wcar* (enqueue tq :msg {:mid :mid1}))
+        (mq/start worker)
+        (let [poll-reply (deref monitored 2000 :timeout)]
+          [(is (= (count poll-reply) 6))
+           (is (subvec? poll-reply ["handle" "mid1" :msg 1 default-lock-ms]))
+           (is (= (deref handled 2000 :timeout) true))]))))
+
+  (testing "Handler capacity is reserved before a Redis lease"
+    (clear-tq!)
+    (let [started (promise)
+          release (promise)
+          handled_ (atom [])
+          handler
+          (fn [{:keys [message]}]
+            (deliver started true)
+            (deref release 3000 nil)
+            (swap! handled_ conj message)
+            {:status :success})]
+      (with-open [^java.io.Closeable worker
+                  (mq/worker conn-opts tq
+                    {:auto-start false, :handler handler
+                     :nthreads-worker 2, :nthreads-handler 1
+                     :throttle-ms 1, :eoq-backoff-ms 20})]
+        (wcar* (enqueue tq :a {:mid :a}) (enqueue tq :b {:mid :b}))
+        (mq/start worker)
+        [(is (= (deref started 2000 :timeout) true))
+         (Thread/sleep 100)
+         (is (= (set [(wcar* (msg-status tq :a)) (wcar* (msg-status tq :b))])
+               #{:locked :queued}))
+         (deliver release true)
+         (is (wait-for #(= (count @handled_) 2)))
+         (is (= (set @handled_) #{:a :b}))])))
+
+  (testing "Monitor failures do not abandon leased messages"
+    (clear-tq!)
+    (let [handled (promise)]
+      (with-open [^java.io.Closeable worker
+                  (mq/worker conn-opts tq
+                    {:handler (fn [_] (deliver handled true) {:status :success})
+                     :monitor (fn [_] (throw (Exception. "monitor")))
+                     :throttle-ms 1, :eoq-backoff-ms 20})]
+        [(is (:success? (wcar* (enqueue tq :msg {:mid :mid1}))))
+         (is (= (deref handled 2000 :timeout) true))
+         (is (wait-for #(= (wcar* (msg-status tq :mid1)) :done-awaiting-gc)))])))
+
+  (testing "A handler can stop its own worker without deadlocking"
+    (clear-tq!)
+    (let [worker_ (atom nil)
+          stopped (promise)
+          worker
+          (mq/worker conn-opts tq
+            {:auto-start false
+             :handler
+             (fn [_]
+               (deliver stopped (mq/stop @worker_))
+               {:status :success})
+             :throttle-ms 1, :eoq-backoff-ms 20})]
+      (reset! worker_ worker)
+      (try
+        (wcar* (enqueue tq :msg {:mid :mid1}))
+        (mq/start worker)
+        (is (= (deref stopped 2000 :timeout) true))
+        (is (worker :drain))
+        (finally (.close ^java.io.Closeable worker)))))
+
+  (testing "Drain wakes every sleeping handler thread"
+    (clear-tq!)
+    (let [opts   {:auto-start false, :handler (fn [_] {:status :success})
+                  :nthreads-worker 2, :nthreads-handler 2
+                  :throttle-ms 1, :eoq-backoff-ms 10000}
+          slept? (fn [w n]
+                   (>= (long (or (get-in @w [:stats :counts :sleep/end-of-circle]) 0))
+                     (long n)))
+          worker     (mq/worker conn-opts tq opts)
+          ;; Competes for the queue-global wake sentinels throughout the drain
+          competitor (mq/worker conn-opts tq opts)]
+      (try
+        (mq/start worker)
+        (mq/start competitor)
+        (is (wait-for 5000 #(and (slept? worker 2) (slept? competitor 2)))
+          "Both handler threads of both workers should reach their eoq sleep")
+        (is (mq/stop worker))
+        (let [t0      (System/currentTimeMillis)
+              drained (worker :drain)
+              elapsed (- (System/currentTimeMillis) t0)]
+          [(is (true? drained))
+           ;; eoq backoff is 10s (desynced >= 8s), so anything well under that
+           ;; proves the sleepers were woken rather than timing out
+           (is (< elapsed 5000)
+             (str "Drain should wake its own sleepers despite a competing "
+               "worker on the same queue (took " elapsed "ms)"))])
+        (finally
+          (.close ^java.io.Closeable worker)
+          (.close ^java.io.Closeable competitor)))))
+
+  (testing "Close prevents a delayed auto-start"
+    (let [worker (mq/worker conn-opts tq {:auto-start 100})]
+      (.close ^java.io.Closeable worker)
+      (Thread/sleep 150)
+      [(is (:closed? @worker))
+       (is (not (:running? @worker)))
+       (is (nil? (mq/start worker)))])))
+
+(deftest worker-lifecycle-races
+  (testing "Restart cannot interleave with stop's generation transition"
+    (clear-tq!)
+    (let [handled (promise)
+          worker (mq/worker conn-opts tq
+                   {:auto-start false, :nthreads 1, :throttle-ms 1, :eoq-backoff-ms 20
+                    :handler (fn [_] (deliver handled true) {:status :success})})
+          running (.-running?_ ^taoensso.carmine.message_queue.CarmineMessageQueueWorker worker)
+          paused (promise), release (promise), restarting (promise)]
+      (try
+        (mq/start worker)
+        (add-watch running ::pause-stop
+          (fn [_ _ old new]
+            (when (and old (not new))
+              (deliver paused true)
+              (deref release 5000 nil))))
+        (let [stopping (future (mq/stop worker))]
+          (is (= true (deref paused 2000 :timeout)))
+          (let [starting (future (deliver restarting true) (mq/start worker))]
+            (is (= true (deref restarting 2000 :timeout)))
+            (is (= :blocked (deref starting 100 :blocked)))
+            (deliver release true)
+            (is (= true (deref stopping 2000 :timeout)))
+            (is (= true (deref starting 2000 :timeout)))
+            (wcar* (enqueue tq :msg {:mid :mid1}))
+            (is (= true (deref handled 2000 :timeout)))))
+        (finally
+          (deliver release true)
+          (remove-watch running ::pause-stop)
+          (.close ^java.io.Closeable worker)
+          (worker :drain)))))
+
+  (testing "Close waits for an in-flight start to publish its futures"
+    (clear-tq!)
+    (let [worker (mq/worker conn-opts tq {:auto-start false, :nthreads 1
+                                        :throttle-ms 1, :eoq-backoff-ms 20})
+          running (.-running?_ ^taoensso.carmine.message_queue.CarmineMessageQueueWorker worker)
+          paused (promise), release (promise), closing (promise)]
+      (try
+        (add-watch running ::pause-start
+          (fn [_ _ old new]
+            (when (and (not old) new)
+              (deliver paused true)
+              (deref release 5000 nil))))
+        (let [starting (future (mq/start worker))]
+          (is (= true (deref paused 2000 :timeout)))
+          (let [closer (future (deliver closing true) (.close ^java.io.Closeable worker) :closed)]
+            (is (= true (deref closing 2000 :timeout)))
+            (is (= :blocked (deref closer 100 :blocked)))
+            (deliver release true)
+            (is (= true (deref starting 2000 :timeout)))
+            (is (= :closed (deref closer 2000 :timeout)))
+            (is (:closed? @worker))
+            (is (false? (:running? @worker)))
+            (is (nil? (mq/start worker)))))
+        (finally
+          (deliver release true)
+          (remove-watch running ::pause-start)
+          (.close ^java.io.Closeable worker)
+          (worker :drain))))))

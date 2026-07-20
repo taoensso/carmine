@@ -522,6 +522,17 @@
                :lock-ms     (long lock-ms)}))]
       (when (= action "extended") (long lock-expiry)))))
 
+(defn- wake-sleepers!
+  "Pushes n sleep sentinels to wake up to n sleeping workers.
+  `enqueue` deliberately leaves only a single sentinel, which can wake only
+  one worker. Shutdown wants them all, so this over-signals; any surplus is
+  discarded by the next end-of-circle poll."
+  [conn-opts qname n]
+  (let [qk-isleep-a (qkey qname :isleep-a)]
+    (wcar conn-opts
+      (dotimes [_ (long n)]
+        (car/lpush qk-isleep-a "_")))))
+
 (comment
   (queues-clear!! {} :q1)
   (wcar {} (enqueue :q1 :msg1 :mid1))
@@ -694,22 +705,26 @@
   (^:no-doc stop  [this]))
 
 (deftype CarmineMessageQueueWorker
-  [qname worker-opts conn-opts running?_ future-pool worker-futures_
+  [qname worker-opts conn-opts running?_ closed?_ generation_ future-pool worker-futures_ handler-threads_
    nstats_ ssb-queue-size ssb-queueing-time-ms ssb-handling-time-ns]
 
-  java.io.Closeable (close [this] (stop this))
+  java.io.Closeable
+  (close [this]
+    (locking running?_
+      (reset! closed?_ true))
+    (stop this))
   Object
   (toString [this]
     (enc/str-impl this "taoensso.carmine.CarmineMessageQueueWorker"
       {:qname    qname
-       :running? @running?_
+       :running? @running?_, :closed? @closed?_
        :nthreads-worker  (get worker-opts :nthreads-worker)
        :nthreads-handler (get worker-opts :nthreads-handler)}))
 
   clojure.lang.IDeref
   (deref [this]
     {:qname    qname
-     :running? @running?_
+     :running? @running?_, :closed? @closed?_
      :nthreads
      {:worker  (get worker-opts :nthreads-worker)
       :handler (get worker-opts :nthreads-handler)}
@@ -745,125 +760,167 @@
         (stats/summary-stats-clear! ssb-handling-time-ns)
         nil)
 
+      :drain ; Undocumented, waits for active handler tasks.
+      (if-not future-pool
+        true
+        (if (or @running?_
+              (contains? @handler-threads_ (Thread/currentThread)))
+          false
+          ;; Re-signal until drained. Sentinels live on queue-global keys, so
+          ;; a single push isn't enough: another worker on the same queue may
+          ;; consume them, and a poll that reaches `dequeue` after we push
+          ;; will clear them itself before blocking.
+          (loop []
+            (or (future-pool 250 nil)
+              (do
+                (enc/catching
+                  (wake-sleepers! conn-opts qname
+                    (get worker-opts :nthreads-handler)))
+                (recur))))))
+
       (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
         {:command (enc/typed-val cmd)})))
 
   IWorker
   (stop [_]
-    (when (and (pos-int? (get worker-opts :nthreads-worker))
-            (compare-and-set! running?_ true false))
-
+    ;; Publish lifecycle transitions and capture their futures under the same
+    ;; lock as start/close. Never wait for threads while holding this lock.
+    (when-let [worker-futures
+               (locking running?_
+                 (when (compare-and-set! running?_ true false)
+                   (swap! generation_ inc)
+                   @worker-futures_))]
       (trove/log! {:level :info, :id :carmine.mq/worker-will-shut-down, :data {:qname qname}})
-      (run! deref @worker-futures_)
-      (trove/log! {:level :info, :id :carmine.mq/worker-did-shut-down,  :data {:qname qname}})
+      (let [called-from-handler? (contains? @handler-threads_ (Thread/currentThread))]
+        (when-not called-from-handler?
+          (run! deref worker-futures))
+        (trove/log!
+          {:level :info, :id :carmine.mq/worker-did-shut-down
+           :data {:qname qname, :handlers-drained? (empty? @handler-threads_)
+                  :called-from-handler? called-from-handler?}}))
       true))
 
   (start [this]
-    (when (and (pos-int? (get worker-opts :nthreads-worker))
-               (compare-and-set! running?_ false true))
-      (trove/log! {:level :info, :id :carmine.mq/worker-starting, :data {:qname qname}})
-      ;; Async, don't block start on a Redis round-trip
-      (future (warn-on-clock-skew! conn-opts qname
-                (get worker-opts :default-lock-ms)))
-      (let [{:keys [handler monitor nthreads-worker]} worker-opts
-            qk (partial qkey qname)
+    (locking running?_
+      (when (and (not @closed?_)
+                 (pos-int? (get worker-opts :nthreads-worker))
+                 (compare-and-set! running?_ false true))
+        (trove/log! {:level :info, :id :carmine.mq/worker-starting, :data {:qname qname}})
+        ;; Async, don't block start on a Redis round-trip
+        (future (warn-on-clock-skew! conn-opts qname
+                  (get worker-opts :default-lock-ms)))
+        (let [generation (swap! generation_ inc)
+              {:keys [handler monitor nthreads-worker]} worker-opts
+              qk (partial qkey qname)
 
-            ;; Count consecutive errors across all loop threads, these may indicate
-            ;; an issue with Redis or handler fn (/ handler's supporting systems)
-            nconsecutive-errors* (enc/counter 0)
-            queue-size*          (enc/counter 0)
+              ;; Count consecutive errors across all loop threads, these may indicate
+              ;; an issue with Redis or handler fn (/ handler's supporting systems)
+              nconsecutive-errors* (enc/counter 0)
+              queue-size*          (enc/counter 0)
 
-            throttle-ms-fn ; (fn []) -> ?msecs
-            (let [{:keys [throttle-ms]} worker-opts
-                  as-?pos (fn [x] (when x (when (> (long x) 0) x)))]
+              throttle-ms-fn ; (fn []) -> ?msecs
+              (let [{:keys [throttle-ms]} worker-opts
+                    as-?pos (fn [x] (when x (when (> (long x) 0) x)))]
 
-              (if (fn? throttle-ms)
-                (do                                  (fn [] (as-?pos (throttle-ms @queue-size*))))
-                (when-let [ms (as-?pos throttle-ms)] (fn [] ms))))
+                (if (fn? throttle-ms)
+                  (do                                  (fn [] (as-?pos (throttle-ms @queue-size*))))
+                  (when-let [ms (as-?pos throttle-ms)] (fn [] ms))))
 
-            start-polling-loop!
-            (fn [^long thread-idx]
-              (let [;; thread-id (.getId (Thread/currentThread))
-                    loop-error-backoff?_ (atom false)
-                    loop-error!
-                    (fn [throwable]
-                      (let [^long nce (nconsecutive-errors*)]
-                        (trove/log!
-                          {:level :error, :id :carmine.mq/worker-error, :msg "Will backoff and retry",
-                           :data {:qname qname, :thread-id thread-idx, :nconsecutive-errors (inc nce)},
-                           :error throwable}))
-                      (reset! loop-error-backoff?_ true))]
+              start-polling-loop!
+              (fn [^long thread-idx]
+                (let [;; thread-id (.getId (Thread/currentThread))
+                      loop-error-backoff?_ (atom false)
+                      loop-error!
+                      (fn [throwable]
+                        (let [^long nce (nconsecutive-errors*)]
+                          (trove/log!
+                            {:level :error, :id :carmine.mq/worker-error, :msg "Will backoff and retry",
+                             :data {:qname qname, :thread-id thread-idx, :nconsecutive-errors (inc nce)},
+                             :error throwable}))
+                        (reset! loop-error-backoff?_ true))]
 
-                (when (> thread-idx 0)
-                  (Thread/sleep (int (thread-desync-ms (or (throttle-ms-fn) 100)))))
+                  (when (> thread-idx 0)
+                    (Thread/sleep (int (thread-desync-ms (or (throttle-ms-fn) 100)))))
 
-                (loop [nloops 0]
-                  (when @running?_
+                  (loop [nloops 0]
+                    (when (and @running?_ (= generation @generation_))
 
-                    (when (compare-and-set! loop-error-backoff?_ true false)
-                      (let [^long nce @nconsecutive-errors*]
-                        (when (> nce 0)
-                          (let [backoff-ms
-                                (exp-backoff (min 12 nce)
-                                  {:factor (or (throttle-ms-fn) 200)})]
+                      (when (compare-and-set! loop-error-backoff?_ true false)
+                        (let [^long nce @nconsecutive-errors*]
+                          (when (> nce 0)
+                            (let [backoff-ms
+                                  (exp-backoff (min 12 nce)
+                                    {:factor (or (throttle-ms-fn) 200)})]
 
-                            (trove/log!
-                              {:level :error, :id :carmine.mq/worker-backoff,
-                               :msg "Thread will back off due to worker error/s",
-                               :data
-                               {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
-                                :backoff-ms backoff-ms}})
+                              (trove/log!
+                                {:level :error, :id :carmine.mq/worker-backoff,
+                                 :msg "Thread will back off due to worker error/s",
+                                 :data
+                                 {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
+                                  :backoff-ms backoff-ms}})
 
-                            (Thread/sleep (int backoff-ms))))))
+                              (Thread/sleep (int backoff-ms))))))
 
-                    (try
-                      (let [lease-token (enc/uuid-str)
-                            resp
-                            (wcar conn-opts
-                              (dequeue qname worker-opts lease-token)
-                              (car/get (qk :ndry-runs))
-                              (-queue-counts qname))]
-
-                        (if-let [t (enc/rfirst #(instance? Throwable %) resp)]
-                          (throw t)
-                          (future-pool
-                            (fn []
+                      ;; Reserve local handler capacity before acquiring a Redis
+                      ;; lease. A short timeout keeps shutdown responsive.
+                      (future-pool 100 nil
+                        (fn []
+                          (when (and @running?_ (= generation @generation_))
+                            (let [handler-thread (Thread/currentThread)
+                                  lease-token (enc/uuid-str)]
+                              (swap! handler-threads_ conj handler-thread)
                               (try
-                                (let [[poll-reply ndry-runs & queue-counts] resp
-                                      {:keys [nqueued]} (-queue-status queue-counts)]
+                                (let [resp
+                                      (wcar conn-opts
+                                        (dequeue qname worker-opts lease-token)
+                                        (car/get (qk :ndry-runs))
+                                        (-queue-counts qname))]
 
-                                  (queue-size* :set nqueued)
-                                  (ssb-queue-size   nqueued)
+                                  (if-let [t (enc/rfirst #(instance? Throwable %) resp)]
+                                    (throw t)
+                                    (let [[poll-reply ndry-runs & queue-counts] resp
+                                          {:keys [nqueued]} (-queue-status queue-counts)]
 
-                                  (when monitor
-                                    (monitor
-                                      {:queue-size      nqueued
-                                       :mid-circle-size nqueued ; Back compatibility
-                                       :ndry-runs       (enc/as-int (or ndry-runs 0))
-                                       :poll-reply      poll-reply
-                                       :worker          this}))
+                                      (queue-size* :set nqueued)
+                                      (ssb-queue-size nqueued)
 
-                                  (handle1 conn-opts qname handler poll-reply
-                                    {:worker               this
-                                     :queue-size           nqueued
-                                     :lease-token          lease-token
-                                     :nstats_              nstats_
-                                     :ssb-queueing-time-ms ssb-queueing-time-ms
-                                     :ssb-handling-time-ns ssb-handling-time-ns})
+                                      (when monitor
+                                        (try
+                                          (monitor
+                                            {:queue-size      nqueued
+                                             :mid-circle-size nqueued ; Back compatibility
+                                             :ndry-runs       (enc/as-int (or ndry-runs 0))
+                                             :poll-reply      poll-reply
+                                             :worker          this})
+                                          (catch Throwable t
+                                            (inc-nstat! nstats_ :monitor/error)
+                                            (trove/log!
+                                              {:level :error, :id :carmine.mq/monitor-error
+                                               :data {:qname qname, :thread-id thread-idx}
+                                               :error t}))))
 
-                                  (nconsecutive-errors* :set 0))
-                                (catch Throwable t (loop-error! t)))))))
-                      (catch           Throwable t (loop-error! t)))
+                                      (handle1 conn-opts qname handler poll-reply
+                                        {:worker               this
+                                         :queue-size           nqueued
+                                         :lease-token          lease-token
+                                         :nstats_              nstats_
+                                         :ssb-queueing-time-ms ssb-queueing-time-ms
+                                         :ssb-handling-time-ns ssb-handling-time-ns})
 
-                    (when-let [ms (throttle-ms-fn)] (Thread/sleep (int ms)))
-                    (recur (inc nloops))))))]
+                                      (nconsecutive-errors* :set 0))))
+                                (catch Throwable t (loop-error! t))
+                                (finally
+                                  (swap! handler-threads_ disj handler-thread)))))))
 
-        (reset! worker-futures_
-          (enc/reduce-n
-            (fn [v idx] (conj v (future (start-polling-loop! idx))))
-            [] nthreads-worker)))
+                      (when-let [ms (throttle-ms-fn)] (Thread/sleep (int ms)))
+                      (recur (inc nloops))))))]
 
-      true)))
+          (reset! worker-futures_
+            (enc/reduce-n
+              (fn [v idx] (conj v (future (start-polling-loop! idx))))
+              [] nthreads-worker)))
+
+        true))))
 
 (enc/def-print-impl [x CarmineMessageQueueWorker] (str "#" x))
 (defn ^:no-doc worker? [x] (instance? CarmineMessageQueueWorker x))
@@ -907,6 +964,8 @@
     - (<worker> :queue-size)    => Same as calling `queue-size`    for given qname.
     - (<worker> :queue-status)  => Same as calling `queue-status`  for given qname.
     - (<worker> :queue-content) => Same as calling `queue-content` for given qname.
+    - (<worker> :drain)         => After stopping, waits for active handler tasks.
+                                   Returns false if running or called by a handler.
 
   Debugging:
 
@@ -915,6 +974,7 @@
       `:opts`      - Worker's            options map
       `:conn-opts` - Worker's connection options map
       `:running?`  - Is the worker currently running? (true/false)
+      `:closed?`   - Has the worker been permanently closed? (true/false)
       `:nthreads`  - {:keys [worker handler]}
       `:stats`
         `:queue-size`        - {:keys [last min max mean mad var p50 p90 ...]}
@@ -984,7 +1044,13 @@
       If present, connection read timeout should be >= max msecs!
 
     `:nthreads-worker`  - Number of threads to monitor and maintain queue.
-    `:nthreads-handler` - Number of threads to handle queue messages with handler fn."
+    `:nthreads-handler` - Number of threads to handle queue messages with handler fn.
+
+      Worker threads submit polls, paced by `:throttle-ms`. Each poll runs on
+      a handler thread and holds that slot through handling or idle sleep.
+      Concurrent polls/handlers are limited by `:nthreads-handler`; even one
+      worker thread can fill multiple handler slots. No free slot means no
+      poll, preventing leases from being acquired ahead of handler capacity."
 
   ([conn-opts qname] (worker conn-opts qname nil))
   ([conn-opts qname
@@ -1005,6 +1071,12 @@
          nthreads-worker  (if (contains? worker-opts :nthreads-worker)  nthreads-worker  nthreads)
          nthreads-handler (if (contains? worker-opts :nthreads-handler) nthreads-handler nthreads)
 
+         _
+         (when (and (pos-int? nthreads-worker) (not (pos-int? nthreads-handler)))
+           (truss/ex-info!
+             "[Carmine/mq] Positive worker threads require positive handler threads"
+             {:nthreads-worker nthreads-worker, :nthreads-handler nthreads-handler}))
+
          qname (enc/as-qname qname)
          worker-opts
          (conj (or worker-opts {})
@@ -1023,8 +1095,11 @@
          (CarmineMessageQueueWorker.
            qname worker-opts conn-opts
            (atom false)
+           (atom false)
+           (atom 0)
            (when (pos-int? nthreads-handler) (enc/future-pool nthreads-handler))
            (atom [])
+           (atom #{})
            (atom {})
 
            ;; :sstats-init opts below allow for manual persistent sstats, currently undocumented
