@@ -478,17 +478,38 @@
   (let [f1_ (atom [])
         f2_ (atom [])
         f3_ (atom [])
+        subscriptions-ready_ (promise)
+        messages-received_   (promise)
+        subscription-handlers_ (atom #{})
+        message-handlers_      (atom #{})
+        handler
+        (fn [id messages_ msg]
+          (swap! messages_ conj (into [id msg]))
+          (let [kind (first msg)]
+            (cond
+              (#{"subscribe" "psubscribe"} kind)
+              (when (= (count (swap! subscription-handlers_ conj id)) 3)
+                (deliver subscriptions-ready_ true))
+
+              (#{"message" "pmessage"} kind)
+              (when (= (count (swap! message-handlers_ conj id)) 3)
+                (deliver messages-received_ true)))))
         listener
         (car/with-new-pubsub-listener (:spec conn-opts)
-          {"channel1" (fn f1 [msg] (swap! f1_ conj (into [:f1 msg])))
-           "channel*" (fn f2 [msg] (swap! f2_ conj (into [:f2 msg])))
-           "chan*"    (fn f3 [msg] (swap! f3_ conj (into [:f3 msg])))}
+          {"channel1" (partial handler :f1 f1_)
+           "channel*" (partial handler :f2 f2_)
+           "chan*"    (partial handler :f3 f3_)}
           (car/subscribe  "channel1" "channel2")
           (car/psubscribe "channel*" "chan*" "other*"))]
 
-    (wcar* (car/publish "channel1" "Message to `channel1`"))
-    (Thread/sleep 5000)
-    (car/close-listener listener)
+    (try
+      (is (= (deref subscriptions-ready_ 5000 :timeout) true)
+        "Timed out waiting for Pub/Sub subscriptions")
+      (wcar* (car/publish "channel1" "Message to `channel1`"))
+      (is (= (deref messages-received_ 5000 :timeout) true)
+        "Timed out waiting for Pub/Sub messages")
+      (finally
+        (car/close-listener listener)))
 
     [(is (= @f1_ [[:f1 [ "subscribe" "channel1" 1]] [:f1 [ "message"            "channel1" "Message to `channel1`"]]]))
      (is (= @f2_ [[:f2 ["psubscribe" "channel*" 3]] [:f2 ["pmessage" "channel*" "channel1" "Message to `channel1`"]]]))
