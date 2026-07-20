@@ -90,6 +90,15 @@ local ensure_update_in_requeue = function()
    end
 end
 
+local clear_stale_lock = function()
+   -- Status 'queued' means any lease has expired. Clear the stale lock +
+   -- fencing token when the producer re-asserts this message so that the
+   -- previous (stalled) handler can no longer finalize or extend, which
+   -- could otherwise discard the re-asserted work.
+   redis.call('hdel', _:qk-locks,       _:mid);
+   redis.call('hdel', _:qk-lock-tokens, _:mid);
+end
+
 if (status == 'nx') then
    -- {nil, _bo, _rq} -> add to queue
 
@@ -113,9 +122,11 @@ elseif (status == 'queued') then
       -- {queued, *bo, _rq} -> update in queue
       if reset_ibo then reset_init_backoff(); end
       reset_in_queue();
+      clear_stale_lock();
       return {'updated'};
    elseif reset_ibo then
       reset_init_backoff();
+      clear_stale_lock();
       return {'updated'};
    else
       return {false, 'already-queued'};
