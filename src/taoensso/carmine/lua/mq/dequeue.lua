@@ -97,6 +97,7 @@ if (status == 'done') then
       redis.call('hdel',  _:qk-messages-rq,   mid);
       redis.call('hdel',  _:qk-lock-times-rq, mid);
       redis.call('hdel',  _:qk-nattempts,     mid);
+      redis.call('hdel',  _:qk-lock-tokens,   mid);
       redis.call('srem',  _:qk-done,          mid);
       redis.call('srem',  _:qk-requeue,       mid);
 
@@ -113,6 +114,7 @@ if (status == 'done') then
       redis.call('hdel',  _:qk-locks,         mid);
       redis.call('hdel',  _:qk-backoffs,      mid);
       redis.call('hdel',  _:qk-nattempts,     mid);
+      redis.call('hdel',  _:qk-lock-tokens,   mid);
       redis.call('srem',  _:qk-done,          mid);
       redis.call('srem',  _:qk-requeue,       mid);
 
@@ -128,7 +130,9 @@ elseif (status == 'queued') then
       tonumber(redis.call('hget', _:qk-lock-times, mid)) or
       tonumber(_:default-lock-ms);
 
-                     redis.call('hset',    _:qk-locks,     mid, now + lock_ms); -- Acquire
+   local lock_expiry = now + lock_ms;
+                     redis.call('hset',    _:qk-locks,       mid, lock_expiry); -- Acquire
+                     redis.call('hset',    _:qk-lock-tokens, mid, _:lease-token);
    local mcontent  = redis.call('hget',    _:qk-messages,  mid);
    local udt       = redis.call('hget',    _:qk-udts,      mid);
    local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1);
