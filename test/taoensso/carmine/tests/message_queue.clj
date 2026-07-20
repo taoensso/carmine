@@ -325,3 +325,39 @@
                 :circle ["end-of-circle"]}))
 
          (is (mq/stop worker))]))))
+
+(deftest server-time
+  (testing "`server-udt` converts Redis `TIME` replies to epoch msecs"
+    [(is (= (#'mq/server-udt ["1784523705" "818999"]) 1784523705818) "Micros floored to msecs")
+     (is (= (#'mq/server-udt ["1784523705"      "0"]) 1784523705000))
+     (is (= (#'mq/server-udt ["1784523705"    "999"]) 1784523705000) "Sub-msec micros discarded")])
+
+  (testing "Queue scripts take their time from the Redis server"
+    (mapv
+      (fn [sname]
+        (let [src (enc/slurp-resource (str "taoensso/carmine/lua/mq/" sname ".lua"))]
+          [(is (not (enc/str-contains? src "_:now"))
+             (str sname ".lua shouldn't accept a client-supplied `now`"))
+           (is (enc/str-contains? src "redis.call('TIME')")
+             (str sname ".lua should read the server clock"))]))
+      ["msg-status" "enqueue" "dequeue" "set-backoff"]))
+
+  (testing "Write scripts request effects replication before their first write"
+    (mapv
+      (fn [sname]
+        (let [^String src  (enc/slurp-resource (str "taoensso/carmine/lua/mq/" sname ".lua"))
+              i-replicate  (.indexOf src "redis.replicate_commands()")
+              i-first-call (.indexOf src "redis.call(")]
+          (is (and (not= i-replicate -1) (not= i-first-call -1)
+                (< i-replicate i-first-call))
+            (str sname ".lua should call `redis.replicate_commands()` before its first `redis.call`"))))
+      ["enqueue" "dequeue" "set-backoff"]))
+
+  (testing "Handler backoffs are stored as integer epoch msecs"
+    (clear-tq!)
+    (is (:success? (wcar* (enqueue tq :msg1 {:mid :mid1}))))
+    (let [[_pr _ha hr] (test-handler (fn [_m] {:status :retry :backoff-ms 2000.9}))
+          stored       (second (wcar* (car/hgetall (#'mq/qkey tq :backoffs))))]
+      [(is (= hr [:handled :retry]))
+       (is (re-matches #"\d+" (str stored))
+         "Fractional `:backoff-ms` shouldn't produce a fractional expiry")])))

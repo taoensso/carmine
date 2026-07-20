@@ -1,6 +1,7 @@
 -- Careful! Logic here is subtle, see mq-architecture.svg for assistance.
 local mid = _:mid;
-local now = tonumber(_:now);
+local t   = redis.call('TIME'); -- Server clock, avoids client clock skew
+local now = (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000); -- Epoch msecs
 
 local status  = nil; -- base status e/o nil, done, queued, locked
 local is_bo = false; -- backoff flag for: done, queued

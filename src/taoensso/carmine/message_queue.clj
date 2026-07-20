@@ -36,7 +36,11 @@
     * ndry-runs     - int: num times worker(s) have lapped queue w/o work to do
 
     * isleep-a      - list: 0/1 sentinel element for `interruptible-sleep`
-    * isleep-b      - list: 0/1 sentinel element for `interruptible-sleep`"
+    * isleep-b      - list: 0/1 sentinel element for `interruptible-sleep`
+
+  The `udts`, `locks` and `backoffs` times above are absolute epoch msecs,
+  written using the Redis server clock. Values written by older clients
+  instead use the clock of whichever client wrote them."
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
@@ -134,6 +138,41 @@
     {}
     (persistent! (enc/reduce-kvs assoc! (transient {}) kvs))))
 
+(defn- server-udt
+  "Redis `TIME` reply [<unix-secs> <micros>] -> server clock as epoch msecs"
+  ^long [[secs micros]]
+  (+ (* (enc/as-int secs) 1000) (quot (enc/as-int micros) 1000)))
+
+(defn- max-clock-skew-ms
+  "Local/server clock difference beyond which `worker` logs a warning.
+  Deliberately generous, since an NTP-synced host is within msecs and queue
+  expiries are anyway evaluated against the Redis server clock. Scaled down
+  for short locks, where a smaller skew is already material."
+  ^long [lock-ms]
+  (min (enc/ms :secs 30) (quot (long lock-ms) 4)))
+
+(defn- warn-on-clock-skew!
+  "Diagnostic only, never throws. Logs a warning when the local clock
+  differs materially from the Redis server clock, which can distort
+  handler `:age-ms` and (for queues shared with older clients) the
+  effective duration of message locks."
+  [conn-opts qname lock-ms]
+  (enc/catching
+    (let [t0      (enc/now-udt)
+          server  (long (wcar conn-opts (car/parse server-udt (car/time))))
+          t1      (enc/now-udt)
+          local   (quot (+ t0 t1) 2) ; Midpoint, to discount round-trip
+          skew    (- server local)
+          max-ms  (max-clock-skew-ms lock-ms)]
+
+      (when (> (Math/abs skew) max-ms)
+        (trove/log!
+          {:level :warn, :id :carmine.mq/clock-skew
+           :msg "Local clock differs materially from Redis server clock"
+           :data
+           {:qname qname, :skew-ms skew,
+            :max-skew-ms max-ms, :lock-ms lock-ms}})))))
+
 ;;;;
 
 (defn- ->message-status
@@ -200,20 +239,20 @@
 
   O(n_mids) and expensive, avoid use in production."
   [conn-opts qname]
-  (let [now (enc/now-udt)
-        qk  (partial qkey qname)
+  (let [qk (partial qkey qname)
 
-        {:keys [messages messages-rq
+        {:keys [now messages messages-rq
                 lock-times lock-times-rq
                 udts locks backoffs nattempts
                 done requeue]}
         (zipmap
-          [:messages :messages-rq
+          [:now :messages :messages-rq
            :lock-times :lock-times-rq
            :udts :locks :backoffs :nattempts
            :done :requeue]
 
           (wcar conn-opts
+            (car/parse server-udt (car/time)) ; Clock that writes new expiries
             (car/parse kvs->map
               (car/hgetall (qk :messages))
               (car/hgetall (qk :messages-rq))
@@ -282,9 +321,10 @@
 ;;;; Implementation
 
 (do ; Lua scripts
-  (def ^:private lua-msg-status_ (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
-  (def ^:private lua-enqueue_    (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
-  (def ^:private lua-dequeue_    (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua")))))
+  (def ^:private lua-msg-status_  (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
+  (def ^:private lua-enqueue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
+  (def ^:private lua-dequeue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua"))))
+  (def ^:private lua-set-backoff_ (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/set-backoff.lua")))))
 
 (defn message-status
   "Returns current message status, e/o:
@@ -306,8 +346,7 @@
        :qk-backoffs    (qkey qname :backoffs)
        :qk-done        (qkey qname :done)
        :qk-requeue     (qkey qname :requeue)}
-      {:now (enc/now-udt)
-       :mid mid})))
+      {:mid mid})))
 
 (defn enqueue
   "Pushes given message (any Clojure data type) to named queue and returns
@@ -388,7 +427,6 @@
          :qk-isleep-b      (qkey qname :isleep-b)}
 
         {:mid        mid
-         :now        (enc/now-udt)
          :mcnt       (car/freeze message)
          :init-bo    (or init-backoff-ms 0)
          :lock-ms    (or lock-ms        -1)
@@ -433,8 +471,7 @@
        ;;:qk-isleep-a    (qkey qname :isleep-a)
        :qk-isleep-b      (qkey qname :isleep-b)}
 
-      {:now              (enc/now-udt)
-       :default-lock-ms  default-lock-ms
+      {:default-lock-ms  default-lock-ms
        :eoq-bo1          bo1
        :eoq-bo2          bo2
        :eoq-bo3          bo3
@@ -556,8 +593,10 @@
               ;; Don't need atomicity here, simple pipeline sufficient
               (wcar conn-opts
                 (when backoff-ms ; Possible done/retry backoff
-                  (car/hset (qk :backoffs) mid
-                    (+ (enc/now-udt) (long backoff-ms))))
+                  (car/lua @lua-set-backoff_
+                    {:qk-backoffs (qk :backoffs)}
+                    {:mid        mid
+                     :backoff-ms (long backoff-ms)}))
 
                 (when done? (car/sadd (qk :done)  mid))
                 (do         (car/hdel (qk :locks) mid))))]
@@ -672,6 +711,9 @@
     (when (and (pos-int? (get worker-opts :nthreads-worker))
                (compare-and-set! running?_ false true))
       (trove/log! {:level :info, :id :carmine.mq/worker-starting, :data {:qname qname}})
+      ;; Async, don't block start on a Redis round-trip
+      (future (warn-on-clock-skew! conn-opts qname
+                (get worker-opts :default-lock-ms)))
       (let [{:keys [handler monitor nthreads-worker]} worker-opts
             qk (partial qkey qname)
 
