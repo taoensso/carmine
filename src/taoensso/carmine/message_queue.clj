@@ -468,7 +468,7 @@
        :qk-mids-ready    (qkey qname :mids-ready)
        :qk-mid-circle    (qkey qname :mid-circle)
        :qk-ndry-runs     (qkey qname :ndry-runs)
-       ;;:qk-isleep-a    (qkey qname :isleep-a)
+       :qk-isleep-a      (qkey qname :isleep-a)
        :qk-isleep-b      (qkey qname :isleep-b)}
 
       {:default-lock-ms  default-lock-ms
@@ -501,34 +501,25 @@
 (defn- interruptible-sleep
   "To provide an interruptible thread sleep mechanism, we:
 
-    - On init: create two empty lists (`isleep-a`, `isleep-b`) and
-      push a single sentinel element to `isleep-a`.
+    - On dequeue: atomically clear both signal lists after observing no work.
+    - On enqueue: leave one persistent sentinel in either signal list.
+    - On sleep: block on both lists and consume whichever sentinel arrives.
 
-    - On enqueue:       move sentinel from non-empty to     empty list.
-    - On dequeue sleep: move sentinel from     empty to non-empty list,
-      via a blocking call with timeout.
-
-  I.e. we're just moving a dummy element back and forth between two lists.
-  Doing a blocking move on the empty list then provides a robust
-  interruptible sleep.
+  A signal sent after the dequeue decision therefore remains consumable even
+  before the blocking call begins. Repeated enqueues may move the sentinel
+  between lists, but cannot cancel it.
 
   Note that `conn-opts` should allow a read timeout >= msecs, otherwise
   sleep will be interrupted prematurely by timeout."
 
-  [conn-opts qname isleep-on ms]
+  [conn-opts qname _isleep-on ms]
   (let [secs-dbl
         (let [ms (max (long ms) 10)]
-          (/ (double ms) 1000.0))
-
-        [qk-src qk-dst]
-        (let [qk-a (qkey qname :isleep-a)
-              qk-b (qkey qname :isleep-b)]
-          (case  (keyword isleep-on)
-            :a [qk-a qk-b]
-            :b [qk-b qk-a]))]
+          (/ (double ms) 1000.0))]
 
     (try ; NB conn's read-timeout may be insufficient!
-      (wcar conn-opts (car/brpoplpush qk-src qk-dst secs-dbl))
+      (wcar conn-opts
+        (car/brpop (qkey qname :isleep-a) (qkey qname :isleep-b) secs-dbl))
       (catch Throwable _ nil))))
 
 (comment (interruptible-sleep {} :foo :a 2000))
