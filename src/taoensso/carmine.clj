@@ -489,7 +489,10 @@
   java.io.Closeable
   (close [this] (close-listener this)))
 
-(defn close-listener [listener]
+(defn close-listener
+  "Idempotently closes given Listener. Intentional closure is silent and does
+  not notify the Listener's handler."
+  [listener]
   (when (compare-and-set! (:status_ listener) :running :closed)
     (conns/close-conn (:connection listener))
     (future-cancel    (:future     listener))))
@@ -599,18 +602,13 @@
         done!
         (fn [throwable]
           (when (compare-and-set! done?_ false true)
-            (if (compare-and-set! status_ :running :broken)
-              (do ; Breaking
-                (when-let [f @future_] (future-cancel f))
-                (or
-                  (handle-error :conn-broken throwable)
-                  (if-let [t throwable]
-                    (trove/log! {:level :error, :id :carmine.listener/connection-broken, :error t})
-                    (trove/log! {:level :error, :id :carmine.listener/connection-broken}))))
-
-              (or ; Closing
-                (handle-error :conn-closed nil)
-                (trove/log! {:level :info, :id :carmine.listener/connection-closed}))))
+            (when (compare-and-set! status_ :running :broken)
+              (when-let [f @future_] (future-cancel f))
+              (or
+                (handle-error :conn-broken throwable)
+                (if-let [t throwable]
+                  (trove/log! {:level :error, :id :carmine.listener/connection-broken, :error t})
+                  (trove/log! {:level :error, :id :carmine.listener/connection-broken})))))
 
           nil ; Never handle as msg
           )
@@ -736,9 +734,9 @@
 
   Useful for Pub/Sub, monitoring, etc.
 
-  Errors will be published to \"carmine:listener:error\" channel with Clojure
+  Unexpected errors will be published to \"carmine:listener:error\" channel with Clojure
   payload {:keys [error throwable listener]},
-    :error e/o #{:conn-closed :conn-broken :handler-ex}.
+    :error e/o #{:conn-broken :handler-ex}. Intentional closure is silent.
 
   [1] You probably do *NOT* want a :timeout for your `conn-spec` here.
   `conn-spec` can include `:ping-ms`, which'll test conn every given msecs.

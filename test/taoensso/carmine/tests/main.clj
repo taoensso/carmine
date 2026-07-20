@@ -597,8 +597,7 @@
               ["pmessage" "b/1"]
               ["carmine" :handler-ex]
               ["pmessage" "b/2"]
-              ["pmessage" "a/3"]
-              ["carmine" :conn-closed]])))]))
+              ["pmessage" "a/3"]])))]))
 
 (deftest pubsub-handler-selection
   (let [f1_ (atom [])
