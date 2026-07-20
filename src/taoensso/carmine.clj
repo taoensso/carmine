@@ -68,14 +68,15 @@
          :username \"alice\"
          :password \"secret\"
          :db 3
-
-         :ssl-fn :default ; (fn [^java.net.Socket]) => secure `java.net.Socket`
-                          ; `:default` => use `taoensso.carmine.connections/default-ssl-fn`.
-
          :conn-timeout-ms 5000 ; Timeout (msecs) when connecting              (nil => no timeout)
          :read-timeout-ms 4000 ; Timeout (msecs) when reading from connection (nil => no timeout)
          ;; :timeout-ms   6000 ; Legacy: controls both `:conn` and `:read` timeouts
-        }
+
+         :ssl-fn (fn [{:keys [socket host port]}]) => `java.net.Socket`
+           `:default` -> `taoensso.carmine.connections/default-ssl-fn`
+           Custom fns are responsible for TLS config and verification,
+           returned `Socket` should also close the given raw `socket`.
+         }
 
     `:pool` may be:
       - Unspecified/nil (=> use default pool)

@@ -5,6 +5,7 @@
    [taoensso.encore  :as enc]
    [taoensso.truss   :as truss :refer [throws?]]
    [taoensso.carmine :as car   :refer [wcar]]
+   [taoensso.carmine.connections :as conns]
    [taoensso.carmine.commands     :as commands]
    [taoensso.carmine.protocol     :as protocol]
    [taoensso.carmine.tests.config :as config]))
@@ -254,6 +255,131 @@
                  (car/lrange k1 0 3)
                  (car/get k2))
               ["B" ["A" "B" "C"] "B"]))])]))
+
+;;; Connections
+
+(defn- read-test-resp-command [^java.io.BufferedReader reader]
+  (let [argc-line (.readLine reader)
+        argc      (Long/parseLong (subs argc-line 1))]
+    (mapv
+      (fn [_]
+        (let [bulk-line (.readLine reader)
+              arg       (.readLine reader)]
+          (when-not (str/starts-with? bulk-line "$")
+            (throw (ex-info "Expected RESP bulk string" {:line bulk-line})))
+          arg))
+      (range argc))))
+
+(deftest connection-pipelined-auth-select-errors-fail-initialization-test
+  (with-open [server (doto (java.net.ServerSocket. 0) (.setSoTimeout 2000))]
+    (let [server-f
+          (future
+            (try
+              (with-open [socket
+                          (doto (.accept server) (.setSoTimeout 2000))
+                          reader
+                          (java.io.BufferedReader.
+                            (java.io.InputStreamReader.
+                              (.getInputStream socket) "UTF-8"))
+                          writer
+                          (java.io.BufferedWriter.
+                            (java.io.OutputStreamWriter.
+                              (.getOutputStream socket) "UTF-8"))]
+                (let [commands [(read-test-resp-command reader)
+                                (read-test-resp-command reader)]]
+                  (.write writer "-ERR expected AUTH failure\r\n")
+                  (.write writer "-ERR expected SELECT failure\r\n")
+                  (.flush writer)
+                  commands))
+              (catch Throwable t t)))
+          conn_ (volatile! nil)
+          error
+          (try
+            (conns/make-new-connection
+              {:host "127.0.0.1"
+               :port (.getLocalPort server)
+               :conn-timeout-ms 500
+               :read-timeout-ms 2000
+               :password "wrong-password"
+               :db 1
+               :conn-setup-fn
+               (fn [{:keys [conn]}] (vreset! conn_ conn))})
+            nil
+            (catch Throwable t t))
+          server-result (deref server-f 3000 ::timeout)]
+
+      [(is (and (instance? Exception error)
+             (str/includes? (.getMessage ^Throwable error)
+               "expected AUTH failure"))
+         "The first pipelined setup error aborts initialization")
+       (is (= server-result
+             [["AUTH" "wrong-password"] ["SELECT" "1"]]))
+       (is (.isClosed ^java.net.Socket (:socket @conn_))
+         "A rejected initialization closes its socket")])))
+
+(deftest connection-setup-failure-closes-socket-test
+  (with-open [server (java.net.ServerSocket. 0)]
+    (let [conn_          (volatile! nil)
+          events_        (atom [])
+          expected-error (Exception. "Expected connection setup failure")
+          error
+          (try
+            (conns/make-new-connection
+              {:host "127.0.0.1"
+               :port (.getLocalPort server)
+               :conn-timeout-ms 500
+               :instrument
+               {:on-conn-open  (fn [_] (swap! events_ conj :open))
+                :on-conn-close (fn [_] (swap! events_ conj :close))}
+               :conn-setup-fn
+               (fn [{:keys [conn]}]
+                 (vreset! conn_ conn)
+                 (throw expected-error))})
+            nil
+            (catch Throwable t t))]
+
+      [(is (identical? error expected-error)
+         "Cleanup preserves the original initialization error")
+       (is (.isClosed ^java.net.Socket (:socket @conn_)))
+       (is (= @events_ [:open :close])
+         "A successful open callback is balanced after setup failure")])))
+
+(deftest connection-custom-ssl-failures-close-raw-socket-test
+  (doseq [[label ssl-result expected-error?]
+          [["throws"         nil true]
+           ["invalid return" :not-a-socket false]]]
+    (testing label
+      (with-open [server (java.net.ServerSocket. 0)]
+        (let [raw_           (volatile! nil)
+              expected-error (Exception. "Expected SSL setup failure")
+              error
+              (try
+                (conns/make-new-connection
+                  {:host "127.0.0.1"
+                   :port (.getLocalPort server)
+                   :conn-timeout-ms 500
+                   :ssl-fn
+                   (fn [{:keys [socket]}]
+                     (vreset! raw_ socket)
+                     (if expected-error?
+                       (throw expected-error)
+                       ssl-result))})
+                nil
+                (catch Throwable t t))]
+
+          [(if expected-error?
+             (is (identical? error expected-error))
+             (is (and (instance? clojure.lang.ExceptionInfo error)
+                   (str/includes? (.getMessage ^Throwable error)
+                     "must return a `java.net.Socket`"))))
+           (is (.isClosed ^java.net.Socket @raw_)
+             "The raw socket is closed before ownership transfers")])))))
+
+(deftest connection-cleanup-preserves-primary-error-test
+  (let [primary (Exception. "Primary initialization error")
+        cleanup (Exception. "Cleanup error")]
+    (#'conns/try-cleanup! primary #(throw cleanup))
+    [(is (= (vec (.getSuppressed primary)) [cleanup]))]))
 
 ;;; Pub/sub
 
