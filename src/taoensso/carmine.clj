@@ -273,12 +273,12 @@
 
 ;;;; Standard commands
 
-(commands/defcommands) ; Defines 190+ Redis command fns as per official spec
+(commands/defcommands) ; Defines Redis command fns from the bundled official spec
 
 (defn redis-call
   "Sends low-level requests to Redis. Useful for DSLs, certain kinds of command
   composition, and for executing commands that haven't yet been added to the
-  official `commands.json` spec, Redis module commands, etc.
+  official `commands.json` spec, internal or third-party module commands, etc.
 
   (redis-call [\"set\" \"foo\" \"bar\"] [\"get\" \"foo\"])"
   [& requests]

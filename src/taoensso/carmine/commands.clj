@@ -112,6 +112,19 @@
 
   (comment (= (get-redis-command-spec :local) (get-redis-command-spec :online)))
 
+  (defn- internal-module-command? [cmd-name]
+    ;; Explicit implementation/coordination commands, not missing documentation.
+    ;; FT._LIST is a documented public command despite its underscore.
+    (or
+      (str/starts-with? cmd-name "_FT.")
+      (contains?
+        #{"FT._ALIASADDIFNX" "FT._ALIASDELIFX" "FT._ALTERIFNX"
+          "FT._CREATEIFNX" "FT._DROPIFX" "FT._DROPINDEXIFX"
+          "FT.CURSOR GC"
+          "SEARCH.CLUSTERINFO" "SEARCH.CLUSTERREFRESH" "SEARCH.CLUSTERSET"
+          "TIMESERIES.CLUSTERSET" "TIMESERIES.REFRESHCLUSTER"}
+        cmd-name)))
+
   (defn- get-fixed-params [^long n-min arguments]
     (let [simple-params
           (reduce
@@ -134,7 +147,12 @@
   (defn- get-carmine-command-spec
     [redis-command-spec]
     (try
-      (let [as-map
+      (let [sentence
+            (fn [s]
+              (let [s (str/trim (truss/have string? s))]
+                (if (re-find #"[.!?]$" s) s (str s "."))))
+
+            as-map
             (persistent!
               (reduce-kv
                 (fn [m k v]
@@ -142,7 +160,7 @@
                         cmd-args (-> cmd-name (str/split #" "))                      ; ["CONFIG" "SET"]
                         fn-name  (-> cmd-name str/lower-case (str/replace #" " "-")) ; "config-set"
 
-                        {:keys [summary since complexity arguments arity _group]} v
+                        {:keys [summary since complexity arguments arity module _group]} v
 
                         ;; Ref. https://redis.io/commands/command/
                         [fn-params-fixed fn-params-more req-args-fixed]
@@ -158,14 +176,20 @@
                           [fixed (when more? (into fixed '[& args])) (into cmd-args fixed)])
 
                         fn-docstring
-                        (let [docs-url (str "https://redis.io/commands/" fn-name "/")]
-                          (enc/into-str
-                            "`" cmd-name "` - Redis command function.\n"
-                            (when since      ["  Available since: Redis " since      "\n"])
-                            (when complexity ["       Complexity: "       complexity "\n"])
-                            "\n" summary
-                            "\n"
-                            "Ref. " docs-url " for more info."))
+                        (let [docs-url (str "https://redis.io/commands/" fn-name "/")
+                              facts
+                              (cond-> []
+                                since      (conj (sentence
+                                                   (str "Since " (if module (str "module " module) "Redis") " " since)))
+                                complexity (conj (sentence (str "Complexity: " complexity))))
+
+                              paragraphs
+                              (cond-> [(str "`" cmd-name "` Redis command.")]
+                                (not (str/blank? summary)) (conj (sentence summary))
+                                (seq facts) (conj (str/join " " facts))
+                                true        (conj (str "Reference: " docs-url)))]
+
+                          (str/join "\n\n" paragraphs))
 
                         ;; Assuming for now that cluster key always follows
                         ;; right after command args (seems to hold?).
@@ -182,7 +206,10 @@
                        :fn-docstring    fn-docstring})))
 
                 (transient {})
-                (get redis-command-spec :as-map)))]
+                ;; Internal commands remain accessible through `redis-call`.
+                (into {}
+                  (remove (fn [[cmd-name _]] (internal-module-command? (name cmd-name))))
+                  (get redis-command-spec :as-map))))]
 
         {:as-map as-map
          :as-edn
