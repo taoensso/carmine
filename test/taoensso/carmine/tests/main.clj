@@ -270,6 +270,46 @@
           arg))
       (range argc))))
 
+(defn- write-test-resp! [^java.io.OutputStream out ^String resp]
+  (.write out (.getBytes resp "UTF-8"))
+  (.flush out))
+
+(defn- close-test-server! [^java.net.ServerSocket server server-f]
+  (.close server)
+  (try (deref server-f 4000 nil) (catch Throwable _ nil))
+  (future-cancel server-f)
+  nil)
+
+(defn- pubsub-ready-failure [ready-reply ready-timeout-ms]
+  (let [server (java.net.ServerSocket. 0)
+        server-f
+        (future
+          (try
+            (with-open [socket (doto (.accept server) (.setSoTimeout 3000))]
+              (let [reader (java.io.BufferedReader.
+                             (java.io.InputStreamReader. (.getInputStream socket) "UTF-8"))
+                    commands [(read-test-resp-command reader)
+                              (read-test-resp-command reader)]]
+                (write-test-resp! (.getOutputStream socket)
+                  (str "*3\r\n$9\r\nsubscribe\r\n$8\r\nps-ready\r\n:1\r\n"
+                    ready-reply))
+                {:commands commands
+                 :closed? (try (== (.read reader) -1)
+                            (catch java.net.SocketException _ true))}))
+            (catch Throwable t {:server-error t})))
+        error
+        (try
+          (car/with-new-pubsub-listener
+            {:host "127.0.0.1", :port (.getLocalPort server)
+             :ready-timeout-ms ready-timeout-ms}
+            (fn [_ _])
+            (car/subscribe "ps-ready"))
+          nil
+          (catch Exception e e))
+        server-result (deref server-f 4000 :timeout)]
+    (close-test-server! server server-f)
+    {:error error, :server-result server-result}))
+
 (deftest connection-pipelined-auth-select-errors-fail-initialization-test
   (with-open [server (doto (java.net.ServerSocket. 0) (.setSoTimeout 2000))]
     (let [server-f
@@ -390,7 +430,6 @@
           {"ps-foo" #(swap! received_ conj %)}
           (car/subscribe "ps-foo"))]
 
-    (sleep 200)
     [(is (= (wcar*
               (car/publish "ps-foo" "one")
               (car/publish "ps-foo" "two")
@@ -414,7 +453,6 @@
            "ps-baz" #(swap! received_ conj %)}
           (car/subscribe "ps-foo" "ps-baz"))]
 
-    (sleep 200)
     [(is (= (wcar*
               (car/publish "ps-foo" "one")
               (car/publish "ps-bar" "two")
@@ -491,7 +529,8 @@
         received_ (atom [])
         listener
         (car/with-new-pubsub-listener
-          {:host "127.0.0.1", :port port, :read-timeout-ms 150}
+          {:host "127.0.0.1", :port port, :read-timeout-ms 150
+           :ready-timeout-ms nil}
           {"ps-fake" #(swap! received_ conj %)}
           (car/subscribe "ps-fake"))]
     (try
@@ -503,6 +542,30 @@
       (finally
         (car/close-listener listener)
         (deref server-f 3000 nil)))))
+
+(deftest pubsub-ready-failure-test
+  (doseq [[label ready-reply timeout-ms message-pattern]
+          [["timeout" nil 200 #"Timed out"]
+           ["PING denied" "-NOPERM PING denied\r\n" 3000 #"NOPERM"]]]
+    (testing label
+      (let [{:keys [error server-result]}
+            (pubsub-ready-failure ready-reply timeout-ms)
+            [subscribe-command ping-command] (:commands server-result)]
+        [(is (and (instance? Exception error)
+                  (re-find message-pattern (.getMessage ^Exception error))))
+         (is (= subscribe-command ["SUBSCRIBE" "ps-ready"]))
+         (is (and (= (first ping-command) "PING")
+                  (str/starts-with? (second ping-command) "carmine:listener:ready:")))
+         (is (= (:closed? server-result) true))]))))
+
+(deftest pubsub-empty-initial-subscriptions-test
+  (let [received_ (atom [])
+        listener (car/with-new-pubsub-listener (:spec conn-opts)
+                   (fn [msg _] (swap! received_ conj msg)))]
+    (try
+      [(is (= @(:status_ listener) :running))
+       (is (= @received_ []))]
+      (finally (car/close-listener listener)))))
 
 (deftest pubsub-unsubscribe-test
   (let [received_ (atom [])

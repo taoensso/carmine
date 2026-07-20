@@ -554,7 +554,8 @@
 
 (defn -call-with-new-listener
   "Implementation detail. Returns new Listener."
-  [{:keys [conn-spec init-state handler-fn body-fn
+  [{:keys [conn-spec init-state handler-fn body-fn pre-handle-fn
+           ready-signal ready-timeout-ms
            ;; Incompatible with current unextensible macro API:
            ;; ping-ms error-fn swapping-handler? ; TODO Future release
            ]}]
@@ -577,13 +578,14 @@
 
         handle
         (fn [msg]
-          (when-let [hf @handler-fn_]
-            (let [{:keys [swap parse]} (meta hf) ; Undocumented
-                  msg (if parse (parse-listener-msg msg) msg)]
+          (when-not (and pre-handle-fn (pre-handle-fn msg))
+            (when-let [hf @handler-fn_]
+              (let [{:keys [swap parse]} (meta hf) ; Undocumented
+                    msg (if parse (parse-listener-msg msg) msg)]
 
-              (if swap
-                (swap! state_ (fn [state] (hf msg  state)))
-                (do                       (hf msg @state_))))))
+                (if swap
+                  (swap! state_ (fn [state] (hf msg  state)))
+                  (do                       (hf msg @state_)))))))
 
         handle-error
         (fn [error throwable]
@@ -603,12 +605,20 @@
         (fn [throwable]
           (when (compare-and-set! done?_ false true)
             (when (compare-and-set! status_ :running :broken)
-              (when-let [f @future_] (future-cancel f))
-              (or
-                (handle-error :conn-broken throwable)
-                (if-let [t throwable]
-                  (trove/log! {:level :error, :id :carmine.listener/connection-broken, :error t})
-                  (trove/log! {:level :error, :id :carmine.listener/connection-broken})))))
+              (let [initializing? (and ready-signal (not (realized? ready-signal)))]
+                (when initializing?
+                  (deliver ready-signal
+                    (or throwable (truss/ex-info "Listener connection broken before ready" {})))
+                  (try
+                    (conns/close-conn conn)
+                    (catch Throwable t
+                      (trove/log! {:level :warn, :id :carmine.listener/connection-close-error, :error t}))))
+                (when-let [f @future_] (future-cancel f))
+                (or
+                  (handle-error :conn-broken throwable)
+                  (if-let [t throwable]
+                    (trove/log! {:level :error, :id :carmine.listener/connection-broken, :error t})
+                    (trove/log! {:level :error, :id :carmine.listener/connection-broken}))))))
 
           nil ; Never handle as msg
           )
@@ -668,11 +678,22 @@
     (reset! listener_ listener)
     (reset! future_   msg-polling-future)
 
-    ;; The reader future is already running: all writer flushes (this initial
-    ;; body, keepalive/probe pings, `with-open-listener`) share one lock
-    (protocol/with-context conn (body-fn)
-      (locking (:out conn)
-        (protocol/execute-requests (not :get-replies) nil)))
+    (try
+      ;; The reader future is already running: all writer flushes (this initial
+      ;; body, keepalive/probe pings, `with-open-listener`) share one lock
+      (protocol/with-context conn (body-fn)
+        (locking (:out conn)
+          (protocol/execute-requests (not :get-replies) nil)))
+      (when ready-signal
+        (let [result (deref ready-signal ready-timeout-ms ::ready-timeout)]
+          (cond
+            (= result ::ready-timeout)
+            (truss/ex-info! "Timed out waiting for Listener readiness"
+              {:listener-id (:id listener), :ready-timeout-ms ready-timeout-ms})
+            (instance? Throwable result) (throw result))))
+      (catch Throwable t
+        (close-listener listener)
+        (throw t)))
 
     (when-let [pfn ?ping-fn]
       (let [sleep-msecs (+ (long ping-ms) 100)
@@ -699,11 +720,32 @@
 (defn -call-with-new-pubsub-listener
   "Implementation detail."
   [{:keys [conn-spec handler body-fn]}]
-  (let [?msg-handler-fns (when (map? handler) handler)]
+  (let [?msg-handler-fns (when (map? handler) handler)
+        ready-timeout-ms (clojure.core/get conn-spec :ready-timeout-ms 5000)
+        ?ready-timeout-ms
+        (when ready-timeout-ms
+          (let [msecs (long ready-timeout-ms)] (when (pos? msecs) msecs)))
+        ?ready-token  (when ?ready-timeout-ms (str "carmine:listener:ready:" (enc/uuid-str)))
+        ?ready-signal (when ?ready-token (promise))
+        signal-ready!
+        (when ?ready-signal
+          (fn [result]
+            (deliver ?ready-signal result)
+            true))
+        pre-handle-fn
+        (when ?ready-signal
+          (fn [msg]
+            (cond
+              (or (= msg ?ready-token) (= msg ["pong" ?ready-token])) (signal-ready! :ready)
+              (and (not (realized? ?ready-signal)) (instance? Exception msg)) (signal-ready! msg)
+              :else false)))]
     (-call-with-new-listener
-      {:conn-spec  (assoc conn-spec :pubsub-listener? true)
+      {:conn-spec (assoc (dissoc conn-spec :ready-timeout-ms) :pubsub-listener? true)
        :init-state (when-let [m ?msg-handler-fns] m)
-       :body-fn    body-fn
+       :pre-handle-fn pre-handle-fn
+       :ready-signal ?ready-signal
+       :ready-timeout-ms ?ready-timeout-ms
+       :body-fn (if ?ready-token (fn [] (body-fn) (ping ?ready-token)) body-fn)
        :handler-fn
        (if-let [msg-handler-fns ?msg-handler-fns] ; {<chan-or-pattern> (fn [msg])}
          (fn [msg _state]
@@ -753,6 +795,10 @@
 (defmacro with-new-pubsub-listener
   "Like `with-new-listener` but `handler` should be a map of form:
     {<channel-or-pattern-string> (fn handler [msg])}.
+
+  Waits up to `:ready-timeout-ms` in `conn-spec` (default 5000) for Redis to
+  process the initial subscription commands. This uses `PING` permission; set
+  the timeout to nil or a non-positive value to restore asynchronous startup.
 
   Example:
 
