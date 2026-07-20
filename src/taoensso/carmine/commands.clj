@@ -134,7 +134,12 @@
   (defn- get-carmine-command-spec
     [redis-command-spec]
     (try
-      (let [as-map
+      (let [sentence
+            (fn [s]
+              (let [s (str/trim (truss/have string? s))]
+                (if (re-find #"[.!?]$" s) s (str s "."))))
+
+            as-map
             (persistent!
               (reduce-kv
                 (fn [m k v]
@@ -158,14 +163,19 @@
                           [fixed (when more? (into fixed '[& args])) (into cmd-args fixed)])
 
                         fn-docstring
-                        (let [docs-url (str "https://redis.io/commands/" fn-name "/")]
-                          (enc/into-str
-                            "`" cmd-name "` - Redis command function.\n"
-                            (when since      ["  Available since: Redis " since      "\n"])
-                            (when complexity ["       Complexity: "       complexity "\n"])
-                            "\n" summary
-                            "\n"
-                            "Ref. " docs-url " for more info."))
+                        (let [docs-url (str "https://redis.io/commands/" fn-name "/")
+                              facts
+                              (cond-> []
+                                since      (conj (sentence (str "Since Redis " since)))
+                                complexity (conj (sentence (str "Complexity: " complexity))))
+
+                              paragraphs
+                              (cond-> [(str "`" cmd-name "` Redis command.")
+                                       (sentence summary)]
+                                (seq facts) (conj (str/join " " facts))
+                                true        (conj (str "Reference: " docs-url)))]
+
+                          (str/join "\n\n" paragraphs))
 
                         ;; Assuming for now that cluster key always follows
                         ;; right after command args (seems to hold?).
