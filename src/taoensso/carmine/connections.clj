@@ -104,6 +104,44 @@
 
     [in out]))
 
+(defn- try-cleanup!
+  "Runs cleanup without masking `primary-error`."
+  [^Throwable primary-error cleanup-fn]
+  (try
+    (cleanup-fn)
+    (catch Throwable cleanup-error
+      ;; Throwable/addSuppressed rejects self-suppression
+      (when-not (identical? primary-error cleanup-error)
+        (.addSuppressed primary-error cleanup-error)))))
+
+(defn- new-socket ^Socket
+  [host port conn-timeout-ms read-timeout-ms ssl-fn]
+  (let [socket-address (InetSocketAddress. ^String host ^Integer port)
+        ^Socket raw-socket (Socket.)]
+    (try
+      (.setTcpNoDelay   raw-socket true)
+      (.setKeepAlive    raw-socket true)
+      (.setReuseAddress raw-socket true)
+      ;; (.setSoLinger  raw-socket true 0)
+      (when read-timeout-ms (.setSoTimeout raw-socket ^Integer read-timeout-ms))
+
+      (if conn-timeout-ms
+        (.connect raw-socket socket-address conn-timeout-ms)
+        (.connect raw-socket socket-address))
+
+      (if ssl-fn
+        (let [f (if (identical? ssl-fn :default) default-ssl-fn ssl-fn)
+              socket (f {:socket raw-socket :host host :port port})]
+          (if (instance? Socket socket)
+            socket
+            (truss/ex-info! "Custom `:ssl-fn` must return a `java.net.Socket`"
+              {:return-value (enc/typed-val socket)})))
+        raw-socket)
+
+      (catch Throwable t
+        (try-cleanup! t #(.close raw-socket))
+        (throw t)))))
+
 (defn make-new-connection
   [{:keys [host port username password db conn-setup-fn
            conn-timeout-ms read-timeout-ms timeout-ms ssl-fn] :as spec}]
@@ -114,46 +152,48 @@
         ;;        read-timeout-ms timeout-ms} ; Ref. http://goo.gl/XULHCd
         conn-timeout-ms (get spec :conn-timeout-ms (or timeout-ms 4000))
         read-timeout-ms (get spec :read-timeout-ms     timeout-ms)
+        ^Socket socket (new-socket
+                         host port conn-timeout-ms read-timeout-ms ssl-fn)]
 
-        socket-address (InetSocketAddress. ^String host ^Integer port)
-        ^Socket socket
-        (enc/doto-cond [expr (Socket.)]
-          :always         (.setTcpNoDelay   true)
-          :always         (.setKeepAlive    true)
-          :always         (.setReuseAddress true)
-          ;; :always      (.setSoLinger     true 0)
-          read-timeout-ms (.setSoTimeout ^Integer expr))
+    (try
+      (let [conn
+            (let [[in out] (get-streams socket 8192 8192)]
+              (->Connection socket spec in out))
 
-        _ (if conn-timeout-ms
-            (.connect socket socket-address conn-timeout-ms)
-            (.connect socket socket-address))
+            db (when (and db (not (zero? db))) db)]
 
-        ^Socket socket
-        (if ssl-fn
-          (let [f (if (identical? ssl-fn :default) default-ssl-fn ssl-fn)]
-            (f {:socket socket :host host :port port}))
-          socket)
+        (when-let [f (get-in spec [:instrument :on-conn-open])]
+          (f {:spec spec}))
 
-        conn
-        (let [[in out] (get-streams socket 8192 8192)]
-          (->Connection socket spec in out))
+        (try
+          (when (or username password db conn-setup-fn)
+            (protocol/with-context conn
+              (let [replies
+                    (protocol/with-replies :as-pipeline
+                      (when password
+                        (if username
+                          (taoensso.carmine/auth username password)
+                          (taoensso.carmine/auth          password)))
 
-        db (when (and db (not (zero? db))) db)]
+                      (when db (taoensso.carmine/select (str db)))
+                      (when conn-setup-fn
+                        (conn-setup-fn {:conn conn :spec spec})))]
 
-    (when-let [f (get-in spec [:instrument :on-conn-open])] (f {:spec spec}))
+                ;; Setup replies are a flat pipeline; nested values may
+                ;; legitimately contain exception values.
+                (when-let [error
+                           (some #(when (instance? Exception %) %) replies)]
+                  (throw error)))))
+          conn
 
-    (when (or username password db conn-setup-fn)
-      (protocol/with-context conn
-        (protocol/with-replies ; Discard replies
-          (when password
-            (if username
-              (taoensso.carmine/auth username password)
-              (taoensso.carmine/auth          password)))
+          (catch Throwable t
+            (when-let [f (get-in spec [:instrument :on-conn-close])]
+              (try-cleanup! t #(f {:spec spec})))
+            (throw t))))
 
-          (when db (taoensso.carmine/select (str db)))
-          (when conn-setup-fn
-            (conn-setup-fn {:conn conn :spec spec})))))
-    conn))
+      (catch Throwable t
+        (try-cleanup! t #(.close socket))
+        (throw t)))))
 
 ;; A degenerate connection pool: gives pool-like interface for non-pooled conns
 (defrecord NonPooledConnectionPool []
