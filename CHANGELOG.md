@@ -21,6 +21,37 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.6.0` (TODO YYYY-MM-DD)
+
+- **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.6.0)
+- **Versioning**: [Break Versioning](https://www.taoensso.com/break-versioning)
+
+This is a **major feature and maintenance release**.
+
+TODO more info
+
+Please report any unexpected problems to the
+[Slack channel](http://taoensso.com/carmine/slack) or
+[GitHub](https://github.com/taoensso/carmine/issues), thanks! 🙏
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Since `v3.5.0` (2025-11-06)
+
+### Changes
+
+TODO
+
+### New
+
+TODO
+
+### Fixes
+
+TODO
+
+---
+
 # `v3.5.0` (2025-11-06)
 
 - **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.5.0)
