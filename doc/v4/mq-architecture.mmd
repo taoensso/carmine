@@ -1,0 +1,66 @@
+%% Canonical source. Render from the repository root with:
+%% npx --yes @mermaid-js/mermaid-cli@11.16.0 \
+%%   -i doc/v4/mq-architecture.mmd -o doc/v4/mq-architecture.svg -b white
+%%{init: {"theme": "base", "fontFamily": "Arial, Helvetica, sans-serif", "flowchart": {"curve": "basis", "htmlLabels": true, "useMaxWidth": false}, "themeVariables": {"background": "#ffffff", "lineColor": "#475569", "primaryTextColor": "#172033"}}}%%
+flowchart TB
+  accTitle: Carmine v4 message queue lifecycle
+  accDescr: A message has at most one active generation. It moves between absent, scheduled, ready, and leased. Coalescing may store one latest successor. A retained dead generation is an independent historical role.
+
+  subgraph ACTIVE["ACTIVE GENERATION · exactly one state"]
+    direction LR
+    A["ABSENT<br/><small>no active generation</small>"]:::absent
+    S["SCHEDULED<br/><small>future or overdue until maintenance</small>"]:::state
+    R["READY<br/><small>high · normal · low<br/>FIFO within each band</small>"]:::state
+    L["LEASED<br/><small>attempt incremented · fenced token<br/>current or expired until maintenance</small>"]:::state
+    F["FINISH ACTIVE<br/><small>ack · discard · dead · exhausted</small>"]:::action
+    P["PROMOTE NEXT<br/><small>attempt resets to zero</small>"]:::role
+
+    A -->|"enqueue<br/>with delay"| S
+    A -->|"enqueue<br/>due now"| R
+    S -->|"due maintenance"| R
+    R -->|"claim"| L
+    L -->|"extend lease<br/>(same token)"| L
+    L -->|"retry / retryable expiry<br/>with delay"| S
+    L -->|"zero-delay retry: retain attempt<br/>release: undo claim<br/>(without successor)"| R
+    L -->|"terminal settlement<br/>or exhausted expiry"| F
+    F -->|"no successor"| A
+    F -->|"successor stored"| P
+    L -->|"release with successor"| P
+    P -->|"available now"| R
+    P -->|"future delay"| S
+  end
+
+  subgraph COALESCE["COALESCING · optional latest-value role"]
+    direction LR
+    C["SAME MID ENQUEUE<br/><small>:on-duplicate :coalesce</small>"]:::action
+    Q{"ATTEMPT<br/>&gt; 0?"}:::decision
+    U["REPLACE ACTIVE<br/><small>remains ready or scheduled</small>"]:::role
+    X["LATEST SUCCESSOR<br/><small>at most one · may have its own delay</small>"]:::role
+    XP["PROMOTE AFTER<br/><small>terminal settle, exhaustion,<br/>or successor-aware release</small>"]:::action
+    XR["READY OR SCHEDULED<br/><small>according to successor delay</small>"]:::state
+    C --> Q
+    Q -->|"no"| U
+    Q -->|"yes"| X
+    X --> XP --> XR
+  end
+
+  subgraph DEAD["RETAINED DEAD GENERATION · independent historical role"]
+    direction LR
+    DF["LEASED FAILURE<br/><small>outcome:dead or exhaustion policy :dead</small>"]:::action
+    D["RETAINED DEAD<br/><small>payload + bounded failure summary</small>"]:::dead
+    DR["READY<br/><small>attempt resets to zero</small>"]:::state
+    DN["NO DEAD"]:::absent
+    DF -->|"remove active generation;<br/>promote successor if present"| D
+    D -->|"dead-redrive!<br/>only when no active exists"| DR
+    D -->|"dead-purge! · msg-remove!<br/>· queue-clear!!"| DN
+  end
+
+  ACTIVE ~~~ COALESCE
+  COALESCE ~~~ DEAD
+
+  classDef state fill:#eef2ff,stroke:#4f46e5,color:#1e1b4b,stroke-width:2px;
+  classDef absent fill:#f8fafc,stroke:#64748b,color:#1e293b,stroke-width:1.5px;
+  classDef action fill:#ecfdf5,stroke:#059669,color:#064e3b,stroke-width:1.5px;
+  classDef role fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-width:1.5px;
+  classDef dead fill:#fff1f2,stroke:#e11d48,color:#881337,stroke-width:2px;
+  classDef decision fill:#fefce8,stroke:#ca8a04,color:#713f12,stroke-width:1.5px;

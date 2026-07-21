@@ -1,11 +1,73 @@
 (ns taoensso.carmine-v4.message-queue
   "Carmine v4 message queue for Redis 7+.
 
+  Requirements and delivery contract
+
+  Redis 7.0 or later is checked when a queue handle is opened. `WAITAOF`
+  durability needs Redis 7.2 or later. Standalone, Sentinel-master, and Cluster
+  connection managers are supported. One queue occupies one Cluster slot;
+  distribute hot workloads across queue names. Cluster managers reject
+  durability barriers before writing.
+
   Delivery uses Redis server time, leases, and at-least-once semantics. Lease
-  tokens prevent stale handlers from changing queue state, but handlers must
-  still make external operations idempotent. Queue handles borrow a
-  [[taoensso.carmine-v4/conn-manager?]] without closing it. Public option maps
+  tokens fence settlement and extension, so a stale handler cannot change a
+  newer claim. They cannot make an external side effect exactly once: handlers
+  must be idempotent. Use a stable explicit message ID (`:mid`) as the
+  idempotency key when an enqueue may be retried.
+
+  Queue state uses persistent Redis keys without expiry. Do not use an
+  `allkeys-*` eviction policy. Prefer `noeviction`, a dedicated deployment, or
+  a volatile-only policy that cannot select these keys. Dead letters have no
+  automatic retention limit.
+
+  Quick start
+
+    (require '[taoensso.carmine-v4 :as car]
+             '[taoensso.carmine-v4.message-queue :as mq])
+
+    (defonce mgr (car/conn-manager))
+    (def emails (mq/queue mgr \"emails\" {:max-attempts 8}))
+
+    (mq/msg-enqueue! emails {:recipient \"person@example.com\"}
+      {:mid \"welcome:123\", :priority :high, :delay-ms 5000})
+
+    (def worker
+      (mq/worker-create emails
+        (fn [{:keys [msg]}]
+          (send-email! msg)
+          (mq/outcome:ack))
+        {:concurrency 4}))
+
+    (mq/worker-start! worker)
+    ;; During application shutdown:
+    (mq/worker-stop! worker)
+    (mq/worker-await-stopped! worker 10000)
+    (car/conn-manager-close! mgr)
+
+  Handlers return [[outcome:ack]], [[outcome:retry]], [[outcome:dead]], or
+  [[outcome:discard]]. An ordinary exception or invalid return causes a retry;
+  the message's exhaustion policy eventually makes it terminal. By default a
+  handler extends a long lease explicitly through its `:extend-lease!` input.
+  [[worker-create]] can instead enable an automatic heartbeat.
+
+  Queue handles borrow a [[taoensso.carmine-v4/conn-manager?]] without closing
+  it. Stop and await every worker before closing its manager. Public option maps
   reject unknown unqualified keys; namespaced keyword keys are reserved.
+
+  Public API organization
+
+    - `msg-*` functions act on one queued message.
+    - `queue-*` functions inspect or administer a queue.
+    - `worker-*` functions manage a process-local consumer.
+    - `dead-*` functions inspect or administer retained dead messages.
+    - `v3-*` migration functions are in
+      [[taoensso.carmine-v4.message-queue.migration]].
+
+  Use [[queue-status]] for exact Redis counts and head-of-line gauges, and
+  [[worker-stats]] for process-local worker counters and timings. Monitor worker
+  state and errors, dead letters, and overdue scheduled or expired leased work.
+  Use [[dead-page]] for large retained sets and schedule [[dead-purge!]] when
+  policy permits permanent deletion.
 
   Redis key schema
 
@@ -36,8 +98,7 @@
 
   The config hash identifies an initialized queue. If it is missing but another
   queue key exists, [[queue]] does not open or change the queue. The signal list
-  only optimizes wake-up and is not required for correctness. Do not use a Redis
-  `allkeys-*` eviction policy, which can evict only part of a queue.
+  only optimizes wake-up and is not required for correctness.
 
   Stored message state machine
 
@@ -85,7 +146,12 @@
   A worker lifecycle is `new -> running -> stopping -> stopped -> closed`;
   stop-before-start gives `new -> stopped`, and a fatal runner failure gives
   `running -> failed`. Workers cannot restart. See [[worker-create]],
-  [[worker-stats]], and `doc/v4/mq.md`."
+  [[worker-stats]], and [[worker-await-stopped!]].
+
+  A durability-barrier miss is still a committed write. A transport failure
+  during the barrier makes the requested durability unknown; neither condition
+  means Redis rolled back the write. See [[queue]] for the full durability
+  contract."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
    [clojure.string        :as str]

@@ -160,8 +160,7 @@
   This function rejects Cluster managers and Sentinel replica-preferring
   managers.
   If an error occurs, the connection is invalidated or closed so transaction
-  state cannot return to a pool. See the v4 guide for failure and
-  connection-ownership contracts.
+  state cannot return to a pool.
 
   [[taoensso.carmine-v4/transact!]] borrows its own connection. If you call it
   while you hold a connection from the same manager, the pool can become

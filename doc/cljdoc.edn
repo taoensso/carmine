@@ -1,2 +1,4 @@
-{:cljdoc/docstring-format :plaintext}
-
+{:cljdoc/docstring-format :plaintext
+ :cljdoc.doc/tree
+ [["Readme"    {:file "README.md"}]
+  ["Changelog" {:file "CHANGELOG.md"}]]}

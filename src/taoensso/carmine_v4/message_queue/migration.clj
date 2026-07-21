@@ -2,8 +2,31 @@
   "Explicit v3-to-v4 queue migration utilities.
 
   Migration makes a non-destructive snapshot copy. It is not a live or atomic
-  bridge. Pause v3 producers and workers. Inspect the plan, copy eligible work,
-  and switch consumers. Retire the v3 queue only after application validation.
+  bridge, and there is no rolling compatibility between the queue formats. The
+  v3 source and v4 target use separate keyspaces.
+
+  Cutover procedure
+
+    1. Pause v3 producers and workers. Drain or explicitly resolve leases and
+       pending requeues, then keep the source quiescent through the copy.
+    2. Run [[v3-inspect]] and review every rejected or skipped entry.
+    3. Run [[v3-plan]], then [[v3-migrate!]] with `:dry-run? true`.
+    4. Run the copy, start v4 consumers, switch producers, and validate
+       application-level counts and behaviour.
+    5. Retain the stopped v3 keyspace until rollback is no longer required.
+
+  The utilities never delete or change v3 keys. By default, ambiguous lease or
+  requeue state prevents a copy. Attempts and age restart in v4, and the target
+  queue's delivery policies replace v3 worker and per-message lock settings.
+  Stored payloads are decoded with the current v3 thaw options and reserialized
+  with the default v4 codec, so source encryption is not retained.
+
+  Use pure deterministic priority mapping and a deterministic, collision-free
+  textual MID mapping. The target must use `:on-duplicate :reject` and
+  `:revision-mode :none`. Keep every mapped MID unused and quiescent during the
+  copy and any verification rerun. See each function's docstring for result
+  shapes, clock requirements, quiescence checks, and rerun semantics.
+
   Option maps reject unknown unqualified keys and reserve namespaced keyword
   keys for extensions."
   {:author "Peter Taoussanis (@ptaoussanis)"}
