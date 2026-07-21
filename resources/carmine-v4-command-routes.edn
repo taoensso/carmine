@@ -1,0 +1,434 @@
+{
+"ACL" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL CAT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL DELUSER" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL DRYRUN" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL GENPASS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL GETUSER" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL LIST" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL LOAD" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL LOG" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL SAVE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL SETUSER" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL USERS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"ACL WHOAMI" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"APPEND" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"ARCOUNT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARDEL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ARDELRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ARGET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARGETRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARGREP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARINFO" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARINSERT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ARLASTITEMS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARLEN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARMGET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARMSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ARNEXT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"AROP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARRING" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ARSCAN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ARSEEK" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ARSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ASKING" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"AUTH" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"BGREWRITEAOF" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"BGSAVE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"BITCOUNT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"BITFIELD" {:key-specs [{:notes "This command allows both access and modification of the key", :begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true, :variable_flags true}], :cluster-routing :exact, :supports-cluster? true}
+"BITFIELD_RO" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"BITOP" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 3}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"BITPOS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"BLMOVE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"BLMPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"BLPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -2, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"BRPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -2, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"BRPOPLPUSH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"BZMPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"BZPOPMAX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -2, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"BZPOPMIN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -2, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"CLIENT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT CACHING" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"CLIENT GETNAME" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT GETREDIR" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT ID" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT INFO" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT KILL" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT LIST" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT NO-EVICT" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"CLIENT NO-TOUCH" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"CLIENT PAUSE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT REPLY" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"CLIENT SETINFO" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"CLIENT SETNAME" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"CLIENT TRACKING" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"CLIENT TRACKINGINFO" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT UNBLOCK" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLIENT UNPAUSE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER ADDSLOTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER ADDSLOTSRANGE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER BUMPEPOCH" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER COUNT-FAILURE-REPORTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER COUNTKEYSINSLOT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER DELSLOTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER DELSLOTSRANGE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER FAILOVER" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER FLUSHSLOTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER FORGET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER GETKEYSINSLOT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER INFO" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER KEYSLOT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER LINKS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER MEET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER MIGRATION" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER MYID" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER MYSHARDID" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER NODES" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER REPLICAS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER REPLICATE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER RESET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SAVECONFIG" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SET-CONFIG-EPOCH" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SETSLOT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SHARDS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SLAVES" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SLOT-STATS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SLOTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CLUSTER SYNCSLOTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND COUNT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND DOCS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND GETKEYS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND GETKEYSANDFLAGS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND INFO" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COMMAND LIST" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CONFIG" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CONFIG GET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CONFIG HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CONFIG RESETSTAT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CONFIG REWRITE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"CONFIG SET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"COPY" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"DBSIZE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"DEBUG" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"DECR" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"DECRBY" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"DEL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RM true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"DELEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true, :variable_flags true}], :cluster-routing :exact, :supports-cluster? true}
+"DIGEST" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"DISCARD" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"DUMP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ECHO" {:key-specs nil, :cluster-routing :single-node, :supports-cluster? true}
+"EVAL" {:key-specs [{:notes "We cannot tell how the keys will be used so we assume the worst, RW and UPDATE", :begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"EVALSHA" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"EVALSHA_RO" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"EVAL_RO" {:key-specs [{:notes "We cannot tell how the keys will be used so we assume the worst, RO and ACCESS", :begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"EXEC" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"EXISTS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"EXPIRE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"EXPIREAT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"EXPIRETIME" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"FAILOVER" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FCALL" {:key-specs [{:notes "We cannot tell how the keys will be used so we assume the worst, RW and UPDATE", :begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"FCALL_RO" {:key-specs [{:notes "We cannot tell how the keys will be used so we assume the worst, RO and ACCESS", :begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"FLUSHALL" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FLUSHDB" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION DELETE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION DUMP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION FLUSH" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION KILL" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION LIST" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION LOAD" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION RESTORE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"FUNCTION STATS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"GEOADD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"GEODIST" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GEOHASH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GEOPOS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GEORADIUS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true} {:begin_search {:type "keyword", :spec {:keyword "STORE", :startfrom 6}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "keyword", :spec {:keyword "STOREDIST", :startfrom 6}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"GEORADIUSBYMEMBER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true} {:begin_search {:type "keyword", :spec {:keyword "STORE", :startfrom 5}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "keyword", :spec {:keyword "STOREDIST", :startfrom 5}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"GEORADIUSBYMEMBER_RO" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GEORADIUS_RO" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GEOSEARCH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GEOSEARCHSTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GETBIT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GETDEL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"GETEX" {:key-specs [{:notes "RW and UPDATE because it changes the TTL", :begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"GETRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"GETSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HDEL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"HELLO" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"HEXISTS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"HEXPIRE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HEXPIREAT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HEXPIRETIME" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HGET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HGETALL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HGETDEL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"HGETEX" {:key-specs [{:notes "RW and UPDATE because it changes the TTL", :begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HINCRBY" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HINCRBYFLOAT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HKEYS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HLEN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"HMGET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HMSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HOTKEYS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"HOTKEYS GET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"HOTKEYS HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"HOTKEYS RESET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"HOTKEYS START" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"HOTKEYS STOP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"HPERSIST" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HPEXPIRE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HPEXPIREAT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HPEXPIRETIME" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HPTTL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HRANDFIELD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HSCAN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HSETEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"HSETNX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"HSTRLEN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"HTTL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"HVALS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"INCR" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"INCRBY" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"INCRBYFLOAT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"INCREX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"INFO" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"KEYS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LASTSAVE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY DOCTOR" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY GRAPH" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY HISTOGRAM" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY HISTORY" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY LATEST" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LATENCY RESET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LCS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"LINDEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"LINSERT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"LLEN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"LMOVE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"LMPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"LOLWUT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"LPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"LPOS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"LPUSH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"LPUSHX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"LRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"LREM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"LSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"LTRIM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"MEMORY" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MEMORY DOCTOR" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MEMORY HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MEMORY MALLOC-STATS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MEMORY PURGE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MEMORY STATS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MEMORY USAGE" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"MGET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"MIGRATE" {:key-specs nil, :cluster-routing :exact, :supports-cluster? true, :route-kind :migrate}
+"MODULE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MODULE HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MODULE LIST" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MODULE LOAD" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MODULE LOADEX" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MODULE UNLOAD" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"MONITOR" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"MOVE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"MSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 2, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"MSETEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 2}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"MSETNX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 2, :limit 0}}, :OW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"MULTI" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"OBJECT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"OBJECT ENCODING" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"OBJECT FREQ" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"OBJECT HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"OBJECT IDLETIME" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"OBJECT REFCOUNT" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"PERSIST" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"PEXPIRE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"PEXPIREAT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"PEXPIRETIME" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"PFADD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"PFCOUNT" {:key-specs [{:notes "RW because it may change the internal representation of the key, and propagate to replicas", :begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RW true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"PFDEBUG" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"PFMERGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :insert true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"PFSELFTEST" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PING" {:key-specs nil, :cluster-routing :single-node, :supports-cluster? true}
+"PSETEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"PSUBSCRIBE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"PSYNC" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"PTTL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"PUBLISH" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUBSUB" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUBSUB CHANNELS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUBSUB HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUBSUB NUMPAT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUBSUB NUMSUB" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUBSUB SHARDCHANNELS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUBSUB SHARDNUMSUB" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"PUNSUBSCRIBE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"QUIT" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"RANDOMKEY" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"READONLY" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"READWRITE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"RENAME" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"RENAMENX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"REPLCONF" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"REPLICAOF" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"RESET" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"RESTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"RESTORE-ASKING" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ROLE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"RPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"RPOPLPUSH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"RPUSH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"RPUSHX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"SADD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"SAVE" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCAN" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCARD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"SCRIPT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCRIPT DEBUG" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCRIPT EXISTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCRIPT FLUSH" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCRIPT HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCRIPT KILL" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SCRIPT LOAD" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SDIFF" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SDIFFSTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SELECT" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"SET" {:key-specs [{:notes "RW and ACCESS due to the optional `GET` argument", :begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true, :variable_flags true}], :cluster-routing :exact, :supports-cluster? true}
+"SETBIT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"SETEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"SETNX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"SETRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"SHUTDOWN" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SINTER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SINTERCARD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SINTERSTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SISMEMBER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"SLAVEOF" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SLOWLOG" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SLOWLOG GET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SLOWLOG HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SLOWLOG LEN" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SLOWLOG RESET" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"SMEMBERS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SMISMEMBER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SMOVE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"SORT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :partial, :supports-cluster? true}
+"SORT_RO" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :partial, :supports-cluster? true}
+"SPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"SPUBLISH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :not_key true}], :cluster-routing :exact, :supports-cluster? true}
+"SRANDMEMBER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SREM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"SSCAN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SSUBSCRIBE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"STRLEN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"SUBSCRIBE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"SUBSTR" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SUNION" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SUNIONSTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"SUNSUBSCRIBE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"SWAPDB" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"SYNC" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"TIME" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"TOUCH" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"TRIMSLOTS" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"TTL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"TYPE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"UNLINK" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 0}}, :RM true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"UNSUBSCRIBE" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"UNWATCH" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"VADD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VCARD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VDIM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VEMB" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VGETATTR" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VINFO" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VISMEMBER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VLINKS" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VRANDMEMBER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VREM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VSETATTR" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"VSIM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"WAIT" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"WAITAOF" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"WATCH" {:key-specs nil, :cluster-routing :unsupported, :supports-cluster? false}
+"XACK" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XACKDEL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"XADD" {:key-specs [{:notes "UPDATE instead of INSERT because of the optional trimming feature", :begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XAUTOCLAIM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"XCFGSET" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XCLAIM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XDEL" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"XDELEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"XGROUP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"XGROUP CREATE" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"XGROUP CREATECONSUMER" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :insert true}], :cluster-routing :exact, :supports-cluster? true}
+"XGROUP DELCONSUMER" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"XGROUP DESTROY" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"XGROUP HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"XGROUP SETID" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XIDMPRECORD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XINFO" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"XINFO CONSUMERS" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XINFO GROUPS" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XINFO HELP" {:key-specs nil, :cluster-routing :explicit-target, :supports-cluster? true}
+"XINFO STREAM" {:key-specs [{:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XLEN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"XNACK" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XPENDING" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XREAD" {:key-specs [{:begin_search {:type "keyword", :spec {:keyword "STREAMS", :startfrom 1}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 2}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XREADGROUP" {:key-specs [{:begin_search {:type "keyword", :spec {:keyword "STREAMS", :startfrom 4}}, :find_keys {:type "range", :spec {:lastkey -1, :keystep 1, :limit 2}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XREVRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"XSETID" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"XTRIM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZADD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ZCARD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true}], :cluster-routing :exact, :supports-cluster? true}
+"ZCOUNT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZDIFF" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZDIFFSTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZINCRBY" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :update true}], :cluster-routing :exact, :supports-cluster? true}
+"ZINTER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZINTERCARD" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZINTERSTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZLEXCOUNT" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZMPOP" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZMSCORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZPOPMAX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZPOPMIN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :access true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZRANDMEMBER" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZRANGEBYLEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZRANGEBYSCORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZRANGESTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZRANK" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREM" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREMRANGEBYLEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREMRANGEBYRANK" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREMRANGEBYSCORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RW true, :delete true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREVRANGE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREVRANGEBYLEX" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREVRANGEBYSCORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZREVRANK" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZSCAN" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZSCORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZUNION" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+"ZUNIONSTORE" {:key-specs [{:begin_search {:type "index", :spec {:index 1}}, :find_keys {:type "range", :spec {:lastkey 0, :keystep 1, :limit 0}}, :OW true, :update true} {:begin_search {:type "index", :spec {:index 2}}, :find_keys {:type "keynum", :spec {:keynumidx 0, :firstkey 1, :keystep 1}}, :RO true, :access true}], :cluster-routing :exact, :supports-cluster? true}
+}

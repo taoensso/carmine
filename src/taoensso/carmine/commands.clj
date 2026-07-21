@@ -97,131 +97,123 @@
 
 ;;;; Command specs
 
-(comment ; Generate commands.edn
-  (require '[clojure.data.json :as json])
-  (defn- get-redis-command-spec
-    [source]
-    (let [json
-          (case source
-            ;; Ref. <https://github.com/redis/docs/blob/main/data/commands.json>
-            :online (slurp (java.net.URL. "https://raw.githubusercontent.com/redis/docs/refs/heads/main/data/commands.json"))
-            :local  (enc/slurp-resource "redis-commands.json"))]
+(defn- get-fixed-params [^long n-min arguments]
+  (let [simple-params
+        (reduce
+          (fn [acc in]
+            (let [{:keys [optional multiple arguments name]} (truss/have map? in)]
+              (cond
+                optional  (reduced       acc)
+                arguments (reduced       acc)
+                multiple  (reduced (conj acc (symbol name)))
+                :else              (conj acc (symbol name)))))
+          []
+          arguments)
 
-      {:as-map  (clojure.data.json/read-str json :key-fn keyword),
-       :as-json json}))
+        n-additional (- n-min (count simple-params))]
 
-  (comment (= (get-redis-command-spec :local) (get-redis-command-spec :online)))
+    (if (pos? n-additional)
+      (into simple-params (mapv #(symbol (str "arg" %)) (range 1 (inc n-additional))))
+      simple-params)))
 
-  (defn- get-fixed-params [^long n-min arguments]
-    (let [simple-params
-          (reduce
-            (fn [acc in]
-              (let [{:keys [optional multiple arguments name]} (truss/have map? in)]
-                (cond
-                  optional  (reduced       acc)
-                  arguments (reduced       acc)
-                  multiple  (reduced (conj acc (symbol name)))
-                  :else              (conj acc (symbol name)))))
-            []
-            arguments)
+(defn- generate-command-spec
+  "Generates Carmine command definitions from the official Redis command map."
+  [redis-command-spec]
+  (try
+    (let [sentence
+          (fn [s]
+            (let [s (str/trim (truss/have string? s))]
+              (if (re-find #"[.!?]$" s) s (str s "."))))]
 
-          n-additional (- n-min (count simple-params))]
+      (persistent!
+        (reduce-kv
+          (fn [m k v]
+            (let [cmd-name (name k)                                            ; "CONFIG SET"
+                  cmd-args (-> cmd-name (str/split #" "))                      ; ["CONFIG" "SET"]
+                  fn-name  (-> cmd-name str/lower-case (str/replace #" " "-")) ; "config-set"
 
-      (if (pos? n-additional)
-        (into simple-params (mapv #(symbol (str "arg" %)) (range 1 (inc n-additional))))
-        (do   simple-params))))
+                  {:keys [summary since complexity arguments arity _group]} v
 
-  (defn- get-carmine-command-spec
-    [redis-command-spec]
-    (try
-      (let [sentence
-            (fn [s]
-              (let [s (str/trim (truss/have string? s))]
-                (if (re-find #"[.!?]$" s) s (str s "."))))
+                  ;; Ref. https://redis.io/commands/command/
+                  [fn-params-fixed fn-params-more req-args-fixed]
+                  (let [n     (long arity)
+                        more? (neg?     n)
+                        n
+                        (if more?
+                          (+ n (count cmd-args))
+                          (- n (count cmd-args)))
 
-            as-map
-            (persistent!
-              (reduce-kv
-                (fn [m k v]
-                  (let [cmd-name (name k)                                            ; "CONFIG SET"
-                        cmd-args (-> cmd-name (str/split #" "))                      ; ["CONFIG" "SET"]
-                        fn-name  (-> cmd-name str/lower-case (str/replace #" " "-")) ; "config-set"
+                        n-min (Math/abs n)
+                        fixed (get-fixed-params n-min arguments)]
+                    [fixed (when more? (into fixed '[& args])) (into cmd-args fixed)])
 
-                        {:keys [summary since complexity arguments arity _group]} v
+                  fn-docstring
+                  (let [docs-url (str "https://redis.io/commands/" fn-name "/")
+                        facts
+                        (cond-> []
+                          since      (conj (sentence (str "Since Redis " since)))
+                          complexity (conj (sentence (str "Complexity: " complexity))))
 
-                        ;; Ref. https://redis.io/commands/command/
-                        [fn-params-fixed fn-params-more req-args-fixed]
-                        (let [n     (long arity)
-                              more? (neg?     n)
-                              n
-                              (if more?
-                                (+ n (count cmd-args))
-                                (- n (count cmd-args)))
+                        paragraphs
+                        (cond-> [(str "`" cmd-name "` Redis command.")
+                                 (sentence summary)]
+                          (seq facts) (conj (str/join " " facts))
+                          true        (conj (str "Reference: " docs-url)))]
 
-                              n-min (Math/abs n)
-                              fixed (get-fixed-params n-min arguments)]
-                          [fixed (when more? (into fixed '[& args])) (into cmd-args fixed)])
+                    (str/join "\n\n" paragraphs))
 
-                        fn-docstring
-                        (let [docs-url (str "https://redis.io/commands/" fn-name "/")
-                              facts
-                              (cond-> []
-                                since      (conj (sentence (str "Since Redis " since)))
-                                complexity (conj (sentence (str "Complexity: " complexity))))
+                  ;; Assuming for now that cluster key always follows
+                  ;; right after command args (seems to hold?).
+                  ;; Can adjust later if needed.
+                  cluster-key-idx (count cmd-args)]
 
-                              paragraphs
-                              (cond-> [(str "`" cmd-name "` Redis command.")
-                                       (sentence summary)]
-                                (seq facts) (conj (str/join " " facts))
-                                true        (conj (str "Reference: " docs-url)))]
+              (truss/have? pos? cluster-key-idx)
+              (assoc! m cmd-name
+                {:fn-name         fn-name
+                 :cluster-key-idx cluster-key-idx
+                 :fn-params-more  fn-params-more
+                 :fn-params-fixed fn-params-fixed
+                 :req-args-fixed  req-args-fixed ; ["CONFIG" "SET" 'key 'value]
+                 :fn-docstring    fn-docstring})))
 
-                          (str/join "\n\n" paragraphs))
+          (transient {})
+          redis-command-spec)))
 
-                        ;; Assuming for now that cluster key always follows
-                        ;; right after command args (seems to hold?).
-                        ;; Can adjust later if needed.
-                        cluster-key-idx (count cmd-args)]
+    (catch Throwable t
+      (truss/ex-info! "Failed to generate Carmine command spec"
+        {:redis-command-spec redis-command-spec}
+        t))))
 
-                    (truss/have? pos? cluster-key-idx)
-                    (assoc! m cmd-name
-                      {:fn-name         fn-name
-                       :cluster-key-idx cluster-key-idx
-                       :fn-params-more  fn-params-more
-                       :fn-params-fixed fn-params-fixed
-                       :req-args-fixed  req-args-fixed ; ["CONFIG" "SET" 'key 'value]
-                       :fn-docstring    fn-docstring})))
+(defn- artifact-edn
+  "Returns canonical EDN for a generated command artifact."
+  [m]
+  (str
+    "{\n"
+    (reduce
+      (fn [acc k]
+        (let [v (get m k)]
+          (str acc (enc/pr-edn k) " " (enc/pr-edn v) "\n")))
+      ""
+      (sort (keys m)))
+    "}"))
 
-                (transient {})
-                (get redis-command-spec :as-map)))]
+(defn- update-commands!
+  "Regenerates the pinned Redis JSON and Carmine command artifact.
+  Requires the maintainer dev profile with `clojure.data.json`."
+  [json-source]
+  (let [json
+        (case json-source
+          ;; Ref. <https://github.com/redis/docs/blob/main/data/commands.json>
+          :online (slurp (java.net.URL. "https://raw.githubusercontent.com/redis/docs/refs/heads/main/data/commands.json"))
+          :local  (enc/slurp-resource "redis-commands.json"))
+        read-json (requiring-resolve 'clojure.data.json/read-str)
+        command-spec (generate-command-spec (read-json json :key-fn keyword))]
 
-        {:as-map as-map
-         :as-edn
-         (str
-           "{\n"
-           (reduce
-             (fn [acc k]
-               (let [v (get as-map k)]
-                 (str acc (enc/pr-edn k) " " (enc/pr-edn v) "\n")))
-             ""
-             (sort (keys as-map)))
-           "}")})
+    (spit "resources/redis-commands.json" json)
+    (spit "resources/carmine-commands.edn" (artifact-edn command-spec))
+    (count command-spec)))
 
-      (catch Throwable t
-        (truss/ex-info! "Failed to generate Carmine command spec"
-          {:redis-command-spec redis-command-spec}
-          t))))
-
-  (comment
-    (get-in                           (get-redis-command-spec :local)  [:as-map :XTRIM])
-    (get-in (get-carmine-command-spec (get-redis-command-spec :local)) [:as-map "XTRIM"]))
-
-  (defn update-commands! [json-source]
-    (let [redis-command-spec   (get-redis-command-spec   json-source)
-          carmine-command-spec (get-carmine-command-spec redis-command-spec)]
-
-      (spit "resources/redis-commands.json"  (truss/have (:as-json redis-command-spec)))
-      (spit "resources/carmine-commands.edn" (truss/have (:as-edn  carmine-command-spec)))))
-
+(comment
   (update-commands! :local)
   (update-commands! :online))
 

@@ -1,13 +1,14 @@
 (ns ^:no-doc taoensso.carmine-v4.sentinel
-  "Private ns, implementation detail.
-  Implementation of the Redis Sentinel protocol,
-  Ref. <https://redis.io/docs/reference/sentinel-clients/>"
+  "Private Redis Sentinel protocol implementation. See
+  <https://redis.io/docs/reference/sentinel-clients/>."
   (:require
+   [clojure.string :as str]
    [taoensso.encore :as enc]
    [taoensso.truss  :as truss]
    [taoensso.carmine-v4.utils :as utils]
    [taoensso.carmine-v4.conns :as conns]
    [taoensso.carmine-v4.resp  :as resp]
+   [taoensso.carmine-v4.resp.common :as com]
    [taoensso.carmine-v4.opts  :as opts])
 
   (:import [java.util.concurrent.atomic AtomicLong]))
@@ -56,13 +57,9 @@ sentinel down-after-milliseconds %3$s 60000"
 
 (comment (spit-sentinel-test-config {}))
 
-;;;; Node adresses
+;;;; Node addresses
 ;; - Node    => Redis master, Redis read replica, or Sentinel server
 ;; - Address => [<node-host> <node-port>]
-
-(defn- remove-addr [old-addrs addr]
-  (let [addr (opts/parse-sock-addr addr)]
-    (transduce (remove #(= % addr)) conj [] old-addrs)))
 
 (defn- add-addr->front [old-addrs addr]
   (let [addr (opts/parse-sock-addr addr)]
@@ -86,36 +83,64 @@ sentinel down-after-milliseconds %3$s 60000"
 
 (defprotocol ^:private ISentinelSpec
   "Internal protocol, not for public use or extension."
-  (sentinel-opts  [spec])
-  (update-addrs!  [spec master-name cbs               kind f])
-  (resolve-addr!  [spec master-name sentinel-opts use-cache?])
-  (resolved-addr? [spec master-name sentinel-opts use-cache? addr]))
+  (sentinel-spec-opts [spec])
+  (update-addrs!     [spec master-name kind f])
+  (resolve-addr!     [spec master-name sentinel-opts use-cache?])
+  (resolved-addr?    [spec master-name sentinel-opts use-cache? addr]))
 
 (def ^:dynamic *mgr-cbs*
-  "Private, implementation detail.
-  Mechanism to support `ConnManager` callbacks (cbs)."
+  "Manager callbacks for private implementation use."
   nil)
 
 (enc/defn-cached ^:private unique-addrs {:size 128 :gc-every 100}
   [addrs-state]
   (let [vs (vals addrs-state)]
-    {:masters   (into #{}       (map :master)         vs)
+    {:masters   (into #{}       (keep :master)        vs)
      :replicas  (into #{} (comp (map :replicas)  cat) vs)
      :sentinels (into #{} (comp (map :sentinels) cat) vs)}))
 
-(let [kvs->map (fn [x] (if (map? x) x (into {} (comp (partition-all 2)) x)))]
-  (defn- parse-nodes-info->addrs [info-seq]
+(let [kvs->map (fn [x] (if (map? x) x (into {} (comp (partition-all 2)) x)))
+      down-flags #{"s_down" "o_down" "disconnected" "master_down"}]
+  (defn- parse-nodes-info
+    [kind info-seq]
     (when info-seq ; [<node1-info> ...]
-      (not-empty
-        (reduce
-          (fn [acc in] ; Info elements may be map (RESP3) or kvseq (RESP2)
-            (let [in (kvs->map in)]
-              (enc/if-let [host (get in "host")
-                           port (get in "port")]
-                (conj acc [host port])
-                (do   acc))))
-          []
-          info-seq)))))
+      (reduce
+        (fn [{:keys [addrs] :as acc} in] ; Info elements may be map (RESP3) or kvseq (RESP2)
+          (if-let [{:keys [addr]}
+                   (try
+                     (let [in    (kvs->map in)
+                           flags (some-> (get in "flags") (str/split #",") set)
+                           healthy?
+                           (and
+                             (not (some down-flags flags))
+                             (if (= kind :replica)
+                               (let [status (get in "master-link-status")]
+                                 (or (nil? status) (= status "ok")))
+                               true))
+                           addr
+                           (when healthy?
+                             (opts/parse-sock-addr
+                               [(or (get in "ip") (get in "host"))
+                                (get in "port")]))]
+                       {:addr addr})
+                     (catch Exception _ nil))]
+            (cond-> (update acc :n-valid-entries inc)
+              addr (assoc :addrs (conj addrs addr)))
+            acc))
+        {:addrs [], :n-valid-entries 0}
+        info-seq)))
+
+  (defn- parse-nodes-info->addrs
+    ([info-seq] (parse-nodes-info->addrs nil info-seq))
+    ([kind info-seq]
+     (some-> (parse-nodes-info kind info-seq) :addrs not-empty))))
+
+(defn- parse-node-role [role]
+  (case role
+    "master"  :master
+    "slave"   :replica
+    "replica" :replica
+    nil))
 
 (defn- get-rand [coll] (if (empty? coll) nil (get coll (rand-int (count coll)))))
 (defn- members= [c1 c2] (or (= c1 c2) (and (= (count c1) (count c2)) (= (set c1) (set c2)))))
@@ -123,16 +148,179 @@ sentinel down-after-milliseconds %3$s 60000"
 (defn- inc-stat! [stats_ k1 k2] (swap! stats_ (fn [m] (enc/update-in m [k1 k2] (fn [?n] (inc (long (or ?n 0))))))))
 (comment (inc-stat! (atom {}) "foo" :k1))
 
+(defn- promote-sentinel!
+  "Moves `addr` to the front of the sentinel list for `master-name`. Does not
+  change the members. List order is an internal preference, so this function
+  does not call `:on-changed-sentinels`. It bypasses [[update-addrs!]] and its
+  [[members=]] change detection."
+  [addrs-state_ update-lock master-name addr]
+  (locking update-lock
+    (let [old-state @addrs-state_]
+      (when (utils/get-at old-state master-name :sentinels)
+        (reset! addrs-state_
+          (update-in old-state [master-name :sentinels]
+            #(add-addr->front % addr)))
+        true))))
+
+(defn- resolve-lock [resolve-locks_ master-name]
+  (or
+    (get @resolve-locks_ master-name)
+    (get
+      (swap! resolve-locks_
+        (fn [m] (if (contains? m master-name) m (assoc m master-name (Object.)))))
+      master-name)))
+
+(def ^:private ^:dynamic *deferred-notifies*
+  "Optional volatile of deferred callback tasks. Bound while resolution holds
+  its single-flight lock. Manager and user callbacks must not run under that
+  lock (e.g. [[taoensso.carmine-v4.conns/mgr-clear!]] after a master change)."
+  nil)
+
+(defn- notify-cbs!
+  "Calls [[utils/cb-notify!]], or defers the call while resolution holds its
+  single-flight lock. See [[*deferred-notifies*]]."
+  [cb1 cb2 cb3 data_]
+  (if-let [deferred_ *deferred-notifies*]
+    (do (vswap! deferred_ conj (fn [] (utils/cb-notify! cb1 cb2 cb3 data_))) nil)
+    (do                              (utils/cb-notify! cb1 cb2 cb3 data_))))
+
+(defn- with-deferred-notifies*
+  "Runs `thunk` with callback deferral. After `thunk` releases its resolution
+  locks, calls the deferred tasks in FIFO order. Protects each call
+  independently. Reuses an outer deferral scope and does not flush it."
+  [thunk]
+  (if *deferred-notifies*
+    (thunk) ; Outer scope owns flushing
+    (let [deferred_ (volatile! [])]
+      (try
+        (enc/binding* [*deferred-notifies* deferred_] (thunk))
+        (finally
+          (run! (fn [notify!] (truss/catching (notify!))) @deferred_))))))
+
+(defn- notify-cbs-and-throw!
+  "Like [[notify-cbs!]], but always throws immediately. Only the notification
+  may be deferred."
+  [cbid cb1 cb2 cb3 error]
+  (let [data (assoc (ex-data error) :cbid cbid)
+        data (if-let [cause (or (get data :cause) (ex-cause error))]
+               (assoc data :cause cause)
+               data)]
+    (notify-cbs! cb1 cb2 cb3 data)
+    (throw error)))
+
+(defn- single-flight-resolve!
+  "Runs `full-resolve!` under the master resolution lock. Concurrent calls with
+  the same replica preference join one attempt and reuse its exact ROLE-confirmed
+  address. After failure, a matching waiter rethrows a wrapped error with
+  `:coalesced? true`. Deferred callbacks run only after the lock is released."
+  [resolve-locks_ resolve-completions_ resolve-stats_
+   master-name prefer-read-replica? full-resolve!]
+  (let [completion-key [master-name prefer-read-replica?]
+        completion-before (get @resolve-completions_ completion-key)
+        run-full!
+        (fn []
+          (try
+            (let [addr (full-resolve!)]
+              ;; NB `:token (Object.)` guarantees a FRESH map identity per
+              ;; completion (a bare literal like `{:error nil}` is a
+              ;; compile-time constant, so waiters would see no change and
+              ;; coalescing would silently stop after the first success)
+              (swap! resolve-completions_ assoc completion-key
+                {:token (Object.), :addr addr})
+              addr)
+            (catch InterruptedException t
+              (.interrupt (Thread/currentThread))
+              (throw t))
+            (catch Exception t
+              (swap! resolve-completions_ assoc completion-key
+                {:token (Object.), :error t})
+              (throw t))))]
+    (with-deferred-notifies* ; Bound before, flushed after, the lock
+      (fn []
+        (locking (resolve-lock resolve-locks_ master-name)
+          (let [completion-now (get @resolve-completions_ completion-key)]
+            (if (and completion-now
+                  (not (identical? completion-now completion-before)))
+              ;; Another caller's attempt completed while we awaited the lock;
+              ;; reuse its outcome. NB no cb re-notification for coalesced
+              ;; outcomes: the owning attempt already notified once.
+              (if-let [error (:error completion-now)]
+                (do
+                  (inc-stat! resolve-stats_ master-name :n-coalesced)
+                  (truss/ex-info! "[Carmine] Coalesced Sentinel resolution failure (a concurrent caller's attempt just failed)"
+                    {:eid (get (ex-data error) :eid :carmine.sentinel/resolve-error)
+                     :coalesced?  true
+                     :master-name master-name}
+                    error))
+                (do
+                  (inc-stat! resolve-stats_ master-name :n-coalesced)
+                  (:addr completion-now)))
+              (run-full!))))))))
+
+(defn- resolve-cache-fresh? [resolved-at-nanos_ master-name ttl-ms]
+  (or
+    (nil? ttl-ms)
+    (when-let [resolved-at (get @resolved-at-nanos_ master-name)]
+      (< (- (System/nanoTime) ^long resolved-at)
+        (* (long ttl-ms) 1000000)))))
+
+(defn- ensure-fresh-resolve!
+  [resolved-at-nanos_ resolve-locks_ master-name ttl-ms resolve-fn]
+  (when-not (resolve-cache-fresh? resolved-at-nanos_ master-name ttl-ms)
+    ;; Deferral is established BEFORE this (reentrant) lock so that a nested
+    ;; resolve can never flush cb notifications while the lock is still held
+    (with-deferred-notifies*
+      (fn []
+        (locking (resolve-lock resolve-locks_ master-name)
+          (when-not (resolve-cache-fresh? resolved-at-nanos_ master-name ttl-ms)
+            (resolve-fn)))))))
+
+(defn- confirm-role-candidates [reported-master-addr candidates role-reply-fn]
+  (loop [candidates (seq candidates), checks []]
+    (if-let [[target-addr expected-role] (first candidates)]
+      (let [reply (role-reply-fn target-addr)
+            actual-role (when (vector? reply) (parse-node-role (get reply 0)))
+            replica-state (when (= expected-role :replica) (get reply 3))
+            replica-master-addr
+            (when (and (= expected-role :replica) (string? (get reply 1)) (some? (get reply 2)))
+              (truss/catching (opts/parse-sock-addr [(get reply 1) (get reply 2)])))
+            valid?
+            (and
+              (= actual-role expected-role)
+              (or
+                (not= expected-role :replica)
+                (and
+                  (= replica-state "connected")
+                  (= replica-master-addr reported-master-addr))))
+            check
+            {:addr target-addr, :expected expected-role, :actual actual-role
+             :replica-state replica-state
+             :replica-master-addr replica-master-addr}]
+        (cond
+          (identical? reply utils/deadline-exhausted)
+          {:confirmed nil, :checks checks, :timed-out? true}
+
+          valid?
+          {:confirmed [target-addr expected-role], :checks (conj checks check)}
+
+          :else
+          (recur (next candidates) (conj checks check))))
+      {:confirmed nil, :checks checks})))
+
 (deftype SentinelSpec
-  [sentinel-opts
-   addrs-state_    ; Delayed {<master-name>   {:master <addr>, :replicas [<addr>s], :sentinels [<addr>s]}}
-   resolve-stats_  ;         {<master-name>   {:keys [n-requests n-attempts n-successes n-errors n-resolved-to-X n-changes-to-X]}
-   sentinel-stats_ ;         {<sentinel-addr> {:keys [           n-attempts n-successes n-errors n-ignorant n-unreachable n-misidentified]}
+  [sentinel-spec-opts
+   addrs-state_    ; {<master-name> {:master <addr>, :replicas [<addr>s], :sentinels [<addr>s]}}
+   resolved-at-nanos_
+   resolve-locks_
+   resolve-completions_ ; {[<master-name> <prefer-replica?>] {:keys [token addr error]}}, fresh token per completion
+   resolve-stats_  ;         {<master-name>   {:keys [n-attempts n-coalesced n-successes n-errors n-resolved-to-X n-changes-to-X]}
+   sentinel-stats_ ;         {<sentinel-addr> {:keys [n-attempts n-successes n-errors n-ignorant n-unreachable n-misidentified n-invalid-replies]}
+   update-lock     ; Serializes all `addrs-state_` writes
    ]
 
   Object
   (toString [this]
-    (let [{:keys [masters replicas sentinels]} (unique-addrs (force @addrs-state_))]
+    (let [{:keys [masters replicas sentinels]} (unique-addrs @addrs-state_)]
       (enc/str-impl this "taoensso.carmine.SentinelSpec"
         {:n-masters   (count masters)
          :n-replicas  (count replicas)
@@ -140,8 +328,8 @@ sentinel down-after-milliseconds %3$s 60000"
 
   clojure.lang.IDeref
   (deref [this]
-    (let [addrs-state (force @addrs-state_)]
-      {:sentinel-opts sentinel-opts
+    (let [addrs-state @addrs-state_]
+      {:sentinel-spec-opts (utils/redact-secrets sentinel-spec-opts)
        :nodes-addrs   addrs-state
        :stats
        (let [{:keys [masters replicas sentinels]} (unique-addrs addrs-state)]
@@ -154,34 +342,29 @@ sentinel down-after-milliseconds %3$s 60000"
           :sentinel-stats @sentinel-stats_})}))
 
   ISentinelSpec
-  (sentinel-opts [_] sentinel-opts)
-  (update-addrs! [this master-name cbs kind f]
+  (sentinel-spec-opts [_] sentinel-spec-opts)
+  (update-addrs! [this master-name kind f]
     (truss/have? [:el #{:master :replicas :sentinels}] kind)
     (let [master-name (enc/as-qname master-name)
           master?     (identical? kind :master)]
 
+      ;; `(f old-val)` is computed eagerly under a lock: a throwing `f` (e.g.
+      ;; on a malformed reported address) must leave existing state untouched
+      ;; and must never poison later reads. Callbacks fire outside the lock.
       (if-let [[old-val new-val]
-               (let [swap-result_ (volatile! nil)
-                     new-state_
-                     (swap! addrs-state_
-                       (fn  [old-state_]
-                         (delay ; Minimize contention during (sometimes expensive) updates
-                           (let [old-state (force        old-state_)
-                                 old-val   (utils/get-at old-state master-name kind)
-                                 new-val   (f old-val)]
+               (locking update-lock
+                 (let [old-state @addrs-state_
+                       old-val   (utils/get-at old-state master-name kind)
+                       new-val   (f old-val)]
 
-                             (if-let [unchanged?
-                                      (if master?
-                                        (=        old-val new-val)
-                                        (members= old-val new-val))]
-
-                               old-state
-                               (do
-                                 (vreset! swap-result_ [old-val new-val])
-                                 (assoc-in old-state [master-name kind] new-val)))))))]
-
-                 @new-state_
-                 @swap-result_)]
+                   (if (if master?
+                         (=        old-val new-val)
+                         (members= old-val new-val))
+                     nil
+                     (do
+                       (reset! addrs-state_
+                         (assoc-in old-state [master-name kind] new-val))
+                       [old-val new-val]))))]
 
         (let [cbid
               (case kind
@@ -189,17 +372,17 @@ sentinel down-after-milliseconds %3$s 60000"
                 :replicas  (do (inc-stat! resolve-stats_ master-name :n-changes-to-replicas)  :on-changed-replicas)
                 :sentinels (do (inc-stat! resolve-stats_ master-name :n-changes-to-sentinels) :on-changed-sentinels))]
 
-          (utils/cb-notify!
+          (notify-cbs!
             (get core/*conn-cbs* cbid)
             (get       *mgr-cbs* cbid)
-            (get            cbs  cbid)
+            (get-in sentinel-spec-opts [:cbs cbid])
             (delay
-              (assoc
-                {:cbid          cbid
-                 :master-name   master-name
-                 :sentinel-spec this
-                 :sentinel-opts sentinel-opts
-                 :changed       {:old old-val, :new new-val}})))
+              {:cbid          cbid
+               :via           'update-addrs!
+               :master-name   master-name
+               :sentinel-spec this
+               :sentinel-spec-opts (utils/redact-secrets sentinel-spec-opts)
+               :changed       {:old old-val, :new new-val}}))
           true)
 
         false)))
@@ -207,34 +390,46 @@ sentinel down-after-milliseconds %3$s 60000"
   (resolve-addr! [this master-name sentinel-opts use-cache?]
     (let [master-name (enc/as-qname      master-name)
           node-addrs  (get @addrs-state_ master-name)
-          {:keys [prefer-read-replica?]} sentinel-opts]
+          {:keys [prefer-read-replica?]} sentinel-opts
+          {:keys [conn-opts node-conn-opts cbs update-replicas? update-sentinels?
+                  resolve-timeout-ms retry-delay-ms]}
+          sentinel-spec-opts
 
-      (if use-cache?
-        (or
-          (when prefer-read-replica? (get-rand (get node-addrs :replicas)))
-          (do                                  (get node-addrs :master))))
+          ;; Data-node ROLE checks may need different opts (e.g. auth) than
+          ;; the Sentinel queries themselves
+          node-conn-opts (or node-conn-opts conn-opts)]
 
-      (let [t0 (System/currentTimeMillis)
-            sentinel-addrs (get node-addrs :sentinels)
+      (or
+        (when use-cache? ; Fall back to full resolution on cache miss
+          (or
+            (when prefer-read-replica? (get-rand (get node-addrs :replicas)))
+            (do                                  (get node-addrs :master))))
 
-            {:keys [conn-opts cbs update-replicas? update-sentinels?]}
-            sentinel-opts]
+        (single-flight-resolve!
+          resolve-locks_ resolve-completions_ resolve-stats_
+          master-name prefer-read-replica?
+          (fn full-resolve! []
+        (let [t0             (System/currentTimeMillis)
+              deadline-nanos (utils/timeout-deadline-nanos resolve-timeout-ms)
+              sentinel-addrs (get node-addrs :sentinels)]
 
         (if (empty? sentinel-addrs)
           (do
             (inc-stat! resolve-stats_ master-name :n-errors)
-            (utils/cb-notify-and-throw! :on-resolve-error
+            (notify-cbs-and-throw! :on-resolve-error
               (get core/*conn-cbs*      :on-resolve-error)
               (get       *mgr-cbs*      :on-resolve-error)
               (get            cbs       :on-resolve-error)
-              (truss/ex-info "[Carmine] [Sentinel] No Sentinel server addresses configured for requested master"
+              (truss/ex-info "[Carmine] No Sentinel server addresses configured for requested master"
                 {:eid :carmine.sentinel/no-sentinel-addrs-in-spec
+                 :via           'resolve-addr!
                  :master-name   master-name
                  :sentinel-spec this
-                 :sentinel-opts sentinel-opts}
+                 :sentinel-spec-opts (utils/redact-secrets sentinel-spec-opts)
+                 :sentinel-opts (utils/redact-secrets sentinel-opts)}
                 (Exception. "No Sentinel server addresses in spec"))))
 
-          (let [n-attempts*   (java.util.concurrent.atomic.AtomicLong. 0)
+          (let [n-attempts*   (AtomicLong. 0)
                 attempt-log_  (volatile! []) ; [<debug-entry> ...]
                 error-counts_ (volatile! {}) ; {<sentinel-addr> {:keys [unreachable ignorant misidentified]}}
                 record-error!
@@ -246,6 +441,7 @@ sentinel down-after-milliseconds %3$s 60000"
                       :ignorant      :n-ignorant
                       :unreachable   :n-unreachable
                       :misidentified :n-misidentified
+                      :invalid-reply :n-invalid-replies
                                      :n-other-errors))
 
                   ;; Add entry to attempt log
@@ -265,20 +461,26 @@ sentinel down-after-milliseconds %3$s 60000"
                       (enc/update-in m [sentinel-addr error-kind]
                         (fn [?n] (inc (long (or ?n 0))))))))
 
-                ;; Node addrs reported during resolution
+                ;; Node addrs reported during resolution. Reported sentinels
+                ;; only ever extend the shared cache, so empty simply means
+                ;; nothing to add (cf. tri-state `reported-replica-addrs_`)
                 reported-sentinel-addrs_ (volatile! #{})
-                reported-replica-addrs_  (volatile! #{})
+                ;; Nil means replicas were not usably reported (query failure,
+                ;; or an all-malformed non-empty reply), so preserve the prior
+                ;; cache. An empty collection authoritatively reports no healthy
+                ;; replicas and must clear the shared cache.
+                reported-replica-addrs_  (volatile! nil)
 
                 complete-resolve!
                 (fn
                   ([error]
                    (inc-stat! resolve-stats_ master-name :n-errors)
 
-                   (when-let [addrs @reported-sentinel-addrs_]
-                     (update-addrs! this master-name cbs :sentinels
+                   (when-let [addrs (not-empty @reported-sentinel-addrs_)]
+                     (update-addrs! this master-name :sentinels
                        (fn [old] (add-addrs->back old addrs))))
 
-                   (utils/cb-notify-and-throw! :on-resolve-error
+                   (notify-cbs-and-throw! :on-resolve-error
                      (get core/*conn-cbs*      :on-resolve-error)
                      (get       *mgr-cbs*      :on-resolve-error)
                      (get            cbs       :on-resolve-error)
@@ -289,12 +491,25 @@ sentinel down-after-milliseconds %3$s 60000"
                          resolved-addr           (opts/parse-sock-addr resolved-addr)]
 
                      (when-let [addrs @reported-replica-addrs_]
-                       (update-addrs! this master-name cbs :replicas
+                       (update-addrs! this master-name :replicas
                          (fn [old] (reset-addrs addrs))))
 
-                     (when-let [addrs @reported-sentinel-addrs_]
-                       (update-addrs! this master-name cbs :sentinels
+                     (when-let [addrs (not-empty @reported-sentinel-addrs_)]
+                       (update-addrs! this master-name :sentinels
                          (fn [old] (add-addrs->back old addrs))))
+
+                     ;; Prefer the Sentinel that answered for future resolves
+                     ;; (Ref. Redis Sentinel client guidance)
+                     (promote-sentinel! addrs-state_ update-lock master-name
+                       reporting-sentinel-addr)
+
+                     (when (identical? confirmed-role :master)
+                       (update-addrs! this master-name :master
+                         (fn [_old] resolved-addr)))
+
+                     ;; Published only after ALL address-state updates, so a
+                     ;; fresh cache timestamp never precedes its content
+                     (swap! resolved-at-nanos_ assoc master-name (System/nanoTime))
 
                      (inc-stat! sentinel-stats_ reporting-sentinel-addr :n-successes)
                      (inc-stat! resolve-stats_  master-name             :n-successes)
@@ -303,157 +518,270 @@ sentinel down-after-milliseconds %3$s 60000"
                          :master  :n-resolved-to-master
                          :replica :n-resolved-to-replica))
 
-                     (utils/cb-notify!
+                     (notify-cbs!
                        (get core/*conn-cbs* :on-resolve-success)
                        (get       *mgr-cbs* :on-resolve-success)
                        (get            cbs  :on-resolve-success)
                        (delay
                          {:cbid          :on-resolve-success
+                          :via           'resolve-addr!
                           :master-name   master-name
                           :resolved-to   {:addr resolved-addr :role confirmed-role}
                           :sentinel-spec this
-                          :sentinel-opts sentinel-opts
-                          :ms-elapsed (- (System/currentTimeMillis) t0)}))
+                          :sentinel-spec-opts (utils/redact-secrets sentinel-spec-opts)
+                          :sentinel-opts (utils/redact-secrets sentinel-opts)
+                          :elapsed-ms (- (System/currentTimeMillis) t0)}))
 
-                     (when (identical? confirmed-role :master)
-                       (update-addrs! this master-name cbs :master
-                         (fn [_old] resolved-addr)))
+                     resolved-addr)))
 
-                     resolved-addr)))]
+                confirm-reported-master!
+                (fn [sentinel-addr master-addr ?replica-addrs timed-out?_ t0-attempt]
+                  (let [candidates
+                        (cond-> []
+                          prefer-read-replica?
+                          (into
+                            (map #(vector % :replica)
+                              (shuffle
+                                (vec
+                                  (if (nil? ?replica-addrs)
+                                    (get node-addrs :replicas)
+                                    ?replica-addrs)))))
+                          true
+                          (conj [master-addr :master]))
+                        {:keys [confirmed checks timed-out?]}
+                        (confirm-role-candidates master-addr candidates
+                          (fn [[host port]]
+                            (if-let [attempt-conn-opts
+                                     (utils/conn-opts-before-deadline node-conn-opts deadline-nanos)]
+                              (let [reply
+                                    (utils/call-before-deadline deadline-nanos
+                                      #(try
+                                         (conns/with-new-conn attempt-conn-opts host port master-name
+                                           (fn [_ in out]
+                                             (resp/with-replies in out
+                                               {:natural-replies? true, :as-vec? false, :error-mode :throw} nil
+                                               (fn [] (resp/rcmd "ROLE")))))
+                                         (catch InterruptedException t (throw t))
+                                         (catch Exception _ nil)))]
+                                (if (and (not (identical? reply utils/deadline-exhausted))
+                                      (utils/remaining-timeout-ms deadline-nanos))
+                                  reply
+                                  (do (vreset! timed-out?_ true) utils/deadline-exhausted)))
+                              (do (vreset! timed-out?_ true) utils/deadline-exhausted))))
+                        deadline-live? (boolean (utils/remaining-timeout-ms deadline-nanos))]
+                    (when (or timed-out? (not deadline-live?))
+                      (vreset! timed-out?_ true))
+                    (if (and confirmed deadline-live?)
+                      {:reporting-sentinel-addr sentinel-addr
+                       :reported-master-addr   master-addr
+                       :reported-replica-addrs ?replica-addrs
+                       :resolved-addr          (get confirmed 0)
+                       :confirmed-role         (get confirmed 1)}
+                      (do
+                        (when-not @timed-out?_
+                          (record-error! sentinel-addr t0-attempt :misidentified
+                            {:role-checks checks}))
+                        nil))))]
 
             (loop [n-retries 0]
               (let [t0-attempt (System/currentTimeMillis)
-                    [?reporting-sentinel-addr ?reported-master-addr] ; ?[<addr> <addr>]
+                    timed-out?_ (volatile! false)
+                    ;; Recompute each round: earlier rounds (and concurrent
+                    ;; resolves) may have learned new Sentinels or promoted a
+                    ;; responder to the front
+                    round-sentinel-addrs
+                    (let [spec-addrs
+                          (get (get @addrs-state_ master-name) :sentinels)]
+                      (or
+                        (not-empty
+                          (add-addrs->back spec-addrs
+                            (vec @reported-sentinel-addrs_)))
+                        sentinel-addrs))
+                    resolution
                     (reduce
                       ;; Try each known sentinel addr, sequentially
                       (fn [acc sentinel-addr]
-                        (.incrementAndGet n-attempts*)
-                        (inc-stat! resolve-stats_  master-name   :n-attempts)
-                        (inc-stat! sentinel-stats_ sentinel-addr :n-attempts)
-                        (let [[host port] sentinel-addr
+                        (if-let [attempt-conn-opts
+                                 (utils/conn-opts-before-deadline conn-opts deadline-nanos)]
+                          (do
+                            (.incrementAndGet n-attempts*)
+                            (inc-stat! resolve-stats_  master-name   :n-attempts)
+                            (inc-stat! sentinel-stats_ sentinel-addr :n-attempts)
+                            (let [[host port] sentinel-addr
                               [?master-addr ?replicas-info ?sentinels-info]
                               (case host ; Simulated errors for tests
                                 "unreachable"   [::unreachable                 nil nil]
-                                "misidentified" [["simulated-misidentified" 0] nil nil]
+                                "misidentified" [["simulated-misidentified" 6379] nil nil]
                                 "ignorant"      nil
-                                (try
-                                  (conns/with-new-conn conn-opts host port master-name
-                                    (fn [_ in out]
-                                      (resp/with-replies in out :natural-replies :as-vec
-                                        (fn []
-                                          ;; Always ask about master (may be used as fallback when no replicas)
-                                          (resp/rcmd "SENTINEL" "get-master-addr-by-name" master-name)
+                                "error-reply"
+                                [(com/reply-error "[Carmine] Simulated Redis error reply"
+                                   {:eid :carmine.read/redis-error-reply
+                                    :message "ERR simulated", :code "ERR"})
+                                 nil nil]
+                                (let [reply
+                                      (utils/call-before-deadline deadline-nanos
+                                        #(try
+                                           (conns/with-new-conn attempt-conn-opts host port master-name
+                                             (fn [_ in out]
+                                               (resp/with-replies in out
+                                                 {:natural-replies? true, :as-vec? true, :error-mode :return} nil
+                                                 (fn []
+                                                   ;; Always ask about master (may be used as fallback when no replicas)
+                                                   (resp/rcmd "SENTINEL" "get-master-addr-by-name" master-name)
 
-                                          (if (or prefer-read-replica? update-replicas?)
-                                            ;; Ask about replica nodes
-                                            (resp/rcmd "SENTINEL" "replicas" master-name)
-                                            (resp/local-echo nil))
+                                                   (if update-replicas?
+                                                     ;; Ask about replica nodes
+                                                     (resp/rcmd "SENTINEL" "replicas" master-name)
+                                                     (resp/local-echo nil))
 
-                                          (when update-sentinels?
-                                            ;; Ask about sentinel nodes
-                                            (resp/rcmd "SENTINEL" "sentinels" master-name))))))
+                                                   (when update-sentinels?
+                                                     ;; Ask about sentinel nodes
+                                                     (resp/rcmd "SENTINEL" "sentinels" master-name))))))
 
-                                  (catch Throwable _
-                                    [::unreachable nil nil])))]
+                                           (catch InterruptedException t
+                                             (throw t))
+                                           (catch Exception _
+                                             [::unreachable nil nil])))]
+                                  (if (identical? reply utils/deadline-exhausted)
+                                    [utils/deadline-exhausted nil nil]
+                                    reply)))]
 
-                          (when-let [addrs (parse-nodes-info->addrs  ?replicas-info)] (vreset! reported-replica-addrs_       addrs))
-                          (when-let [addrs (parse-nodes-info->addrs ?sentinels-info)] (vswap!  reported-sentinel-addrs_ into addrs))
+                              (if (or (identical? ?master-addr utils/deadline-exhausted)
+                                    (not (utils/remaining-timeout-ms deadline-nanos)))
+                                (do (vreset! timed-out?_ true) (reduced acc))
+                                (do
+                                  (let [?replica-report
+                                        (when (sequential? ?replicas-info)
+                                          (parse-nodes-info :replica ?replicas-info))
+                                        ?replica-addrs
+                                        (when ?replica-report
+                                          (let [{:keys [addrs n-valid-entries]}
+                                                ?replica-report]
+                                            ;; Empty and well-formed-but-unhealthy
+                                            ;; reports authoritatively clear the
+                                            ;; cache. An all-malformed non-empty
+                                            ;; report must preserve prior state.
+                                            (when (or (empty? ?replicas-info)
+                                                    (pos? n-valid-entries))
+                                              addrs)))]
+                                    ;; Guard like replicas: an error reply here (e.g.
+                                    ;; "-ERR No such master") must not abort resolution
+                                    (when (sequential? ?sentinels-info)
+                                      (when-let [addrs (parse-nodes-info->addrs :sentinel ?sentinels-info)]
+                                        (vswap! reported-sentinel-addrs_ into addrs)))
 
-                          (enc/cond
-                            (vector?    ?master-addr)                        (reduced [sentinel-addr (opts/parse-sock-addr ?master-addr)])
-                            (nil?       ?master-addr)               (do (record-error! sentinel-addr t0-attempt :ignorant    nil) acc)
-                            (identical? ?master-addr ::unreachable) (do (record-error! sentinel-addr t0-attempt :unreachable nil) acc))))
+                                    (cond
+                                      (vector? ?master-addr)
+                                      (if-let [master-addr
+                                               (try
+                                                 (opts/parse-sock-addr ?master-addr)
+                                                 (catch Exception _ nil))]
+                                        (if-let [confirmed
+                                                 (confirm-reported-master!
+                                                   sentinel-addr master-addr
+                                                   ?replica-addrs timed-out?_ t0-attempt)]
+                                          (reduced confirmed)
+                                          (if @timed-out?_ (reduced acc) acc))
+                                        (do
+                                          (record-error! sentinel-addr t0-attempt :invalid-reply nil)
+                                          acc))
 
-                      nil sentinel-addrs)]
+                                      (nil? ?master-addr)
+                                      (do (record-error! sentinel-addr t0-attempt :ignorant nil) acc)
 
-                (if-let [[reporting-sentinel-addr resolved-addr confirmed-role]
-                         (enc/when-let [sentinel-addr ?reporting-sentinel-addr
-                                        master-addr   ?reported-master-addr]
+                                      (identical? ?master-addr ::unreachable)
+                                      (do (record-error! sentinel-addr t0-attempt :unreachable nil) acc)
 
-                           (let [[target-addr expected-role]
-                                 (or
-                                   (when prefer-read-replica?
-                                     (when-let [replica-addr (get-rand @reported-replica-addrs_)]
-                                       [replica-addr :replica]))
+                                      (com/reply-error? ?master-addr)
+                                      (do (record-error! sentinel-addr t0-attempt :error-reply
+                                            {:reply-error (ex-message ?master-addr)
+                                             :reply-error-data (ex-data ?master-addr)})
+                                        acc)
 
-                                   [master-addr :master])
+                                      :else
+                                      (do (record-error! sentinel-addr t0-attempt :invalid-reply nil)
+                                        acc)))))))
+                          (do
+                            (vreset! timed-out?_ true)
+                            (reduced acc))))
 
-                                 actual-role
-                                 (let [[host port] target-addr
-                                       reply
-                                       (try
-                                         (conns/with-new-conn conn-opts host port master-name
-                                           (fn [_ in out]
-                                             (resp/with-replies in out :natural-replies false
-                                               (fn [] (resp/rcmd "ROLE")))))
-                                         (catch Throwable _ nil))]
+                      nil round-sentinel-addrs)]
 
-                                   (when (vector? reply) (get reply 0)))]
+                (if-let [{:keys
+                          [reporting-sentinel-addr reported-master-addr
+                           reported-replica-addrs resolved-addr confirmed-role]}
+                         resolution]
+                  (do
+                    (vreset! reported-replica-addrs_ reported-replica-addrs)
+                    ;; The reported master remains authoritative even when this
+                    ;; resolution selected a read replica. This is what lets a
+                    ;; replica-preferring pool observe failover proactively.
+                    (update-addrs! this master-name :master
+                      (fn [_old] reported-master-addr))
+                    (complete-resolve! reporting-sentinel-addr resolved-addr confirmed-role))
 
-                             ;; Confirm that node and sentinel agree on node's role
-                             (if (= actual-role (name expected-role))
-                               [sentinel-addr target-addr expected-role]
-                               (do
-                                 (record-error! sentinel-addr t0-attempt :misidentified
-                                   {:resolved-to
-                                    {:addr target-addr
-                                     :role {:expected        expected-role
-                                            :actual (keyword actual-role)}}})
-                                 nil))))]
+                  (let [elapsed-ms  (- (System/currentTimeMillis) t0)
+                        remaining-ms (utils/remaining-timeout-ms deadline-nanos)]
 
-                  (complete-resolve! reporting-sentinel-addr resolved-addr confirmed-role)
-
-                  (let [{:keys [resolve-timeout-ms retry-delay-ms]} sentinel-opts
-                        elapsed-ms  (- (System/currentTimeMillis) t0)
-                        retry-at-ms (+ elapsed-ms (long (or retry-delay-ms 0)))]
-
-                    (if (> retry-at-ms (long (or resolve-timeout-ms 0)))
+                    (if (or @timed-out?_
+                          (nil? remaining-ms)
+                          (<= remaining-ms (long retry-delay-ms)))
                       (do
                         (vswap! attempt-log_ conj
                           [:timeout
                            (str
-                             "(" elapsed-ms " elapsed + " retry-delay-ms " delay = " retry-at-ms
-                             ") > " resolve-timeout-ms " timeout")])
+                             elapsed-ms " elapsed, "
+                             (or remaining-ms 0) " remaining, "
+                             retry-delay-ms " retry delay, "
+                             resolve-timeout-ms " total timeout")])
 
                         (complete-resolve!
-                          (truss/ex-info "[Carmine] [Sentinel] Timed out while trying to resolve requested master"
+                          (truss/ex-info "[Carmine] Timed out while trying to resolve requested master"
                             {:eid :carmine.sentinel/resolve-timeout
+                             :via             'resolve-addr!
                              :master-name     master-name
                              :sentinel-spec   this
-                             :sentinel-opts   sentinel-opts
+                             :sentinel-spec-opts (utils/redact-secrets sentinel-spec-opts)
+                             :sentinel-opts   (utils/redact-secrets sentinel-opts)
                              :sentinel-errors @error-counts_
                              :n-attempts      (.get n-attempts*)
                              :n-retries       n-retries
-                             :ms-elapsed      (- (System/currentTimeMillis) t0)
+                             :elapsed-ms      (- (System/currentTimeMillis) t0)
                              :attempt-log     @attempt-log_})))
                       (do
                         (vswap! attempt-log_ conj [:retry-after-sleep retry-delay-ms])
-                        (Thread/sleep (int retry-delay-ms))
-                        (recur (inc n-retries)))))))))))))
+                        (utils/backoff! retry-delay-ms n-retries)
+                        (recur (inc n-retries))))))))))))))))
 
   (resolved-addr? [this master-name sentinel-opts use-cache? addr]
-    (when-not use-cache? ; Update cache
-      (resolve-addr! this master-name sentinel-opts false))
+    (let [master-name (enc/as-qname master-name)]
+      (cond
+        (not use-cache?)
+        (resolve-addr! this master-name sentinel-opts false)
 
-    (let [addr        (opts/parse-sock-addr addr)
-          master-name (enc/as-qname      master-name)
+        (= use-cache? :fresh-if-stale)
+        (let [ttl-ms (get sentinel-spec-opts :resolve-cache-ttl-ms)]
+          (ensure-fresh-resolve! resolved-at-nanos_ resolve-locks_ master-name ttl-ms
+            #(resolve-addr! this master-name sentinel-opts false))))
+
+      (let [addr        (opts/parse-sock-addr addr)
           node-addrs  (get @addrs-state_ master-name)]
-      (or
-        (when (= addr (get node-addrs :master)) :master)
-        (when (and (get sentinel-opts :prefer-read-replica?)
-                (enc/rfirst #(= % addr) (get node-addrs :replicas)))
-          :replica)))))
+        (or
+          (when (= addr (get node-addrs :master)) :master)
+          (when (and (get sentinel-opts :prefer-read-replica?)
+                  (enc/rfirst #(= % addr) (get node-addrs :replicas)))
+            :replica))))))
 
 (enc/def-print-impl [ss SentinelSpec] (str "#" ss))
 
 (defn ^:public sentinel-spec?
-  "Returns true iff given argument is a Carmine `SentinelSpec`."
+  "Returns true iff the given `x` is a Carmine `SentinelSpec`."
   [x] (instance? SentinelSpec x))
 
 (defn ^:public sentinel-spec
-  "Given a Redis Sentinel server addresses map of form
-    {<master-name> [[<sentinel-server-host> <sentinel-server-port>] ...]},
-  returns a new stateful `SentinelSpec` for use in `conn-opts`.
+  "Given a Redis Sentinel address map of the following form, returns a stateful
+  `SentinelSpec` for use in `conn-opts`:
+    {<master-name> [[<sentinel-server-host> <sentinel-server-port>] ...]}
 
     (def my-sentinel-spec
       \"Stateful Redis Sentinel server spec. Will be kept
@@ -463,12 +791,14 @@ sentinel down-after-milliseconds %3$s 60000"
          :message-queue [[\"192.158.1.38\" 26379] ...]}))
       => stateful `SentinelSpec`
 
-  For options docs, see `*default-sentinel-opts*` docstring.
-  See also `get-env` for a util to load `sentinel-addrs-map`
-  from environmental config."
+  The optional second argument sets the discovery, cache, and callback policy.
+  All managers that use this spec share the policy. See
+  [[default-sentinel-spec-opts]] for options. Put per-manager selection and pool
+  clearing options in the server's `:sentinel-opts`."
   ([sentinel-addrs-map              ] (sentinel-spec sentinel-addrs-map nil))
-  ([sentinel-addrs-map sentinel-opts]
-   (let [addrs-state
+  ([sentinel-addrs-map sentinel-spec-opts]
+   (let [sentinel-spec-opts (opts/parse-sentinel-spec-opts sentinel-spec-opts)
+         addrs-state
          (reduce-kv
            (fn [m master-name addrs]
              (assoc m (enc/as-qname master-name)
@@ -476,10 +806,14 @@ sentinel down-after-milliseconds %3$s 60000"
            {} (truss/have map? sentinel-addrs-map))]
 
      (SentinelSpec.
-       (truss/have [:or nil? map?] sentinel-opts)
+       sentinel-spec-opts
        (atom addrs-state)
        (atom {})
-       (atom {})))))
+       (atom {})
+       (atom {})
+       (atom {})
+       (atom {})
+       (Object.)))))
 
 (comment
   (resolve-addr!
@@ -489,9 +823,10 @@ sentinel down-after-milliseconds %3$s 60000"
 
   (conns/with-new-conn {} "127.0.0.1" 26379 #_6379 nil
     (fn [_ in out]
-      (resp/with-replies in out false false
+      (resp/with-replies in out
+        {:natural-replies? true, :as-vec? true, :error-mode :return} nil
         (fn []
           (resp/rcmd "ROLE")
-          #_(resp/rcmd "SENTINEL\" \"get-master-addr-by-name\" \"my-master\"")
-          #_(resp/rcmd "SENTINEL\" \"replicas\"                \"my-master\"")
-          #_(core/rcmd "SENTINEL\" \"sentinels\"               \"my-master\""))))))
+          #_(resp/rcmd "SENTINEL" "get-master-addr-by-name" "my-master")
+          #_(resp/rcmd "SENTINEL" "replicas"                "my-master")
+          #_(resp/rcmd "SENTINEL" "sentinels"               "my-master"))))))
