@@ -36,6 +36,9 @@
     [[org.clojure/clojure                  "1.11.4"]
      [com.github.clj-easy/graal-build-time "1.0.6"]]}
 
+   ;; Lein's default JVM opts stop the JIT at C1, which skews benchmarks
+   :bench {:jvm-opts ^:replace ["-server"]}
+
    :dev
    {;; :jvm-opts ["-server" "-Dtaoensso.elide-deprecated=true"]
     :global-vars
@@ -59,8 +62,35 @@
      [lein-ancient "1.0.0"]]}}
 
   :test-selectors
-  {:v3 (fn [{:keys [ns]} & _] (.startsWith (str ns) "taoensso.carmine."))
-   :v4 (fn [{:keys [ns]} & _] (.startsWith (str ns) "taoensso.carmine-v4."))}
+  {:default
+   (fn [{:keys [benchmark v4-canary redis-auth tls-integration cluster-tls-integration provider-integration
+                sentinel-integration cluster-integration]} & _]
+     (not (or benchmark v4-canary redis-auth tls-integration provider-integration
+            cluster-tls-integration sentinel-integration cluster-integration)))
+
+   :benchmark :benchmark
+   :v4-canary :v4-canary
+   :redis-auth :redis-auth
+   :tls-integration :tls-integration
+   :cluster-tls-integration :cluster-tls-integration
+   :provider-integration :provider-integration
+   :sentinel-integration :sentinel-integration
+   :cluster-integration :cluster-integration
+   :v3 (fn [{:keys [ns benchmark v4-canary redis-auth tls-integration cluster-tls-integration provider-integration
+                    sentinel-integration cluster-integration]} & _]
+         (and (not benchmark) (not v4-canary) (not redis-auth) (not tls-integration)
+           (not cluster-tls-integration) (not provider-integration) (not sentinel-integration) (not cluster-integration)
+           (.startsWith (str ns) "taoensso.carmine.")))
+   :v4 (fn [{:keys [ns benchmark v4-canary redis-auth tls-integration cluster-tls-integration provider-integration
+                    sentinel-integration cluster-integration]} & _]
+         (and (not benchmark) (not v4-canary) (not redis-auth) (not tls-integration)
+           (not cluster-tls-integration) (not provider-integration) (not sentinel-integration) (not cluster-integration)
+           (.startsWith (str ns) "taoensso.carmine-v4.")))
+   :v4-core (fn [{:keys [ns benchmark v4-canary redis-auth tls-integration cluster-tls-integration provider-integration
+                         sentinel-integration cluster-integration]} & _]
+              (and (not benchmark) (not v4-canary) (not redis-auth) (not tls-integration)
+                (not cluster-tls-integration) (not provider-integration) (not sentinel-integration) (not cluster-integration)
+                (.startsWith (str ns) "taoensso.carmine-v4.")))}
 
   :aliases
   {"start-dev"     ["with-profile" "+dev" "repl" ":headless"]
@@ -69,6 +99,17 @@
 
    "test-v3"      ["with-profile" "+c1.13:+c1.12:+c1.11:+c1.10" "test" ":v3"]
    "test-v4"      ["with-profile" "+c1.13:+c1.12:+c1.11:+c1.10" "test" ":v4"]
+   "test-v4-core" ["with-profile" "+c1.13:+c1.12:+c1.11:+c1.10" "test" ":v4-core"]
+   "test-v4-auth" ["test" ":redis-auth"]
+   "test-v4-tls" ["test" ":tls-integration"]
+   "test-v4-cluster-tls" ["test" ":cluster-tls-integration"]
+   "test-v4-provider" ["test" ":provider-integration"]
+   "test-v4-sentinel" ["test" ":sentinel-integration"]
+   "test-v4-cluster"  ["test" ":cluster-integration"]
    "test-clj"     ["with-profile" "+c1.13:+c1.12:+c1.11:+c1.10" "test"]
+   "bench-v3-v4"  ["with-profile" "+bench" "test" ":benchmark"]
+   "test-v4-canary" ["test" ":v4-canary"]
+   ;; Backward-compatible name; now runs the side-by-side v3/v4 baseline.
+   "bench-v4"     ["with-profile" "+bench" "test" ":benchmark"]
    ;; "test-cljs" ["with-profile" "+c1.12" "cljsbuild"         "test"]
    "test-all"     ["do" ["clean"] ["test-clj"] #_["test-cljs"]]})
