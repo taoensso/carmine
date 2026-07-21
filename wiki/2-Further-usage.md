@@ -84,6 +84,12 @@ You can adjust subscriptions and/or handlers:
 (car/close-listener my-listener)
 ```
 
+Intentional closure is silent and does not invoke the Listener handler.
+
+Initial subscriptions passed to `with-new-pubsub-listener` are ready when it
+returns. Subscription changes made later with `with-open-listener` remain
+asynchronous.
+
 Note that subscriptions are **connection-local**: you can have three different listeners each listening for different messages and using different handlers.
 
 # Reply parsing
