@@ -2,6 +2,25 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# Unreleased
+
+- **➤ \[mod] [BREAKING]** \[pubsub/listeners] \[#310] Wait for initial subscriptions before returning a new Listener.
+- **➤ \[mod] [BREAKING]** \[mq] Make worker `close` terminal; use `stop` for restartable shutdown.
+- **➤ \[mod] [BREAKING]** \[pubsub/listeners] \[#311] Stop reporting `:conn-closed` after intentional Listener closure.
+- \[fix] \[mq] Fence stale handler finalization with per-delivery lease tokens.
+- \[fix] \[pubsub/listeners] Fix subscriber-mode PING probes so they cannot consume messages (@mbezjak).
+- \[fix] \[connections] Reject and clean up failed connection initialization.
+- \[fix] \[mq] Use the Redis server clock for message queue timekeeping.
+- \[fix] \[mq] Reserve handler capacity before leasing messages and reject unusable thread counts.
+- \[fix] \[mq] Honour `:eoq-backoff-ms` while workers are idle.
+- \[fix] \[mq] Isolate monitor failures and make worker lifecycle transitions deterministic.
+- \[fix] \[api] \[#324] Restore `hmget*` and `hgetall*` as supported APIs.
+- \[new] \[mq] Add handler `lock-extend!` for renewing long-running leases.
+- \[new] \[commands] Update the generated API from the latest Redis command spec.
+- \[doc] \[mq] Clarify lease-based, at-least-once delivery semantics.
+
+---
+
 # `v3.5.0` (2025-11-06)
 
 - **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.5.0)
