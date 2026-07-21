@@ -2,6 +2,46 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.6.0` (2026-11-09)
+
+- **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.6.0)
+- **Versioning**: [Break Versioning](https://www.taoensso.com/break-versioning)
+
+This is a maintenance release with **minor breaking changes** affecting a small minority of users (see linked commits below for details).
+
+Please **test carefully before updating production** (particularly MQ workloads), and report any unexpected problems on [GitHub](https://github.com/taoensso/carmine/issues).
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Since `v3.5.0` (2025-11-06)
+
+### BREAKING
+
+- **➤ \[mod]** \[pubsub] \[#310] Wait for initial subscriptions (requires `PING` permission, may throw after `:ready-timeout-ms`) [[3eae109f](https://github.com/taoensso/carmine/commit/3eae109f)]
+- **➤ \[mod]** \[pubsub] \[#311] Make intentional Listener close silent [[c94b7dea](https://github.com/taoensso/carmine/commit/c94b7dea)]
+- **➤ \[mod]** \[mq] Make worker `close` terminal (use `stop` to allow restart) [[b3643089](https://github.com/taoensso/carmine/commit/b3643089)]
+- **➤ \[mod]** \[conns] Connection setup now fails on AUTH/SELECT/`conn-setup-fn` errors (previously silently ignored) [[a61235fa](https://github.com/taoensso/carmine/commit/a61235fa)]
+- **➤ \[mod]** Update Nippy v3.6 → v3.9 (see [release notes](https://github.com/taoensso/nippy/releases/tag/v3.9.0)) [[ba56847b](https://github.com/taoensso/carmine/commit/ba56847b)]
+- **➤ \[mod]** Update Redis commands (removes `hgetf` and `hsetf`) [[d788da29](https://github.com/taoensso/carmine/commit/d788da29)]
+- **➤ \[mod]** [mq] Workers now need Redis `TIME` permission (allowed by default)
+
+### New
+
+- \[new] \[mq] Fence stale handler results and add `lock-extend!` [[c0f59dc7](https://github.com/taoensso/carmine/commit/c0f59dc7)]
+- \[new] Add ~200 new Redis commands, incl. module commands (`bf.*`, `ft.*`, `json.*`, `ts.*`, etc.) [[d788da29](https://github.com/taoensso/carmine/commit/d788da29)]
+- \[new] \[mq] Add worker `:drain` to await outstanding handlers [[b3643089](https://github.com/taoensso/carmine/commit/b3643089)]
+
+### Fixes
+
+- \[fix] \[mq] Reserve handler capacity, isolate monitor failures, and coordinate worker lifecycle [[b3643089](https://github.com/taoensso/carmine/commit/b3643089)]
+- \[fix] \[mq] Use Redis server time (needs `TIME` permission) [[9823a424](https://github.com/taoensso/carmine/commit/9823a424)]
+- \[fix] \[mq] Honour `:eoq-backoff-ms` when idle [[0c2803a7](https://github.com/taoensso/carmine/commit/0c2803a7)]
+- \[fix] \[pubsub] Prevent Listener probes dropping messages (@mbezjak) [[689d8220](https://github.com/taoensso/carmine/commit/689d8220)]
+- \[fix] \[conns] Clean up sockets on failed connection initialization [[a61235fa](https://github.com/taoensso/carmine/commit/a61235fa)]
+- \[fix] \[#324] Remove unintended deprecation of `hmget*` and `hgetall*` [[e04bc9d2](https://github.com/taoensso/carmine/commit/e04bc9d2)]
+
+---
+
 # `v3.5.0` (2025-11-06)
 
 - **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.5.0)

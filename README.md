@@ -1,5 +1,5 @@
 <a href="https://www.taoensso.com/clojure" title="More stuff by @ptaoussanis at www.taoensso.com"><img src="https://www.taoensso.com/open-source.png" alt="Taoensso open source" width="340"/></a>  
-[**API**][cljdoc] | [**Wiki**][GitHub wiki] | [Slack][] | Latest release: [v3.5.0](../../releases/tag/v3.5.0) (2025-11-06)
+[**API**][cljdoc] | [**Wiki**][GitHub wiki] | [Slack][] | Latest release: [v3.6.0](../../releases/tag/v3.6.0) (2026-11-09)
 
 [![Main tests][Main tests SVG]][Main tests URL]
 [![Graal tests][Graal tests SVG]][Graal tests URL]
@@ -45,7 +45,7 @@ You can [help support][sponsor] continued work on this project and [others][my w
 
 ## License
 
-Copyright &copy; 2014-2025 [Peter Taoussanis][].  
+Copyright &copy; 2014-2026 [Peter Taoussanis][].  
 Licensed under [EPL 1.0](LICENSE.txt) (same as Clojure).
 
 <!-- Common -->
