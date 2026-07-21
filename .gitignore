@@ -10,6 +10,7 @@ pom.xml*
 /target/
 /checkouts/
 /logs/
+/carmine-tundra-test-temp/
 /docs/
 .idea/
 *.iml
