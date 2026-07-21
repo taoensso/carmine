@@ -8,7 +8,7 @@ See linked docstrings below for features and usage:
 | :------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | [`worker`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#worker)                         | Returns a worker for named queue. Deref worker for detailed status info! |
 | [`enqueue`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#enqueue)                       | Enqueues given message for processing by active worker/s.                |
-| [`set-min-log-level!`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#set-min-log-level!) | Sets minimum log level for message queue logs.                           |
+| [`queue-status`](https://cljdoc.org/d/com.taoensso/carmine/CURRENT/api/taoensso.carmine.message-queue#queue-status)             | Returns a detailed status map for the named queue.                       |
 
 # Example
 
@@ -39,7 +39,7 @@ See linked docstrings below for features and usage:
  :stats
  {:queue-size        {:last 1332, :max 1352, :p90 1323, ...}
   :queueing-time-ms  {:last 203,  :max 4774, :p90 300,  ...}
-  :handling-time-ms  {:last 11,   :max 879,  :p90 43,   ...}
+  :handling-time-ns  {:last 11e6, :max 879e6, :p90 43e6, ...}
   :counts
   {:handler/success     5892
    :handler/retry       808
@@ -53,7 +53,7 @@ See linked docstrings below for features and usage:
 The following semantics are provided:
 
 - Messages are **persistent** (durable as per Redis config).
-- Messages are **handled once and only once**.
+- Messages are **handled once and only once** (lock based).
 - Messages are **handled in loose order** (exact order may be affected by the number of concurrent handler threads, and retry/backoff features, etc.).
 - Messages are **fault-tolerant** (preserved until acknowledged as handled).
 - Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a configurable per-message backoff period.
