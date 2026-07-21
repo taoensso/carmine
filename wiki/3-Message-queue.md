@@ -58,3 +58,11 @@ The following semantics are provided:
 - Messages are **fault-tolerant** (preserved until acknowledged as handled).
 - Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a configurable per-message backoff period.
 - Messages are serialized with [Nippy](https://www.taoensso.com/nippy) and stored as [byte strings](https://redis.io/docs/latest/develop/data-types/strings) in Redis hashes, so each serialized message has a **maximum size of 512MiB**. You'll normally want to use *much* smaller messages though (typically small maps or UUIDs/pointers to larger data stores when necessary).
+
+# Carmine v4 preview
+
+This page documents the v3 queue. Carmine v4 includes a separate Redis 7+
+queue with fenced, at-least-once delivery and non-destructive snapshot tooling
+for a paused v3 queue. See the compartmentalized
+[Carmine v4 preview](./5-Carmine-v4-preview#message-queue) for its motivation,
+high-level contract, and links to the exact API documentation.

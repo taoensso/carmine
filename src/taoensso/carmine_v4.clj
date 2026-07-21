@@ -1,8 +1,71 @@
 (ns taoensso.carmine-v4
   "Experimental Carmine v4 API for Redis RESP2/3, Sentinel, and Cluster.
 
-  This public API can change before the final v4 release. See
-  `doc/v4/README.md` for setup, contracts, limitations, and migration."
+  This public API can change before the final v4 release.
+
+  Quick start
+
+    (require '[taoensso.carmine-v4 :as car])
+
+    (defonce mgr (car/conn-manager))
+    (car/wcar mgr
+      (car/set \"user:1\" \"Ada\")
+      (car/get \"user:1\"))
+    ;; => [\"OK\" \"Ada\"]
+
+    ;; During application shutdown:
+    (car/conn-manager-close! mgr)
+
+  Connection managers
+
+  Create one long-lived manager for each Redis configuration and pass it to
+  operations. [[conn-manager]] is the usual default. Alternatives are
+  [[conn-manager-unpooled]] and [[conn-manager-clustered]]. Managers own their
+  connections and background resources; close them during application
+  shutdown. Deref a manager for redacted configuration and diagnostics, or use
+  [[conn-manager-stats]] for its stable statistics snapshot.
+
+  [[default-conn-opts]] documents connection, authentication, TLS, RESP,
+  callback, and protocol-limit options. A server can be a standalone URI or
+  address, or a server map containing a [[sentinel-spec]] or [[cluster-spec]].
+  Carmine has no hidden global pool.
+
+  Requests and replies
+
+  Redis command functions queue requests inside a [[wcar]] or [[with-car]]
+  request context. The boundary flushes them as a pipeline and returns their
+  replies. [[with-replies]] creates a nested boundary when an earlier reply is
+  needed to construct later requests.
+
+  Reply processing has three phases:
+
+    1. Decode the complete wire reply, optionally using a special read mode
+       such as [[as-bytes]], [[thaw]], or [[skip-replies]].
+    2. Apply at most one parser such as [[parse]], [[as-long]], or
+       [[parse-aggregates]]. A nested parser replaces the outer parser;
+       [[unparsed]] cancels it.
+    3. Complete the request boundary using its `:as-vec?`,
+       `:natural-replies?`, and `:error-mode` options.
+
+  Set reply transformations before queueing the request they should affect.
+  [[natural-replies]] is a hard bypass for internal reads that caller bindings
+  must not change. Parsers receive a complete aggregate as one value. RESP3
+  attributes, top-level server pushes, and protocol errors have their own
+  handling; see the relevant function docstrings for exact contracts. Parsers
+  used with Cluster must be thread-safe and non-blocking.
+
+  Dedicated APIs
+
+  Connection-affine operations do not use ordinary command pipelines. Use
+  [[transact!]] for WATCH/MULTI/EXEC and [[pubsub-listener]] for Pub/Sub.
+  Scripting helpers include [[eval*]], [[prepare-lua]], and [[lua]]. Arbitrary
+  commands use [[rcmd]], with [[cluster-key]] and [[with-cluster-target]] when
+  Cluster routing needs explicit information.
+
+  The Redis 7+ message queue is in
+  [[taoensso.carmine-v4.message-queue]]. It has explicit queue and worker
+  handles, fenced at-least-once delivery, scheduling, priorities, coalescing,
+  and retained dead letters."
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:refer-clojure
    :exclude [bytes time get set key keys type sync sort eval
