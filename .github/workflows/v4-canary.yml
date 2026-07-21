@@ -1,0 +1,62 @@
+name: Carmine v4 scheduled canary
+
+on:
+  schedule:
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: carmine-v4-scheduled-canary
+  cancel-in-progress: true
+
+jobs:
+  mixed-core-mq-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        resp3: ['false', 'true']
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: 'corretto'
+          java-version: '21'
+          check-latest: true
+
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
+        with:
+          lein: 2.12.0
+
+      - uses: supercharge/redis-github-action@bc274cb7238cd63a45029db04ee48c07a72609fd # 1.8.1
+        with:
+          redis-version: '8'
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: clj-deps-${{ runner.os }}-java-21-${{ github.job }}-test-v4-canary-${{ hashFiles('project.clj') }}
+          restore-keys: |
+            clj-deps-${{ runner.os }}-java-21-${{ github.job }}-test-v4-canary-
+            clj-deps-${{ runner.os }}-java-21-${{ github.job }}-
+            clj-deps-${{ runner.os }}-java-21-
+            clj-deps-${{ runner.os }}-
+            deps-
+
+      # test-v4-canary and test-v4-mq-soak intentionally select the same
+      # mixed core/MQ test, so run it once per protocol rather than redundantly.
+      - run: lein test-v4-canary
+        env:
+          CARMINE_TEST_REDIS_MAJOR: '8'
+          CARMINE_TEST_REDIS_RESP3: ${{ matrix.resp3 }}
+          CARMINE_MQ_SOAK_SECONDS: '60'
+          CARMINE_MQ_SOAK_IDS: '64'
+          CARMINE_MQ_SOAK_PRODUCERS: '4'
+          CARMINE_MQ_SOAK_CONCURRENCY: '8'
+          CARMINE_V4_CANARY_CORE_CONCURRENCY: '4'
+          CARMINE_MQ_SOAK_TIMEOUT_SECONDS: '300'
