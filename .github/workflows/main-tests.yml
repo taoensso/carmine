@@ -21,6 +21,9 @@ jobs:
           - {version: 'v3+v4', java: '17', redis: '7', test-alias: test-all}
           - {version: 'v3+v4', java: '21', redis: '7', test-alias: test-all}
           - {version: 'v3+v4', java: '25', redis: '7', test-alias: test-all}
+          - {version: 'v4', java: '21', redis: '5', test-alias: test-v4-core, resp3: 'false', default-conn-opts: '{:init {:resp3? false}}'}
+          - {version: 'v4', java: '21', redis: '6', test-alias: test-v4-core}
+          - {version: 'v4', java: '21', redis: '8', test-alias: test-v4}
 
     runs-on: ubuntu-latest
     steps:
@@ -52,3 +55,469 @@ jobs:
             deps-
 
       - run: lein ${{ matrix.test-alias }}
+        env:
+          CARMINE_TEST_REDIS_MAJOR: ${{ matrix.redis }}
+          CARMINE_TEST_REDIS_RESP3: ${{ matrix.resp3 || 'true' }}
+          TAOENSSO_CARMINE_DEFAULT_CONN_OPTS: ${{ matrix.default-conn-opts || '{}' }}
+
+  redis-auth-tests:
+    name: v4-redis-auth-tests (${{ matrix.redis }})
+    strategy:
+      fail-fast: false
+      matrix:
+        redis: ['5', '6', '7', '8']
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+          check-latest: true
+
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
+        with:
+          lein: 2.12.0
+
+      - name: Start password-protected Redis
+        uses: supercharge/redis-github-action@bc274cb7238cd63a45029db04ee48c07a72609fd # 1.8.1
+        with:
+          redis-version: ${{ matrix.redis }}
+          redis-password: 'carmine-compat-password'
+          redis-container-name: 'redis-auth'
+
+      - name: Configure ACL user
+        if: matrix.redis != '5'
+        run: |
+          docker exec redis-auth redis-cli -a carmine-compat-password \
+            ACL SETUSER carmine on '>carmine-acl-password' allcommands allkeys
+          docker exec redis-auth redis-cli -a carmine-compat-password \
+            ACL SETUSER carmine-nopass on nopass allcommands allkeys
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache-deps
+        with:
+          path: ~/.m2/repository
+          key: clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-${{ hashFiles('project.clj') }}
+          restore-keys: |
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-
+            clj-deps-${{ runner.os }}-java-17-
+            clj-deps-${{ runner.os }}-
+            deps-
+
+      - run: lein test-v4-auth
+        env:
+          CARMINE_TEST_REDIS_MAJOR: ${{ matrix.redis }}
+          CARMINE_TEST_REDIS_PASSWORD: 'carmine-compat-password'
+          CARMINE_TEST_REDIS_ACL_USERNAME: 'carmine'
+          CARMINE_TEST_REDIS_ACL_PASSWORD: 'carmine-acl-password'
+          CARMINE_TEST_REDIS_ACL_NOPASS_USERNAME: 'carmine-nopass'
+
+  redis-tls-tests:
+    name: v4-redis-tls-tests (${{ matrix.redis }})
+    strategy:
+      fail-fast: false
+      matrix:
+        redis: ['7', '8']
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+          check-latest: true
+
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
+        with:
+          lein: 2.12.0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache-deps
+        with:
+          path: ~/.m2/repository
+          key: clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-${{ hashFiles('project.clj') }}
+          restore-keys: |
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-
+            clj-deps-${{ runner.os }}-java-17-
+            clj-deps-${{ runner.os }}-
+            deps-
+
+      - name: Generate test CA and server certificate
+        run: |
+          mkdir -p /tmp/carmine-tls
+          openssl genrsa -out /tmp/carmine-tls/ca.key 2048
+          openssl req -x509 -new -sha256 -days 1 \
+            -key /tmp/carmine-tls/ca.key \
+            -out /tmp/carmine-tls/ca.crt \
+            -subj '/CN=Carmine test CA'
+          openssl genrsa -out /tmp/carmine-tls/server.key 2048
+          openssl req -new -sha256 \
+            -key /tmp/carmine-tls/server.key \
+            -out /tmp/carmine-tls/server.csr \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost'
+          openssl x509 -req -sha256 -days 1 \
+            -in /tmp/carmine-tls/server.csr \
+            -CA /tmp/carmine-tls/ca.crt \
+            -CAkey /tmp/carmine-tls/ca.key \
+            -CAcreateserial -copy_extensions copy \
+            -out /tmp/carmine-tls/server.crt
+          chmod 644 /tmp/carmine-tls/*
+
+      - name: Start TLS-only Redis
+        run: |
+          docker run -d --name carmine-tls --network host \
+            -v /tmp/carmine-tls:/tls:ro redis:${{ matrix.redis }} \
+            redis-server --port 0 --tls-port 6380 \
+              --tls-cert-file /tls/server.crt \
+              --tls-key-file /tls/server.key \
+              --tls-ca-cert-file /tls/ca.crt \
+              --tls-auth-clients no --save '' --appendonly no
+
+          for i in {1..120}; do
+            if docker exec carmine-tls redis-cli --tls \
+              --cacert /tls/ca.crt -h localhost -p 6380 PING | grep PONG >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          exit 1
+
+      - run: lein test-v4-tls
+        env:
+          CARMINE_TEST_TLS_HOST: localhost
+          CARMINE_TEST_TLS_PORT: 6380
+          CARMINE_TEST_TLS_CA_CERT: /tmp/carmine-tls/ca.crt
+          CARMINE_TEST_TLS_MISMATCH_HOST: 127.0.0.1
+
+      - name: Show Redis logs on failure
+        if: failure()
+        run: docker logs carmine-tls || true
+
+  redis-cluster-tls-tests:
+    name: v4-redis-cluster-tls-tests (${{ matrix.redis }})
+    strategy:
+      fail-fast: false
+      matrix:
+        redis: ['7', '8']
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+          check-latest: true
+
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
+        with:
+          lein: 2.12.0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache-deps
+        with:
+          path: ~/.m2/repository
+          key: clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-${{ hashFiles('project.clj') }}
+          restore-keys: |
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-
+            clj-deps-${{ runner.os }}-java-17-
+            clj-deps-${{ runner.os }}-
+            deps-
+
+      - name: Generate TLS Cluster certificate
+        run: |
+          mkdir -p /tmp/carmine-cluster-tls
+          openssl genrsa -out /tmp/carmine-cluster-tls/ca.key 2048
+          openssl req -x509 -new -sha256 -days 1 \
+            -key /tmp/carmine-cluster-tls/ca.key \
+            -out /tmp/carmine-cluster-tls/ca.crt \
+            -subj '/CN=Carmine Cluster test CA'
+          openssl genrsa -out /tmp/carmine-cluster-tls/server.key 2048
+          openssl req -new -sha256 \
+            -key /tmp/carmine-cluster-tls/server.key \
+            -out /tmp/carmine-cluster-tls/server.csr \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          openssl x509 -req -sha256 -days 1 \
+            -in /tmp/carmine-cluster-tls/server.csr \
+            -CA /tmp/carmine-cluster-tls/ca.crt \
+            -CAkey /tmp/carmine-cluster-tls/ca.key \
+            -CAcreateserial -copy_extensions copy \
+            -out /tmp/carmine-cluster-tls/server.crt
+          chmod 644 /tmp/carmine-cluster-tls/*
+
+      - name: Start TLS-only Redis Cluster
+        run: |
+          for port in 7100 7101 7102; do
+            docker run -d --name carmine-cluster-tls-$port --network host \
+              -v /tmp/carmine-cluster-tls:/tls:ro redis:${{ matrix.redis }} \
+              redis-server --port 0 --tls-port $port \
+                --tls-cert-file /tls/server.crt \
+                --tls-key-file /tls/server.key \
+                --tls-ca-cert-file /tls/ca.crt \
+                --tls-auth-clients no --tls-cluster yes \
+                --save '' --appendonly no \
+                --cluster-enabled yes --cluster-config-file nodes.conf \
+                --cluster-node-timeout 5000 \
+                --cluster-announce-ip 127.0.0.1 \
+                --cluster-announce-port 0 \
+                --cluster-announce-tls-port $port \
+                --cluster-announce-bus-port $((port + 10000))
+          done
+
+          ready=false
+          for i in {1..120}; do
+            ready=true
+            for port in 7100 7101 7102; do
+              docker exec carmine-cluster-tls-$port redis-cli --tls \
+                --cacert /tls/ca.crt -h 127.0.0.1 -p $port PING | grep PONG >/dev/null || ready=false
+            done
+            if [ "$ready" = true ]; then
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$ready" != true ]; then
+            exit 1
+          fi
+
+          docker run --rm --network host \
+            -v /tmp/carmine-cluster-tls:/tls:ro redis:${{ matrix.redis }} \
+            redis-cli --tls --cacert /tls/ca.crt --cluster create \
+              127.0.0.1:7100 127.0.0.1:7101 127.0.0.1:7102 \
+              --cluster-replicas 0 --cluster-yes
+
+          for i in {1..120}; do
+            info=$(docker exec carmine-cluster-tls-7100 redis-cli --tls \
+              --cacert /tls/ca.crt -h 127.0.0.1 -p 7100 CLUSTER INFO) || true
+            if grep 'cluster_state:ok' <<<"$info" >/dev/null && \
+               grep 'cluster_slots_ok:16384' <<<"$info" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          exit 1
+
+      - run: lein test-v4-cluster-tls
+        env:
+          CARMINE_TEST_CLUSTER_TLS_HOST: 127.0.0.1
+          CARMINE_TEST_CLUSTER_TLS_PORT_1: 7100
+          CARMINE_TEST_CLUSTER_TLS_PORT_2: 7101
+          CARMINE_TEST_CLUSTER_TLS_PORT_3: 7102
+          CARMINE_TEST_CLUSTER_TLS_CA_CERT: /tmp/carmine-cluster-tls/ca.crt
+
+      - name: Show Redis logs on failure
+        if: failure()
+        run: |
+          for port in 7100 7101 7102; do
+            docker logs carmine-cluster-tls-$port || true
+          done
+
+  redis-sentinel-tests:
+    name: v4-redis-sentinel-tests (${{ matrix.redis }})
+    strategy:
+      fail-fast: false
+      matrix:
+        redis: ['7', '8']
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+          check-latest: true
+
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
+        with:
+          lein: 2.12.0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache-deps
+        with:
+          path: ~/.m2/repository
+          key: clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-${{ hashFiles('project.clj') }}
+          restore-keys: |
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-
+            clj-deps-${{ runner.os }}-java-17-
+            clj-deps-${{ runner.os }}-
+            deps-
+
+      - name: Start Redis Sentinel topology
+        run: |
+          docker run -d --name carmine-sentinel-master --network host redis:${{ matrix.redis }} \
+            redis-server --port 6380 --save '' --appendonly no
+          docker run -d --name carmine-sentinel-replica --network host redis:${{ matrix.redis }} \
+            redis-server --port 6381 --save '' --appendonly no \
+            --replicaof 127.0.0.1 6380
+
+          for port in 26379 26380 26381; do
+            dir=/tmp/carmine-sentinel-$port
+            mkdir -p "$dir"
+            chmod 777 "$dir"
+            cp .github/redis-sentinel.conf "$dir/sentinel.conf"
+            sed -i "s/^port 26379$/port $port/" "$dir/sentinel.conf"
+            chmod 666 "$dir/sentinel.conf"
+            docker run -d --name carmine-sentinel-$port --network host \
+              -v "$dir:/data" redis:${{ matrix.redis }} \
+              redis-sentinel /data/sentinel.conf
+          done
+
+          for i in {1..120}; do
+            if docker exec carmine-sentinel-replica redis-cli -p 6381 \
+              INFO replication | grep 'master_link_status:up' >/dev/null && \
+              docker exec carmine-sentinel-26379 redis-cli -p 26379 \
+                SENTINEL get-master-addr-by-name carmine-v4-test | grep 6380 >/dev/null && \
+              docker exec carmine-sentinel-26380 redis-cli -p 26380 SENTINEL replicas carmine-v4-test | grep 6381 >/dev/null && \
+              docker exec carmine-sentinel-26381 redis-cli -p 26381 SENTINEL sentinels carmine-v4-test | grep 26380 >/dev/null && \
+              docker exec carmine-sentinel-26380 redis-cli -p 26380 SENTINEL ckquorum carmine-v4-test | grep '^OK' >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          exit 1
+
+      - run: lein test-v4-sentinel
+        env:
+          CARMINE_TEST_SENTINEL_MASTER_NAME: carmine-v4-test
+          CARMINE_TEST_SENTINEL_HOST: 127.0.0.1
+          CARMINE_TEST_SENTINEL_PORT: 26379
+          CARMINE_TEST_SENTINEL_PORT_2: 26380
+          CARMINE_TEST_SENTINEL_PORT_3: 26381
+          CARMINE_TEST_SENTINEL_INITIAL_MASTER_HOST: 127.0.0.1
+          CARMINE_TEST_SENTINEL_INITIAL_MASTER_PORT: 6380
+          CARMINE_TEST_SENTINEL_INITIAL_REPLICA_HOST: 127.0.0.1
+          CARMINE_TEST_SENTINEL_INITIAL_REPLICA_PORT: 6381
+
+      - name: Show Redis logs on failure
+        if: failure()
+        run: |
+          docker logs carmine-sentinel-master || true
+          docker logs carmine-sentinel-replica || true
+          docker logs carmine-sentinel-26379 || true
+          docker logs carmine-sentinel-26380 || true
+          docker logs carmine-sentinel-26381 || true
+
+  redis-cluster-tests:
+    name: v4-redis-cluster-tests (${{ matrix.redis }})
+    strategy:
+      fail-fast: false
+      matrix:
+        redis: ['7', '8']
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+          check-latest: true
+
+      - uses: DeLaGuardo/setup-clojure@4c7a6f613e5089821bb3bb2a33a3ee115578580d # 13.6.1
+        with:
+          lein: 2.12.0
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: cache-deps
+        with:
+          path: ~/.m2/repository
+          key: clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-${{ hashFiles('project.clj') }}
+          restore-keys: |
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-default-
+            clj-deps-${{ runner.os }}-java-17-${{ github.job }}-
+            clj-deps-${{ runner.os }}-java-17-
+            clj-deps-${{ runner.os }}-
+            deps-
+
+      - name: Start Redis Cluster topology
+        run: |
+          # Create masters first, then attach replicas to explicit master IDs so
+          # ports 7000-7002 remain deterministic routing seeds and primaries.
+          for port in 7000 7001 7002 7003 7004 7005; do
+            docker run -d --name carmine-cluster-$port --network host redis:${{ matrix.redis }} \
+              redis-server --port $port --save '' --appendonly no \
+              --cluster-enabled yes --cluster-config-file nodes.conf \
+              --cluster-node-timeout 5000 \
+              --cluster-announce-ip 127.0.0.1 \
+              --cluster-announce-port $port \
+              --cluster-announce-bus-port $((port + 10000))
+          done
+
+          redis_ready=false
+          for i in {1..120}; do
+            ready=true
+            for port in 7000 7001 7002 7003 7004 7005; do
+              docker exec carmine-cluster-$port redis-cli -p $port PING | grep PONG >/dev/null || ready=false
+            done
+            if [ "$ready" = true ]; then
+              redis_ready=true
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$redis_ready" != true ]; then
+            exit 1
+          fi
+
+          docker run --rm --network host redis:${{ matrix.redis }} redis-cli --cluster create \
+            127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 \
+            --cluster-replicas 0 --cluster-yes
+
+          for pair in 7003:7000 7004:7001 7005:7002; do
+            replica_port=${pair%%:*}
+            master_port=${pair##*:}
+            master_id=$(docker exec carmine-cluster-$master_port redis-cli -p $master_port CLUSTER MYID)
+            docker run --rm --network host redis:${{ matrix.redis }} redis-cli --cluster add-node \
+              127.0.0.1:$replica_port 127.0.0.1:$master_port \
+              --cluster-slave --cluster-master-id "$master_id"
+          done
+
+          for i in {1..120}; do
+            ready=true
+            for port in 7000 7001 7002 7003 7004 7005; do
+              info=$(docker exec carmine-cluster-$port redis-cli -p $port CLUSTER INFO) || ready=false
+              grep 'cluster_state:ok'       <<<"$info" >/dev/null || ready=false
+              grep 'cluster_slots_ok:16384' <<<"$info" >/dev/null || ready=false
+              grep 'cluster_known_nodes:6'  <<<"$info" >/dev/null || ready=false
+            done
+            for port in 7003 7004 7005; do
+              replication=$(docker exec carmine-cluster-$port redis-cli -p $port INFO replication) || ready=false
+              grep 'role:slave'            <<<"$replication" >/dev/null || ready=false
+              grep 'master_link_status:up' <<<"$replication" >/dev/null || ready=false
+            done
+            if [ "$ready" = true ]; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          exit 1
+
+      - run: lein test-v4-cluster
+        env:
+          CARMINE_TEST_CLUSTER_HOST: 127.0.0.1
+          CARMINE_TEST_CLUSTER_PORT_1: 7000
+          CARMINE_TEST_CLUSTER_PORT_2: 7001
+          CARMINE_TEST_CLUSTER_PORT_3: 7002
+
+      - name: Show Redis logs on failure
+        if: failure()
+        run: |
+          for port in 7000 7001 7002 7003 7004 7005; do
+            docker logs carmine-cluster-$port || true
+            docker exec carmine-cluster-$port redis-cli -p $port CLUSTER INFO || true
+            docker exec carmine-cluster-$port redis-cli -p $port CLUSTER NODES || true
+          done
