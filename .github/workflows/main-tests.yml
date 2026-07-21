@@ -13,12 +13,16 @@ concurrency:
 
 jobs:
   tests:
+    name: ${{ matrix.version }}-tests (${{ matrix.java }}, ${{ matrix.redis }}, ${{ matrix.test-alias }})
     strategy:
+      fail-fast: false
       matrix:
-        java: ['17', '21']
-        os: [ubuntu-latest]
+        include:
+          - {version: 'v3+v4', java: '17', redis: '7', test-alias: test-all}
+          - {version: 'v3+v4', java: '21', redis: '7', test-alias: test-all}
+          - {version: 'v3+v4', java: '25', redis: '7', test-alias: test-all}
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -33,17 +37,18 @@ jobs:
 
       - uses: supercharge/redis-github-action@bc274cb7238cd63a45029db04ee48c07a72609fd # 1.8.1
         with:
-          redis-version: 7
+          redis-version: ${{ matrix.redis }}
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: cache-deps
         with:
           path: ~/.m2/repository
-          key: clj-deps-${{ runner.os }}-java-${{ matrix.java }}-${{ github.job }}-${{ hashFiles('project.clj') }}
+          key: clj-deps-${{ runner.os }}-java-${{ matrix.java || '17' }}-${{ github.job }}-${{ matrix.test-alias || 'default' }}-${{ hashFiles('project.clj') }}
           restore-keys: |
-            clj-deps-${{ runner.os }}-java-${{ matrix.java }}-${{ github.job }}-
-            clj-deps-${{ runner.os }}-java-${{ matrix.java }}-
+            clj-deps-${{ runner.os }}-java-${{ matrix.java || '17' }}-${{ github.job }}-${{ matrix.test-alias || 'default' }}-
+            clj-deps-${{ runner.os }}-java-${{ matrix.java || '17' }}-${{ github.job }}-
+            clj-deps-${{ runner.os }}-java-${{ matrix.java || '17' }}-
             clj-deps-${{ runner.os }}-
             deps-
 
-      - run: lein test-all
+      - run: lein ${{ matrix.test-alias }}
