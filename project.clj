@@ -11,7 +11,7 @@
 
   :dependencies
   [[com.taoensso/encore              "3.172.1"]
-   [com.taoensso/nippy               "3.6.0"]
+   [com.taoensso/nippy               "3.9.0"]
    [com.taoensso/trove               "1.2.0"]
    ;; v2.13.x changes `GenericObjectPool.invalidateObject` (POOL-424)
    ;; in a way that can mask errors (POOL-431); revisit after:
