@@ -136,7 +136,7 @@
 (defn queues-clear-all!!!
   "**DANGER**!
   Permanently deletes ALL content for *ALL* Carmine message queues.
-  Returns nil, or a non-empty vector of the queue names that were cleared."
+  Returns nil, or a non-empty set of the queue names that were cleared."
   [conn-opts]
   (when-let [qnames (queue-names conn-opts "*")]
     (queues-clear!! conn-opts qnames)))
@@ -564,8 +564,9 @@
   before the blocking call begins. Repeated enqueues may move the sentinel
   between lists, but cannot cancel it.
 
-  Note that `conn-opts` should allow a read timeout >= msecs, otherwise
-  sleep will be interrupted prematurely by timeout."
+  Note that `conn-opts` should allow a read timeout comfortably > msecs
+  (Redis's blocking timeout resolution is ~100ms with default `hz` 10),
+  otherwise sleep will be interrupted prematurely by timeout."
 
   [conn-opts qname _isleep-on ms]
   (let [secs-dbl
@@ -665,11 +666,12 @@
             :retry   (fin mid false backoff-ms)
             :error
             (do
-              (fin mid true nil)
+              ;; Log first, so that the handler error isn't lost if `fin` throws
               (trove/log!
                 {:level :error, :id :carmine.mq/handler-error,
                  :data {:qname qname, :mid mid, :attempt attempt, :message mcontent}
-                 :error throwable}))
+                 :error throwable})
+              (fin mid true nil))
 
             ;; else
             (do
@@ -1041,7 +1043,8 @@
       Max time (in milliseconds) to sleep thread each time end of queue is reached.
       Can be a (fn [ndry-runs]) -> msecs for n<=5.
       Sleep may be interrupted when new messages are enqueued.
-      If present, connection read timeout should be >= max msecs!
+      If present, connection read timeout should be comfortably > max msecs
+      (e.g. by >= 250ms)!
 
     `:nthreads-worker`  - Number of threads to monitor and maintain queue.
     `:nthreads-handler` - Number of threads to handle queue messages with handler fn.
