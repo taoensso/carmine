@@ -811,6 +811,18 @@
              (is (false? (deref drain 3000 :timeout)) "Returns while handler still active")])]
          (finally (deliver release true) (close-and-drain! w)))))])
 
+(deftest deprecated-make-dequeue-worker
+  (clear-tq!)
+  (let [handled (promise)
+        w (#'mq/make-dequeue-worker (:pool conn-opts) (:spec conn-opts) tq
+            :handler-fn (fn [msg] (deliver handled msg) :success)
+            :throttle-msecs 10, :backoff-msecs 20)]
+    (try
+      [(is (:running? @w) "Auto-starts by default")
+       (is (:success? (wcar* (mq/enqueue tq :msg))))
+       (is (= (deref handled 5000 :timeout) :msg))]
+      (finally (close-and-drain! w)))))
+
 (deftest stop-responsiveness
   (testing "Stop doesn't wait for long worker sleeps (throttle, error backoff)"
     (clear-tq!)

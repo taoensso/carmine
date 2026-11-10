@@ -1186,9 +1186,9 @@
 
   (defn ^:no-doc ^:deprecated make-dequeue-worker
     "Prefer `worker`."
-    [pool spec & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
-                         auto-start?]}]
-    (worker {:pool pool :spec spec}
+    [pool spec qname & {:keys [handler-fn handler-ttl-msecs backoff-msecs throttle-msecs
+                               auto-start?] :or {auto-start? true}}]
+    (worker {:pool pool :spec spec} qname
       (merge (when-let [ms handler-ttl-msecs] {:lock-ms        ms})
         (when-let [ms backoff-msecs]          {:eoq-backoff-ms ms})
         (when-let [ms throttle-msecs]         {:throttle-ms    ms})
