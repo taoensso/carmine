@@ -701,6 +701,49 @@
 
 ;;;; Workers
 
+(defn- drain-handlers!
+  "Waits for active handler tasks of a stopped worker. Returns true iff
+  drained, false if worker is running (or restarted), called by a handler,
+  or timed out."
+  [future-pool running?_ generation_ handler-threads_ wake-future_
+   conn-opts qname nthreads-handler ?timeout-ms]
+  (enc/cond
+    (not future-pool) true
+    (contains? @handler-threads_ (Thread/currentThread)) false
+    :let [;; Read together, so that a concurrent restart can't slip between
+          ?generation (locking running?_ (when-not @running?_ @generation_))]
+    (nil? ?generation) false ; Running
+    :let [generation ?generation
+          deadline (when ?timeout-ms (+ (System/nanoTime) (* 1000000 (long ?timeout-ms))))
+          ;; Wake asynchronously, since a borrow/reply may block (e.g. when
+          ;; sleeping handlers hold every pooled connection). At most one
+          ;; wake in flight per worker, shared by concurrent/repeated drains.
+          wake!
+          (fn []
+            (locking wake-future_
+              (let [f @wake-future_]
+                (when (or (nil? f) (realized? f))
+                  (enc/catching ; E.g. executor rejection after `shutdown-agents`
+                    (reset! wake-future_
+                      (future
+                        (enc/catching
+                          (wake-sleepers! conn-opts qname nthreads-handler)))))))))]
+    :else
+    ;; Re-signal until drained. Sentinels live on queue-global keys, so
+    ;; a single push isn't enough: another worker on the same queue may
+    ;; consume them, and a poll that reaches `dequeue` after we push
+    ;; will clear them itself before blocking.
+    (loop [wait-ms 0] ; Check (and wake) before first wait
+      (enc/cond
+        (not= generation @generation_) false ; Restarted
+
+        (future-pool wait-ms nil)
+        (locking running?_ (and (not @running?_) (= generation @generation_)))
+
+        :let [rem-ms (when deadline (quot (- (long deadline) (System/nanoTime)) 1000000))]
+        (and rem-ms (<= (long rem-ms) 0)) false
+        :else (do (wake!) (recur (if rem-ms (min 250 (long rem-ms)) 250)))))))
+
 (defprotocol IWorker
   "Private, please don't use this."
   (^:no-doc start [this])
@@ -708,7 +751,7 @@
 
 (deftype CarmineMessageQueueWorker
   [qname worker-opts conn-opts running?_ closed?_ generation_ future-pool worker-futures_ handler-threads_
-   nstats_ ssb-queue-size ssb-queueing-time-ms ssb-handling-time-ns]
+   drain-wake_ nstats_ ssb-queue-size ssb-queueing-time-ms ssb-handling-time-ns]
 
   java.io.Closeable
   (close [this]
@@ -762,26 +805,20 @@
         (stats/summary-stats-clear! ssb-handling-time-ns)
         nil)
 
-      :drain ; Undocumented, waits for active handler tasks.
-      (if-not future-pool
-        true
-        (if (or @running?_
-              (contains? @handler-threads_ (Thread/currentThread)))
-          false
-          ;; Re-signal until drained. Sentinels live on queue-global keys, so
-          ;; a single push isn't enough: another worker on the same queue may
-          ;; consume them, and a poll that reaches `dequeue` after we push
-          ;; will clear them itself before blocking.
-          (loop []
-            (or (future-pool 250 nil)
-              (do
-                (enc/catching
-                  (wake-sleepers! conn-opts qname
-                    (get worker-opts :nthreads-handler)))
-                (recur))))))
+      :drain (this :drain nil) ; Waits for active handler tasks
 
       (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
         {:command (enc/typed-val cmd)})))
+
+  (invoke [this cmd arg]
+    (case cmd
+      :drain
+      (drain-handlers! future-pool running?_ generation_ handler-threads_ drain-wake_ conn-opts qname
+        (get worker-opts :nthreads-handler)
+        (truss/have [:or nil? nat-int?] arg))
+
+      (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
+        {:command (enc/typed-val cmd), :arg (enc/typed-val arg)})))
 
   IWorker
   (stop [_]
@@ -826,7 +863,16 @@
 
                 (if (fn? throttle-ms)
                   (do                                  (fn [] (as-?pos (throttle-ms @queue-size*))))
-                  (when-let [ms (as-?pos throttle-ms)] (fn [] ms))))
+                  (if-let [ms (as-?pos throttle-ms)] (fn [] ms) (fn [] nil))))
+
+              sleep-while-running! ; So that `stop` needn't wait for long sleeps
+              (fn [ms]
+                (let [deadline (+ (System/nanoTime) (* 1000000 (long ms)))]
+                  (loop []
+                    (let [remaining (quot (- deadline (System/nanoTime)) 1000000)]
+                      (when (and (pos? remaining) @running?_ (= generation @generation_))
+                        (Thread/sleep (int (min remaining 100)))
+                        (recur))))))
 
               start-polling-loop!
               (fn [^long thread-idx]
@@ -842,7 +888,7 @@
                         (reset! loop-error-backoff?_ true))]
 
                   (when (> thread-idx 0)
-                    (Thread/sleep (int (thread-desync-ms (or (throttle-ms-fn) 100)))))
+                    (sleep-while-running! (thread-desync-ms (or (throttle-ms-fn) 100))))
 
                   (loop [nloops 0]
                     (when (and @running?_ (= generation @generation_))
@@ -861,7 +907,7 @@
                                  {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
                                   :backoff-ms backoff-ms}})
 
-                              (Thread/sleep (int backoff-ms))))))
+                              (sleep-while-running! backoff-ms)))))
 
                       ;; Reserve local handler capacity before acquiring a Redis
                       ;; lease. A short timeout keeps shutdown responsive.
@@ -914,7 +960,7 @@
                                 (finally
                                   (swap! handler-threads_ disj handler-thread)))))))
 
-                      (when-let [ms (throttle-ms-fn)] (Thread/sleep (int ms)))
+                      (when-let [ms (throttle-ms-fn)] (sleep-while-running! ms))
                       (recur (inc nloops))))))]
 
           (reset! worker-futures_
@@ -968,6 +1014,9 @@
     - (<worker> :queue-content) => Same as calling `queue-content` for given qname.
     - (<worker> :drain)         => After stopping, waits for active handler tasks.
                                    Returns false if running or called by a handler.
+    - (<worker> :drain <msecs>) => Like `:drain`, but returns false on timeout.
+    - (.close <worker>)         => Permanently stops worker. Like `stop`, doesn't
+                                   wait for active handler tasks, see `:drain`.
 
   Debugging:
 
@@ -1103,6 +1152,7 @@
            (when (pos-int? nthreads-handler) (enc/future-pool nthreads-handler))
            (atom [])
            (atom #{})
+           (atom nil) ; drain-wake_
            (atom {})
 
            ;; :sstats-init opts below allow for manual persistent sstats, currently undocumented

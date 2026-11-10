@@ -767,3 +767,73 @@
           (remove-watch running ::pause-start)
           (.close ^java.io.Closeable worker)
           (worker :drain))))))
+
+(defn- close-and-drain! [w]
+  (.close ^java.io.Closeable w)
+  (is (true? (w :drain 5000)) "Worker drained during cleanup"))
+
+(deftest bounded-drain
+  [(testing "Bounded drain"
+     (clear-tq!)
+     (let [started (promise), release (promise), done_ (atom false)
+           w (mq/worker conn-opts tq
+               {:handler (fn [_] (deliver started true) (deref release 5000 nil)
+                           (Thread/sleep 200) (reset! done_ true) {:status :success})
+                :throttle-ms 1, :eoq-backoff-ms 20})]
+       (try
+         [(is (:success? (wcar* (mq/enqueue tq :msg))))
+          (is (= (deref started 3000 :timeout) true))
+          (is (false? (w :drain 50)) "Running")
+          (is (true?  (mq/stop w)))
+          (is (false? (w :drain 0)) "Zero timeout")
+          (let [t0 (System/currentTimeMillis)]
+            [(is (false? (w :drain 300)) "Timed out")
+             (is (< (- (System/currentTimeMillis) t0) 1000) "Returned on time")])
+          (do (deliver release true) :released)
+          (is (true? (w :drain 5000)))
+          (is (true? @done_))]
+         (finally (deliver release true) (close-and-drain! w)))))
+
+   (testing "Drain returns false if worker restarts meanwhile"
+     (clear-tq!)
+     (let [started (promise), release (promise)
+           w (mq/worker conn-opts tq
+               {:handler (fn [_] (deliver started true) (deref release 5000 nil) {:status :success})
+                :throttle-ms 1, :eoq-backoff-ms 20})]
+       (try
+         [(is (:success? (wcar* (mq/enqueue tq :msg))))
+          (is (= (deref started 3000 :timeout) true))
+          (is (true? (mq/stop w)))
+          (let [drain (future (w :drain))]
+            [(is (= (deref drain 200 :waiting) :waiting) "Drain is waiting on the active handler")
+             (is (true? (mq/start w)))
+             (is (false? (deref drain 3000 :timeout)) "Returns while handler still active")])]
+         (finally (deliver release true) (close-and-drain! w)))))])
+
+(deftest stop-responsiveness
+  (testing "Stop doesn't wait for long worker sleeps (throttle, error backoff)"
+    (clear-tq!)
+    (let [worker (mq/worker conn-opts tq
+                   {:throttle-ms 5000 ; Throttle + error backoff factor
+                    :eoq-backoff-ms (fn [_] (throw (Exception. "Test worker error")))})]
+      (try
+        (Thread/sleep 500) ; First error => 5s+ sleep
+        (let [t0 (System/currentTimeMillis)]
+          [(is (true? (mq/stop worker)))
+           (is (< (- (System/currentTimeMillis) t0) 1000))])
+        (finally (close-and-drain! worker))))))
+
+(deftest unthrottled-workers
+  (doseq [throttle-ms [0 nil]]
+    (testing (str "Worker with `:throttle-ms " (pr-str throttle-ms) "`")
+      (clear-tq!)
+      (let [handled_ (promise)
+            worker (mq/worker conn-opts tq
+                     {:throttle-ms throttle-ms, :eoq-backoff-ms 20
+                      :handler (fn [{:keys [message]}] (deliver handled_ message) {:status :success})})]
+        (try
+          (wcar* (mq/enqueue tq :msg1))
+          [(is (= (deref handled_ 5000 :timeout) :msg1))
+           (is (:running? @worker))
+           (is (true? (mq/stop worker)))]
+          (finally (close-and-drain! worker)))))))
