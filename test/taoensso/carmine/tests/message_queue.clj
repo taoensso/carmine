@@ -4,6 +4,7 @@
    [taoensso.encore  :as enc]
    [taoensso.carmine :as car  :refer [wcar]]
    [taoensso.carmine.message-queue :as mq]
+   [taoensso.nippy.tools :as nippy-tools]
    [taoensso.carmine.tests.config :as config]))
 
 (comment
@@ -837,3 +838,63 @@
            (is (:running? @worker))
            (is (true? (mq/stop worker)))]
           (finally (close-and-drain! worker)))))))
+
+(deftest custom-nippy-opts
+  (let [nopts {:password [:salted "test-password"]}
+        creation-opts {:password [:salted "unused-creation-password"]}
+        messages #(set (map :message (vals %)))
+        w (car/with-thaw-opts creation-opts
+            (mq/worker conn-opts tq {:auto-start false}))]
+    (clear-tq!)
+    (try
+      (wcar* (enqueue tq (car/freeze :explicit nopts)))
+      (nippy-tools/with-freeze-opts nopts
+        (wcar* (enqueue tq :dynamic)))
+      (testing "Enqueue preserves explicit and ambient freeze options"
+        (is (= (car/with-thaw-opts nopts (messages (mq/queue-content conn-opts tq)))
+               #{:explicit :dynamic})))
+      (testing "Worker inspection uses caller bindings, not creation bindings"
+        (is (= (car/with-thaw-opts nopts (messages (w :queue-content)))
+               #{:explicit :dynamic})))
+      (finally (close-and-drain! w)))))
+
+(deftest worker-nippy-bindings
+  (clear-tq!)
+  (let [creation-opts {:password [:salted "unused-creation-password"]}
+        phase-opts {:first  {:password [:salted "first-start-password"]}
+                    :second {:password [:salted "restart-password"]}}
+        override-opts {:password [:salted "handler-override-password"]}
+        plain-key     (str tq ":serialization:plain")
+        inherited-key (str tq ":serialization:inherited")
+        override-key  (str tq ":serialization:override")
+        handled_ (atom {})
+        w (car/with-thaw-opts creation-opts
+            (mq/worker conn-opts tq
+              {:auto-start false, :throttle-ms 10, :eoq-backoff-ms 10
+               :handler
+               (fn [{:keys [message]}]
+                 (swap! handled_ assoc message
+                   {:inherited  (wcar* (car/get inherited-key))
+                    :plain      (wcar* (car/get plain-key))
+                    :overridden (car/with-thaw-opts override-opts
+                                  (wcar* (car/get override-key)))})
+                 {:status :success})}))]
+    (try
+      (wcar*
+        (car/set plain-key "plain-string")
+        (car/set override-key (car/freeze :other-secret override-opts)))
+      (doseq [phase [:first :second]]
+        (testing (str "Bindings inherited at " (name phase) " start, including by handlers")
+          (let [opts (get phase-opts phase)]
+            (wcar*
+              (car/set inherited-key (car/freeze [phase :cached] opts))
+              (enqueue tq (car/freeze phase opts)))
+            (is (true? (car/with-thaw-opts opts (mq/start w))))
+            (is (wait-for 5000 #(contains? @handled_ phase)))
+            (is (= (get @handled_ phase)
+                   {:inherited [phase :cached], :plain "plain-string", :overridden :other-secret}))
+            (is (true? (mq/stop w)))
+            (is (true? (w :drain 5000)) "Drain the old generation before restart"))))
+      (finally
+        (close-and-drain! w)
+        (wcar* (car/del plain-key inherited-key override-key))))))

@@ -56,6 +56,7 @@
    [taoensso.truss        :as truss]
    [taoensso.encore.stats :as stats]
    [taoensso.carmine      :as car :refer [wcar]]
+   [taoensso.nippy.tools  :as nippy-tools]
    [taoensso.trove        :as trove]))
 
 ;;;; TODO/later
@@ -367,6 +368,11 @@
   When `success?` is false: `error` will be present, with
                             `error` e/o #{:already-queued :locked :backoff}.
 
+  Message is frozen with Nippy. For custom Nippy options:
+    - Enqueue (car/freeze message freeze-opts) value, and
+    - Use matching `car/with-thaw-opts` around worker creation/start
+      and queue inspection.
+
   Options:
       `:init-backoff-ms` - Optional initial backoff in msecs.
       `:lock-ms`         - Optional lock time in msecs. When unspecified, the
@@ -437,12 +443,15 @@
          :qk-isleep-b      (qkey qname :isleep-b)}
 
         {:mid        mid
-         :mcnt       (car/freeze message)
          :init-bo    (or init-backoff-ms 0)
          :lock-ms    (or lock-ms        -1)
          :can-upd?   (if can-update?         "1" "0")
          :can-rq?    (if can-requeue?        "1" "0")
-         :reset-ibo? (if reset-init-backoff? "1" "0")}))))
+         :reset-ibo? (if reset-init-backoff? "1" "0")
+         :mcnt
+         (if (nippy-tools/wrapped-for-freezing? message)
+           (do         message)
+           (car/freeze message))}))))
 
 (defn- dequeue
   "Processes next mid and returns:
