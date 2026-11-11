@@ -595,7 +595,11 @@
                           (vreset! interrupted?_ true)
                           {:status :error, :throwable t})
                         (catch Throwable t
-                          {:status :error, :throwable t})))
+                          {:status :error, :throwable t})
+                        (finally
+                          ;; Clear any interrupt flag left by handler so that
+                          ;; it can't break finalization
+                          (Thread/interrupted))))
 
                     handling-time-ns (when-not over-max? (- (enc/now-nano*) t0))
                     last-attempt?    (and max-attempts (>= attempt (long max-attempts)))
