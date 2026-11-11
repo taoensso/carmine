@@ -2,6 +2,47 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.7.0` (2026-11-13)
+
+- **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.7.0)
+- **Versioning**: [Break Versioning](https://www.taoensso.com/break-versioning)
+
+This is a **major feature and maintenance release** focused on Carmine's message queue.
+
+As usual please **test before updating production** and report any unexpected problems to the [Slack channel](http://taoensso.com/carmine/slack) or [GitHub](https://github.com/taoensso/carmine/issues), thanks! 🙏
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Since `v3.6.0` (2026-11-09)
+
+### Changes
+
+- **\[mod]** \[mq] Message queue workers with custom `:nthreads-worker` ≠ `:nthreads-handler` now have a different max poll rate [[bd5a79c9](https://github.com/taoensso/carmine/commit/bd5a79c9)]
+
+### New
+
+- \[new] \[mq] **Faster wake-ups**: idle workers now smarter about waking when needed [[bbbc043e](https://github.com/taoensso/carmine/commit/bbbc043e)]
+- \[new] \[mq] **Fewer round-trips**: worker polls now do more queue maintenance per Redis round-trip [[673390ed](https://github.com/taoensso/carmine/commit/673390ed)]
+- \[new] \[mq] **Automatic lock extension**: new opt-in `:lock-auto-extend-max-ms` worker option [[291a5fec](https://github.com/taoensso/carmine/commit/291a5fec)]
+- \[new] \[mq] **Retry limits and dead letters**: new opt-in `:max-attempts`, `:error-retry-backoff-ms`, and `:on-give-up` worker options [[03007edc](https://github.com/taoensso/carmine/commit/03007edc)]
+- \[new] \[mq] Add `cancel` fn to cancel a pending message [[822cf8f7](https://github.com/taoensso/carmine/commit/822cf8f7)]
+- \[new] \[mq] `enqueue` option `:reset-init-backoff?` is now official (no longer experimental) [[bb749ea8](https://github.com/taoensso/carmine/commit/bb749ea8)]
+- \[new] \[mq] `queue-status` now also returns `:head-age-ms` [[8f7b209e](https://github.com/taoensso/carmine/commit/8f7b209e)]
+- \[new] \[mq] Add `drain` fn and drain timeout, make `start` and `stop` public [[51293c53](https://github.com/taoensso/carmine/commit/51293c53)] [[aca2b1b8](https://github.com/taoensso/carmine/commit/aca2b1b8)]
+- \[doc] \[mq] Document graceful worker shutdown, and update message status diagram [[f7e56156](https://github.com/taoensso/carmine/commit/f7e56156)] [[56ba85b5](https://github.com/taoensso/carmine/commit/56ba85b5)]
+
+### Fixes
+
+- \[fix] \[mq] Preserve explicit Nippy options on pre-wrapped messages [[ffe4c30f](https://github.com/taoensso/carmine/commit/ffe4c30f)]
+- \[fix] \[mq] Unthrottled workers stopped polling after their first poll [[aca2b1b8](https://github.com/taoensso/carmine/commit/aca2b1b8)]
+- \[fix] \[mq] Handler `:age-ms` and queueing-time stats now use the Redis server clock [[648d8ccb](https://github.com/taoensso/carmine/commit/648d8ccb)]
+- \[fix] \[mq] A handler's leftover interrupt flag can no longer break message finalization [[ca592a7d](https://github.com/taoensso/carmine/commit/ca592a7d)]
+- \[fix] \[mq] Log handler errors before finalizing, so a finalization failure can't hide them [[61f0dffb](https://github.com/taoensso/carmine/commit/61f0dffb)]
+- \[fix] \[mq] Restore deprecated `make-dequeue-worker` [[9d75fc52](https://github.com/taoensso/carmine/commit/9d75fc52)]
+- \[fix] \[conns] Explicit `:spec` opts now override the corresponding `:uri` parts [[2bcb33e3](https://github.com/taoensso/carmine/commit/2bcb33e3)]
+
+---
+
 # `v3.6.0` (2026-11-09)
 
 - **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.6.0)
@@ -17,13 +58,13 @@ Please **test carefully before updating production** (particularly MQ workloads)
 
 ### BREAKING
 
-- **➤ \[mod]** \[pubsub] \[#310] Wait for initial subscriptions (requires `PING` permission, may throw after `:ready-timeout-ms`) [[3eae109f](https://github.com/taoensso/carmine/commit/3eae109f)]
-- **➤ \[mod]** \[pubsub] \[#311] Make intentional Listener close silent [[c94b7dea](https://github.com/taoensso/carmine/commit/c94b7dea)]
-- **➤ \[mod]** \[mq] Make worker `close` terminal (use `stop` to allow restart) [[b3643089](https://github.com/taoensso/carmine/commit/b3643089)]
-- **➤ \[mod]** \[conns] Connection setup now fails on AUTH/SELECT/`conn-setup-fn` errors (previously silently ignored) [[a61235fa](https://github.com/taoensso/carmine/commit/a61235fa)]
-- **➤ \[mod]** Update Nippy v3.6 → v3.9 (see [release notes](https://github.com/taoensso/nippy/releases/tag/v3.9.0)) [[ba56847b](https://github.com/taoensso/carmine/commit/ba56847b)]
-- **➤ \[mod]** Update Redis commands (removes `hgetf` and `hsetf`) [[d788da29](https://github.com/taoensso/carmine/commit/d788da29)]
-- **➤ \[mod]** [mq] Workers now need Redis `TIME` permission (allowed by default)
+- **\[mod]** \[pubsub] \[#310] Wait for initial subscriptions (requires `PING` permission, may throw after `:ready-timeout-ms`) [[3eae109f](https://github.com/taoensso/carmine/commit/3eae109f)]
+- **\[mod]** \[pubsub] \[#311] Make intentional Listener close silent [[c94b7dea](https://github.com/taoensso/carmine/commit/c94b7dea)]
+- **\[mod]** \[mq] Make worker `close` terminal (use `stop` to allow restart) [[b3643089](https://github.com/taoensso/carmine/commit/b3643089)]
+- **\[mod]** \[conns] Connection setup now fails on AUTH/SELECT/`conn-setup-fn` errors (previously silently ignored) [[a61235fa](https://github.com/taoensso/carmine/commit/a61235fa)]
+- **\[mod]** Update Nippy v3.6 → v3.9 (see [release notes](https://github.com/taoensso/nippy/releases/tag/v3.9.0)) [[ba56847b](https://github.com/taoensso/carmine/commit/ba56847b)]
+- **\[mod]** Update Redis commands (removes `hgetf` and `hsetf`) [[d788da29](https://github.com/taoensso/carmine/commit/d788da29)]
+- **\[mod]** [mq] Workers now need Redis `TIME` permission (allowed by default)
 
 ### New
 

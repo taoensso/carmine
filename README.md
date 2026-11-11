@@ -1,5 +1,5 @@
 <a href="https://www.taoensso.com/clojure" title="More stuff by @ptaoussanis at www.taoensso.com"><img src="https://www.taoensso.com/open-source.png" alt="Taoensso open source" width="340"/></a>  
-[**API**][cljdoc] | [**Wiki**][GitHub wiki] | [Slack][] | Latest release: [v3.6.0](../../releases/tag/v3.6.0) (2026-11-09)
+[**API**][cljdoc] | [**Wiki**][GitHub wiki] | [Slack][] | Latest release: [v3.7.0](../../releases/tag/v3.7.0) (2026-11-13)
 
 [![Main tests][Main tests SVG]][Main tests URL]
 [![Graal tests][Graal tests SVG]][Graal tests URL]
@@ -25,13 +25,13 @@ Carmine is a mature Redis client for Clojure that offers an idiomatic Clojure AP
 
 Redis is available in a few different flavours depending on your needs:
 
-|                                                                                           | Features                            | Support?            |
-| ----------------------------------------------------------------------------------------- | ----------------------------------- | ------------------- |
-| Single node                                                                               | Simplest setup                      | Yes                 |
-| Redis [Sentinel](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/) | High availability                   | No (possibly later) |
-| Redis [Cluster](https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/)   | High availability, sharding         | No (possibly later) |
-| Redis [Enterprise](https://redis.io/docs/latest/operate/rs/)                              | High availability, sharding         | Yes                 |
-| Redis [Cloud](https://redis.io/cloud/)                                                    | High availability, sharding, hosted | Yes                 |
+|                                                                                           | Features                            | Support?     |
+| ----------------------------------------------------------------------------------------- | ----------------------------------- | ------------ |
+| Single node                                                                               | Simplest setup                      | Yes          |
+| Redis [Sentinel](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/) | High availability                   | Coming in v4 |
+| Redis [Cluster](https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/)   | High availability, sharding         | Coming in v4 |
+| Redis [Enterprise](https://redis.io/docs/latest/operate/rs/)                              | High availability, sharding         | Yes          |
+| Redis [Cloud](https://redis.io/cloud/)                                                    | High availability, sharding, hosted | Yes          |
 
 ## Documentation
 
