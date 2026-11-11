@@ -11,7 +11,7 @@
   idempotent. Lock timing uses the Redis server clock, so it doesn't depend
   on agreement between client clocks.
 
-  See `mq-architecture.svg` in repo for diagram of architecture,
+  See `mq-architecture.svg` in repo for diagram of message statuses,
   Ref. <http://antirez.com/post/250> for initial inspiration.
 
   Message status e/o:
