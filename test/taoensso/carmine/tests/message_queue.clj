@@ -978,7 +978,7 @@
         (wcar* (enqueue tq :a) (enqueue tq :b) (enqueue tq :c))
         (mq/start worker)
         [(is (wait-for #(= @nhandling* 3)) "Not limited to 1 poll per throttle period")
-         (do (deliver release true) (mq/stop worker) (is (worker :drain 5000)))])))
+         (do (deliver release true) (mq/stop worker) (is (mq/drain worker 5000)))])))
 
   (testing "Automatic lock extension"
     (doseq [[max-ms expected-attempts]
@@ -1036,7 +1036,7 @@
         (wcar* (enqueue tq :msg {:mid :mid1}))
         (mq/start worker)
         (is (= (deref stopped 2000 :timeout) true))
-        (is (worker :drain))
+        (is (mq/drain worker))
         (finally (.close ^java.io.Closeable worker)))))
 
   (testing "Drain wakes every sleeping handler thread"

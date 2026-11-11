@@ -275,9 +275,11 @@
 ;;;; Workers
 
 (defprotocol IWorker
-  "Private, please don't use this."
-  (^:no-doc start [this])
-  (^:no-doc stop  [this]))
+  "Worker lifecycle, see `worker`. Not for extension."
+  (start [worker] "Starts given worker's handler threads. Returns true iff worker was started.")
+  (stop  [worker]
+    "Stops given worker's handler threads without waiting for active handlers
+    to finish (see `drain`). Returns true iff worker was running."))
 
 (deftype CarmineMessageQueueWorker [conn-opts state]
   java.io.Closeable
@@ -306,6 +308,14 @@
 
 (enc/def-print-impl [x CarmineMessageQueueWorker] (str "#" x))
 (defn ^:no-doc worker? [x] (instance? CarmineMessageQueueWorker x))
+
+(defn drain
+  "Waits for given stopped worker's active handlers to finish, e.g. for
+  graceful shutdown. Returns true once finished, or false if `timeout-msecs`
+  elapsed first, worker is running, or called by one of worker's handlers.
+  Same as calling (<worker> :drain <?timeout-msecs>)."
+  ([worker              ] (worker :drain))
+  ([worker timeout-msecs] (worker :drain timeout-msecs)))
 
 (defn monitor-fn
   "Returns a worker monitor fn that warns when queue exceeds the prescribed
