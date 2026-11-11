@@ -118,36 +118,6 @@
   ^long [[secs micros]]
   (+ (* (enc/as-int secs) 1000) (quot (enc/as-int micros) 1000)))
 
-(defn- max-clock-skew-ms
-  "Local/server clock difference beyond which `worker` logs a warning.
-  Deliberately generous, since an NTP-synced host is within msecs and queue
-  expiries are anyway evaluated against the Redis server clock. Scaled down
-  for short locks, where a smaller skew is already material."
-  ^long [lock-ms]
-  (min (enc/ms :secs 30) (quot (long lock-ms) 4)))
-
-(defn- warn-on-clock-skew!
-  "Diagnostic only, never throws. Logs a warning when the local clock
-  differs materially from the Redis server clock, which can distort
-  handler `:age-ms` and (for queues shared with older clients) the
-  effective duration of message locks."
-  [client qname lock-ms]
-  (enc/catching
-    (let [t0      (enc/now-udt)
-          server  (server-udt (exec1 client ["TIME"]))
-          t1      (enc/now-udt)
-          local   (quot (+ t0 t1) 2) ; Midpoint, to discount round-trip
-          skew    (- server local)
-          max-ms  (max-clock-skew-ms lock-ms)]
-
-      (when (> (Math/abs skew) max-ms)
-        (log! client
-          {:level :warn, :id :carmine.mq/clock-skew
-           :msg "Local clock differs materially from Redis server clock"
-           :data
-           {:qname qname, :skew-ms skew,
-            :max-skew-ms max-ms, :lock-ms lock-ms}})))))
-
 ;;;;
 
 (defn ->message-status
@@ -565,7 +535,7 @@
 
 (defn handle1
   [client qname handler poll-reply
-   {:keys [worker queue-size lease-token nstats_ ssb-queueing-time-ms ssb-handling-time-ns
+   {:keys [worker queue-size lease-token server-udt nstats_ ssb-queueing-time-ms ssb-handling-time-ns
            sleep-locally! lock-extender lock-auto-extend-max-ms
            max-attempts error-retry-backoff-ms on-give-up]
     :or   {queue-size -1}}]
@@ -591,9 +561,9 @@
       (let [[_kind mid mcontent attempt lock-ms udt] poll-reply
             attempt (long attempt)
 
-            age-ms
+            age-ms ; Prefer server clock, since that's what wrote `udt`
             (when-let [udt (enc/as-?udt udt)]
-              (- (enc/now-udt) ^long udt))
+              (max 0 (- (long (or server-udt (enc/now-udt))) ^long udt)))
 
             mq-msg
             {:qname qname, :mid mid, :message mcontent, :attempt attempt
@@ -935,9 +905,6 @@
                  (pos-int? (get worker-opts :nthreads-worker 1)) ; Back compatibility
                  (compare-and-set! running?_ false true))
         (log! client {:level :info, :id :carmine.mq/worker-starting, :data {:qname qname}})
-        ;; Async, don't block start on a Redis round-trip
-        (future (warn-on-clock-skew! client qname
-                  (get worker-opts :default-lock-ms)))
         (let [generation (swap! generation_ inc)
               {:keys [handler nthreads-handler]} worker-opts
               qk-ndry-runs (qkey qname :ndry-runs)
@@ -1015,10 +982,11 @@
                           (let [t0 (System/nanoTime)
                                 lease-token (enc/uuid-str)]
                             (try
-                              (let [[poll-reply ndry-runs & queue-counts]
+                              (let [[poll-reply server-time ndry-runs & queue-counts]
                                     (exec client
                                       (into
                                         [(req-dequeue qname worker-opts lease-token)
+                                         ["TIME"] ; For handler `:age-ms`
                                          ["GET" qk-ndry-runs]]
                                         (reqs-queue-counts qname)))
 
@@ -1045,6 +1013,7 @@
                                   {:worker               worker
                                    :queue-size           nqueued
                                    :lease-token          lease-token
+                                   :server-udt           (server-udt server-time)
                                    :nstats_              nstats_
                                    :ssb-queueing-time-ms ssb-queueing-time-ms
                                    :ssb-handling-time-ns ssb-handling-time-ns

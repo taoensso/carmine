@@ -644,6 +644,36 @@
      (is (= (impl/server-udt ["1784523705"      "0"]) 1784523705000))
      (is (= (impl/server-udt ["1784523705"    "999"]) 1784523705000) "Sub-msec micros discarded")])
 
+  (testing "Handler `:age-ms` is relative to the Redis server clock"
+    (clear-tq!)
+    (wcar* (enqueue tq :msg1 {:mid :mid1}))
+    (let [lease-token (enc/uuid-str)
+          poll-reply  (wcar* (dequeue tq nil lease-token))
+          udt         (long (get poll-reply 5))
+          age-ms_     (promise)]
+      (impl/handle1 client tq (fn [m] (deliver age-ms_ (:age-ms m)) {:status :success}) poll-reply
+        {:lease-token lease-token, :server-udt (+ udt 5000)})
+      (is (= (deref age-ms_ 0 nil) 5000)))
+
+    (clear-tq!)
+    (wcar* (enqueue tq :msg1 {:mid :mid1}))
+    (let [lease-token (enc/uuid-str)
+          poll-reply  (wcar* (dequeue tq nil lease-token))
+          udt         (long (get poll-reply 5))
+          ages_       (atom [])
+          hf          (fn [m] (swap! ages_ conj (:age-ms m)) {:status :retry})]
+      (impl/handle1 client tq hf poll-reply {:lease-token lease-token, :server-udt (- udt 5000)})
+      (is (= @ages_ [0]) "Never negative"))
+
+    (clear-tq!)
+    (wcar* (enqueue tq :msg1 {:mid :mid1}))
+    (let [lease-token (enc/uuid-str)
+          poll-reply  (wcar* (dequeue tq nil lease-token))
+          age-ms_     (promise)]
+      (impl/handle1 client tq (fn [m] (deliver age-ms_ (:age-ms m)) {:status :success}) poll-reply
+        {:lease-token lease-token})
+      (is (enc/nat-int? (deref age-ms_ 0 nil)) "Falls back to local clock")))
+
   (testing "Queue scripts take their time from the Redis server"
     (mapv
       (fn [sname]
@@ -652,7 +682,7 @@
              (str sname ".lua shouldn't accept a client-supplied `now`"))
            (is (enc/str-contains? src "redis.call('TIME')")
              (str sname ".lua should read the server clock"))]))
-      ["msg-status" "enqueue" "dequeue" "finalize" "extend-lock"]))
+      ["msg-status" "enqueue" "cancel" "dequeue" "finalize" "extend-lock"]))
 
   (testing "Write scripts request effects replication before their first write"
     (mapv
@@ -663,7 +693,7 @@
           (is (and (not= i-replicate -1) (not= i-first-call -1)
                 (< i-replicate i-first-call))
             (str sname ".lua should call `redis.replicate_commands()` before its first `redis.call`"))))
-      ["enqueue" "dequeue" "finalize" "extend-lock"]))
+      ["enqueue" "cancel" "dequeue" "finalize" "extend-lock"]))
 
   (testing "Handler backoffs are stored as integer epoch msecs"
     (clear-tq!)
