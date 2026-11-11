@@ -161,8 +161,24 @@
      :nbackoff nbackoff ; Approx, may contain expired entries
      :ntotal   ntotal}))
 
+(defn queue-size
+  "Counts only, avoids the extra lookups needed for `:head-age-ms`."
+  [client qname]
+  (get (-queue-status (exec client (reqs-queue-counts qname))) :nqueued))
+
 (defn queue-status [client qname]
-  (-queue-status (exec client (reqs-queue-counts qname))))
+  (let [qk (partial qkey qname)
+        [head-mid & queue-counts]
+        (exec client
+          (into [["LINDEX" (qk :mids-ready) -1]] ; Head of ready list
+            (reqs-queue-counts qname)))
+
+        head-age-ms
+        (when head-mid
+          (let [[udt now] (exec client [["HGET" (qk :udts) head-mid] ["TIME"]])]
+            (when udt (max 0 (- (server-udt now) (enc/as-int udt))))))]
+
+    (assoc (-queue-status queue-counts) :head-age-ms head-age-ms)))
 
 (defn queue-content [client qname]
   (let [qk (partial qkey qname)
@@ -835,7 +851,7 @@
   ([state cmd]
    (let [{:keys [client qname nstats_ ssb-queue-size ssb-queueing-time-ms ssb-handling-time-ns]} state]
      (case cmd
-       :queue-size    (get (queue-status client qname) :nqueued)
+       :queue-size         (queue-size    client qname)
        :queue-status       (queue-status  client qname)
        :queue-content      (queue-content client qname)
        :queue-mids         (queue-mids    client qname) ; Undocumented

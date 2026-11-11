@@ -1279,3 +1279,16 @@
       (finally
         (close-and-drain! w)
         (wcar* (car/del plain-key inherited-key override-key))))))
+
+(deftest queue-status-head-age
+  (testing "`queue-status` reports age of next ready message"
+    (clear-tq!)
+    [(is (nil? (:head-age-ms (mq/queue-status conn-opts tq))) "Nothing ready")
+     (do (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 60000})) :enqueued-with-backoff)
+     (is (nil? (:head-age-ms (mq/queue-status conn-opts tq))) "Backing off, so not ready")
+     (do (wcar* (enqueue tq :msg2 {:mid :mid2}))
+         (Thread/sleep 50)
+         (wcar* (enqueue tq :msg3 {:mid :mid3})))
+     (is (<= 50 (:head-age-ms (mq/queue-status conn-opts tq)) 5000) "Age of oldest ready message")
+     (is (enc/submap? (mq/queue-status conn-opts tq) {:nqueued 2, :nbackoff 1}))
+     (do (clear-tq!) :cleared)]))

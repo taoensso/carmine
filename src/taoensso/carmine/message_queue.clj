@@ -127,7 +127,10 @@
 
 (defn queue-status
   "Returns in O(1) the approx {:keys [nqueued nlocked nbackoff ntotal]}
-  counts for given named queue.
+  counts for given named queue, and `:head-age-ms`: the approx msecs since
+  the oldest message still waiting in line was enqueued (nil if none). Useful
+  to monitor whether workers are keeping up. Doesn't cover messages waiting
+  on a backoff or retry.
 
   `nlocked` and `nbackoff` may include expired entries!"
   [conn-opts qname] (impl/queue-status (client conn-opts) qname))
@@ -137,7 +140,7 @@
 (defn queue-size
   "Returns in O(1) the approx number of messages awaiting handler for
   given named queue. Same as (:nqueued (queue-status conn-opts qname))."
-  ^long [conn-opts qname] (get (queue-status conn-opts qname) :nqueued))
+  ^long [conn-opts qname] (impl/queue-size (client conn-opts) qname))
 
 (comment (queue-size {} "qname"))
 
