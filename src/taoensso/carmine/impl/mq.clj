@@ -13,6 +13,7 @@
 
   {:author "Peter Taoussanis (@ptaoussanis)"}
   (:require
+   [clojure.string        :as str]
    [taoensso.encore       :as enc]
    [taoensso.truss        :as truss]
    [taoensso.encore.stats :as stats]
@@ -275,13 +276,22 @@
 
 ;; NB these Lua resources are shared by the v3 and v4 MQ,
 ;; keep them compatible with both.
-(do ; Lua scripts
-  (def ^:private lua-msg-status_  (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
-  (def ^:private lua-cancel_      (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/cancel.lua"))))
-  (def ^:private lua-enqueue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
-  (def ^:private lua-dequeue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua"))))
-  (def ^:private lua-finalize_    (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/finalize.lua"))))
-  (def ^:private lua-extend-lock_ (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/extend-lock.lua")))))
+(let [marker   "--[[include:msg-status-fn]]"
+      resource (fn [name] (truss/have (enc/slurp-resource (str "taoensso/carmine/lua/mq/" name ".lua"))))
+      load-lua
+      (fn [name]
+        ;; Splice in the shared status fn, so that there's a single copy
+        (let [script (resource name)]
+          (if (str/includes? script marker)
+            (str/replace     script marker (resource "msg-status-fn"))
+            (do              script))))]
+
+  (def ^:private lua-msg-status_  (delay (load-lua "msg-status")))
+  (def ^:private lua-cancel_      (delay (load-lua "cancel")))
+  (def ^:private lua-enqueue_     (delay (load-lua "enqueue")))
+  (def ^:private lua-dequeue_     (delay (load-lua "dequeue")))
+  (def ^:private lua-finalize_    (delay (load-lua "finalize")))
+  (def ^:private lua-extend-lock_ (delay (load-lua "extend-lock"))))
 
 (defn req-message-status
   "Returns request with reply for `->message-status`."

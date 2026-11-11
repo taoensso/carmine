@@ -4,33 +4,12 @@
 -- only mode. Don't remove.
 redis.replicate_commands();
 
--- From msg_status.lua ---------------------------------------------------------
 local mid = _:mid;
 local t   = redis.call('TIME'); -- Server clock, avoids client clock skew
 local now = (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000); -- Epoch msecs
 
-local status  = nil; -- base status e/o nil, done, queued, locked
-local is_bo = false; -- backoff flag for: done, queued
-local is_rq = false; -- requeue flag for: done, locked
-local exp_bo = 0;
--- 8x cases: nil, done(bo/rq), queued(bo), locked(rq)
--- Describe with: {status, $bo, $rq} with $ prefixes e/o: _, +, -, *
-
-if (redis.call('hexists', _:qk-messages, mid) == 1) then
-   local exp_lock = tonumber(redis.call('hget', _:qk-locks,    mid)) or 0;
-   exp_bo         = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
-
-   is_bo = (now < exp_bo);
-   is_rq = (redis.call('sismember', _:qk-requeue,     mid) == 1) or -- Deprecated
-           (redis.call('hexists',   _:qk-messages-rq, mid) == 1);
-
-   if (redis.call('sismember', _:qk-done, mid) == 1) then status = 'done';
-   elseif (now < exp_lock)                           then status = 'locked';
-   else                                                   status = 'queued'; end
-else
-   status = 'nx';
-end
---------------------------------------------------------------------------------
+--[[include:msg-status-fn]]
+local status, is_bo, is_rq, exp_lock, exp_bo = msg_status(mid, now);
 -- Return {action, error}
 
 local can_upd    = (_:can-upd?   == '1');

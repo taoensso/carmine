@@ -20,35 +20,14 @@ local function note_due(udt)
    end
 end
 
+--[[include:msg-status-fn]]
+
 -- Processes given mid and returns e/o {'skip' ...}, {'handle' ...}, {'unexpected' ...}
 -- With `defer`, a circle mid that's ready for handling is instead moved to the
 -- back of the ready list.
 local function process(mid, mid_src, defer)
 
-   -- From msg_status.lua ------------------------------------------------------
-   local status  = nil; -- base status e/o nil, done, queued, locked
-   local is_bo = false; -- backoff flag for: done, queued
-   local is_rq = false; -- requeue flag for: done, locked
-   local exp_lock = 0;
-   local exp_bo   = 0;
-   -- 8x cases: nil, done(bo/rq), queued(bo), locked(rq)
-   -- Describe with: {status, $bo, $rq} with $ prefixes e/o: _, +, -, *
-
-   if (redis.call('hexists', _:qk-messages, mid) == 1) then
-      exp_lock = tonumber(redis.call('hget', _:qk-locks,    mid)) or 0;
-      exp_bo   = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
-
-      is_bo = (now < exp_bo);
-      is_rq = (redis.call('sismember', _:qk-requeue,     mid) == 1) or -- Deprecated
-              (redis.call('hexists',   _:qk-messages-rq, mid) == 1);
-
-      if (redis.call('sismember', _:qk-done, mid) == 1) then status = 'done';
-      elseif (now < exp_lock)                           then status = 'locked';
-      else                                                   status = 'queued'; end
-   else
-      status = 'nx';
-   end
-   -----------------------------------------------------------------------------
+   local status, is_bo, is_rq, exp_lock, exp_bo = msg_status(mid, now);
 
    if (status == 'nx') then
       if (mid_src == 'circle') then
