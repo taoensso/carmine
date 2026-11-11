@@ -277,6 +277,7 @@
 ;; keep them compatible with both.
 (do ; Lua scripts
   (def ^:private lua-msg-status_  (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
+  (def ^:private lua-cancel_      (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/cancel.lua"))))
   (def ^:private lua-enqueue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
   (def ^:private lua-dequeue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua"))))
   (def ^:private lua-finalize_    (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/finalize.lua"))))
@@ -333,6 +334,27 @@
     error  {:success? false, :error  (keyword error)}
     action {:success? true,  :action (keyword action), :mid mid}
     :else  {:success? false, :error  :unknown}))
+
+(defn req-cancel
+  "Returns request with reply for `cancel-result`."
+  [qname mid]
+  [:lua @lua-cancel_
+   {:qk-messages      (qkey qname :messages)
+    :qk-messages-rq   (qkey qname :messages-rq)
+    :qk-lock-times-rq (qkey qname :lock-times-rq)
+    :qk-locks         (qkey qname :locks)
+    :qk-lock-tokens   (qkey qname :lock-tokens)
+    :qk-backoffs      (qkey qname :backoffs)
+    :qk-done          (qkey qname :done)
+    :qk-requeue       (qkey qname :requeue)}
+   {:mid mid}])
+
+(defn cancel-result
+  "`cancel` reply -> ?<prior-status-kw>"
+  [reply]
+  (when (vector? reply)
+    (let [[?bss bo? rq? cancelled?] reply]
+      (when cancelled? (->message-status ?bss bo? rq?)))))
 
 (defn req-dequeue
   "Returns request to process next mid/s, with reply e/o:

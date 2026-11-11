@@ -241,6 +241,27 @@
   (wcar {} (enqueue :q1 :msg1 :mid1))
   (wcar {} (message-status :q1 :mid1)))
 
+(defn cancel
+  "Cancels any pending handling and/or requeue of message with given id.
+  Returns nil if there was nothing to cancel (message not in queue, or
+  already done), otherwise returns the message's prior status as given by
+  `message-status`, e.g.:
+      `:queued`              - Message will not be handled
+      `:queued-with-backoff` - ''
+      `:locked`              - Message was already with handler, see below
+      `:locked-with-requeue` - '', and will not be requeued
+      `:done-with-requeue`   - Message will not be requeued
+
+  A handler that's already running can't be interrupted, but its result will
+  be ignored and its `lock-extend!` will return nil.
+
+  A message cancelled while queued or locked can be enqueued again right away."
+  [qname mid]
+  (car/parse impl/cancel-result
+    (send-req (impl/req-cancel qname mid))))
+
+(comment (wcar {} (cancel "qname" "mid1")))
+
 ;;;; Workers
 
 (defprotocol IWorker
@@ -405,9 +426,7 @@
         `:error`        - `:error` status that won't be retried
         `:max-attempts` - Retry needed, but `:max-attempts` reached
 
-      If this fn throws, message is kept and retried later (incl. by handler,
-      unless `:max-attempts` was reached). As with handler, may be called more
-      than once for the same message.
+      If this fn throws, message is kept and retried later.
 
     `:throttle-ms` (default `default-throttle-ms-fn`)
       Min time (in milliseconds) between polls by each handler thread, incl.

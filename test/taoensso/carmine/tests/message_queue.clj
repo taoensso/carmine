@@ -396,6 +396,85 @@
       (is (=       (wcar* (dequeue tq)) ["skip" "did-requeue"]))
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1c 1 500 #_udt]))])])
 
+(deftest cancel
+  [(testing "Nothing to cancel"
+     (clear-tq!)
+     [(is (= (wcar* (mq/cancel tq :mid1)) nil) "Not in queue")
+      (is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
+      (do (test-handler (fn [_m] {:status :success :backoff-ms 2000})) :ran-handler)
+      (is (= (wcar* (mq/cancel  tq :mid1)) nil) "Already done")
+      (is (= (wcar* (msg-status tq :mid1)) :done-with-backoff) "Dedupe backoff kept")])
+
+   (testing "Cancel while :queued"
+     (clear-tq!)
+     [(is (= (wcar* (enqueue    tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
+      (is (= (wcar* (enqueue    tq :msg2 {:mid :mid2, :init-backoff-ms 5000})) {:success? true, :action :added, :mid :mid2}))
+      (is (= (wcar* (mq/cancel  tq :mid1)) :queued))
+      (is (= (wcar* (mq/cancel  tq :mid2)) :queued-with-backoff))
+      (is (= (wcar* (mq/cancel  tq :mid1)) nil))
+      (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+      (is (= (wcar* (msg-status tq :mid2)) :done-awaiting-gc))
+      (is (= (wcar* (dequeue    tq)) ["skip" "did-gc"]))
+      (is (= (wcar* (msg-status tq :mid1)) nil))
+      (is (= (wcar* (dequeue    tq {:max-poll-steps 16})) ["sleep" "end-of-circle" "a" eoq-backoff-ms])
+        "Neither message handled")
+      (do (wcar* (dequeue tq {:max-poll-steps 16})) :next-circle-lap)
+      (is (= (wcar* (msg-status tq :mid2)) nil))
+
+      (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
+      (is (= (wcar* (mq/cancel  tq :mid1)) :queued))
+      (is (= (wcar* (enqueue    tq :msg1c {:mid :mid1})) {:success? true, :action :added, :mid :mid1})
+        "Can enqueue again right away")
+      (is (= (wcar* (dequeue tq)) ["skip" "did-requeue"]))
+      (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1c 1 default-lock-ms #_udt]))])
+
+   (testing "Cancel while :locked"
+     (clear-tq!)
+     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
+      (let [release  (promise)
+            extended (promise)
+            [_ _ hr]
+            (test-handler :async
+              (fn [{:keys [lock-extend!]}]
+                (deref release 5000 nil)
+                (deliver extended (lock-extend!))
+                {:status :retry}))]
+
+        [(is (= (wcar* (msg-status tq :mid1)) :locked))
+         (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1, :can-requeue? true})) {:success? true, :action :added, :mid :mid1}))
+         (is (= (wcar* (mq/cancel  tq :mid1)) :locked-with-requeue))
+         (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+         (do (deliver release true) true)
+         (is (= (deref extended 2000 :timeout) nil) "Handler can no longer extend")
+         (is (= (deref hr       2000 :timeout) [:handled :retry]))
+         (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc) "Handler result ignored")
+         (is (= (wcar* (dequeue tq {:max-poll-steps 16})) ["sleep" "end-of-circle" "a" eoq-backoff-ms]))
+         (do (wcar* (dequeue tq {:max-poll-steps 16})) :next-circle-lap)
+         (is (= (wcar* (msg-status tq :mid1)) nil))])])
+
+   (testing "Cancelled message isn't given up on"
+     (clear-tq!)
+     [(is (= (wcar* (enqueue tq :msg1 {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
+      (let [gave-up?_   (atom false)
+            lease-token (enc/uuid-str)
+            poll-reply  (wcar* (dequeue tq nil lease-token))]
+        [(is (= (impl/handle1 client tq
+                  (fn [_] (wcar* (mq/cancel tq :mid1)) (throw!)) poll-reply
+                  {:lease-token lease-token, :on-give-up (fn [_] (reset! gave-up?_ true))})
+               [:handled :error]))
+         (is (= @gave-up?_ false))
+         (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))])])
+
+   (testing "Cancel requeue while :done-with-backoff"
+     (clear-tq!)
+     [(is (= (wcar* (enqueue tq :msg1a {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
+      (do (test-handler (fn [_m] {:status :success :backoff-ms 2000})) :ran-handler)
+      (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1, :can-requeue? true})) {:success? true, :action :added, :mid :mid1}))
+      (is (= (wcar* (msg-status tq :mid1)) :done-with-requeue))
+      (is (= (wcar* (mq/cancel  tq :mid1)) :done-with-requeue))
+      (is (= (wcar* (msg-status tq :mid1)) :done-with-backoff))
+      (is (= (wcar* (mq/cancel  tq :mid1)) nil))])])
+
 (deftest multi-step-polls
   (testing "Poll can do several maintenance steps"
     (clear-tq!)
