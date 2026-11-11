@@ -12,12 +12,13 @@ local now = (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000); -- Epoc
 local status  = nil; -- base status e/o nil, done, queued, locked
 local is_bo = false; -- backoff flag for: done, queued
 local is_rq = false; -- requeue flag for: done, locked
+local exp_bo = 0;
 -- 8x cases: nil, done(bo/rq), queued(bo), locked(rq)
 -- Describe with: {status, $bo, $rq} with $ prefixes e/o: _, +, -, *
 
 if (redis.call('hexists', _:qk-messages, mid) == 1) then
    local exp_lock = tonumber(redis.call('hget', _:qk-locks,    mid)) or 0;
-   local exp_bo   = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
+   exp_bo         = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
 
    is_bo = (now < exp_bo);
    is_rq = (redis.call('sismember', _:qk-requeue,     mid) == 1) or -- Deprecated
@@ -50,6 +51,22 @@ local reset_init_backoff = function()
    else
       redis.call('hdel', _:qk-backoffs, _:mid);
       return false;
+   end
+end
+
+local reschedule_in_queue = function()
+   -- As `reset_init_backoff`, but when this makes a queued mid due earlier
+   -- also ensure that workers notice promptly: wake a sleeper, and lower the
+   -- due hint of any worker lap that has already passed this mid.
+   local new_due = now + tonumber(_:init-bo);
+   reset_init_backoff();
+
+   if (is_bo and (new_due < exp_bo)) then
+      local next_due = tonumber(redis.call('get', _:qk-next-due));
+      if (next_due and (new_due < next_due)) then
+         redis.call('set', _:qk-next-due, new_due);
+      end
+      interrupt_sleep();
    end
 end
 
@@ -127,12 +144,13 @@ if (status == 'nx') then
 elseif (status == 'queued') then
    if can_upd then
       -- {queued, *bo, _rq} -> update in queue
-      if reset_ibo then reset_init_backoff(); end
+      if reset_ibo then reschedule_in_queue(); end
       reset_in_queue();
       clear_stale_lock();
       return {'updated'};
    elseif reset_ibo then
-      reset_init_backoff();
+      -- {queued, *bo, _rq} -> reschedule in queue
+      reschedule_in_queue();
       clear_stale_lock();
       return {'updated'};
    else

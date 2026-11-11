@@ -198,7 +198,14 @@
 
       `:can-requeue?`    - When true, will mark message with `:locked` or
                            `:done-with-backoff` status so that it will be
-                           automatically requeued after garbage collection."
+                           automatically requeued after garbage collection.
+
+      `:reset-init-backoff?` - When true, will reschedule an mid still awaiting
+                               handling to become due after `:init-backoff-ms`
+                               (default 0, i.e. now). Useful to postpone or
+                               hasten a delayed message, or with `:can-update?`
+                               to debounce. NB always provide the real message,
+                               since it may be enqueued as usual."
 
   {:arglists
    '([qname message]

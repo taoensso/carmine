@@ -157,7 +157,56 @@
      (is (= (wcar* (msg-status tq :mid1)) :locked))
 
      (is (subvec? (wcar* (dequeue tq)) ["skip" "queued-with-backoff"]))
-     (is (= (wcar* (msg-status tq :mid2))      :queued-with-backoff))]))
+     (is (= (wcar* (msg-status tq :mid2))      :queued-with-backoff))])
+
+  (testing "Reschedule with `:reset-init-backoff?`"
+    (clear-tq!)
+    (let [del-signals! (fn [] (wcar* (car/del (impl/qkey tq :isleep-a) (impl/qkey tq :isleep-b))))
+          nsignals
+          (fn [] (reduce + (wcar* (car/llen (impl/qkey tq :isleep-a))
+                                  (car/llen (impl/qkey tq :isleep-b)))))
+
+          next-due   (fn [] (enc/as-?int (wcar* (car/get (impl/qkey tq :next-due)))))
+          reschedule (fn [ms] (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms ms :reset-init-backoff? true})))
+          updated    {:success? true, :action :updated, :mid :mid1}]
+
+      [(is (= (subvec (wcar* (dequeue tq)) 0 2) ["sleep" "end-of-circle"]))
+       (is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 60000})) {:success? true, :action :added, :mid :mid1}))
+       (is (= (subvec (wcar* (dequeue tq)) 0 2) ["sleep" "end-of-circle"]))
+       (is (subvec? (wcar* (dequeue tq)) ["skip" "queued-with-backoff"]) "Worker lap passes mid")
+       (del-signals!)
+
+       (let [due1 (next-due)]
+         [(is (pos? due1))
+          (is (= (reschedule 120000) updated) "Later")
+          (is (= (nsignals) 0)    "No need to wake a sleeper")
+          (is (= (next-due) due1) "Due hint never raised")
+
+          (is (= (reschedule 30000) updated) "Sooner")
+          (is (= (nsignals) 1)   "Woke a sleeper")
+          (is (< (next-due) due1) "Due hint lowered")])
+
+       (del-signals!)
+       (is (= (reschedule 0) updated) "Now")
+       (is (= (nsignals) 1))
+       (is (= (wcar* (msg-status tq :mid1)) :queued))
+
+       (is (= (wcar* (dequeue tq)) ["sleep" "end-of-circle" "a" 1]) "Lap ends, due hint prevents real sleep")
+       (let [lease-token (enc/uuid-str)
+             poll-reply  (wcar* (dequeue tq nil lease-token))]
+         [(is (subvec? poll-reply ["handle" "mid1" :msg1 1]))
+          (is (= (reschedule 60000) {:success? false, :error :locked}) "Only while awaiting handling")
+          (is (subvec? (impl/handle1 client tq (fn [_] {:status :retry :backoff-ms 60000})
+                         poll-reply {:lease-token lease-token})
+                [:handled :retry]))])
+
+       (is (= (wcar* (msg-status tq :mid1)) :queued-with-backoff))
+       (del-signals!)
+       (is (= (wcar* (enqueue tq :msg1b {:mid :mid1 :can-update? true :reset-init-backoff? true})) updated)
+         "Reschedule a retry to now, with updated content")
+       (is (= (nsignals) 1))
+       (is (= (subvec (wcar* (dequeue tq)) 0 2) ["sleep" "end-of-circle"]))
+       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1b 2]) "Attempts kept")])))
 
 (defn test-handler
   "Returns [<poll-reply> <handler-arg> <handle1-result>]"
