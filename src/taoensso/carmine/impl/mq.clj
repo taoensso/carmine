@@ -37,7 +37,7 @@
     "Returns nil (uncapped), or the max msecs that a blocking request may
     safely block for. Values < 10 mean that blocking requests are unsafe."))
 
-(defn- exec1 "Sends given request and returns its reply."
+(defn exec1 "Sends given request and returns its reply."
   [client req] (nth (exec client [req]) 0))
 
 (defmacro ^:private log!
