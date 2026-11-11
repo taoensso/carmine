@@ -722,6 +722,21 @@
          (is (wait-for #(= (count @handled_) 2)))
          (is (= (set @handled_) #{:a :b}))])))
 
+  (testing "Handler threads poll for themselves, independently of `:nthreads-worker`"
+    (clear-tq!)
+    (let [nhandling* (enc/counter 0)
+          release (promise)]
+      (with-open [^java.io.Closeable worker
+                  (mq/worker conn-opts tq
+                    {:auto-start false
+                     :handler (fn [_] (nhandling*) (deref release 5000 nil) {:status :success})
+                     :nthreads-worker 1, :nthreads-handler 3
+                     :throttle-ms 10000, :eoq-backoff-ms 20})]
+        (wcar* (enqueue tq :a) (enqueue tq :b) (enqueue tq :c))
+        (mq/start worker)
+        [(is (wait-for #(= @nhandling* 3)) "Not limited to 1 poll per throttle period")
+         (do (deliver release true) (mq/stop worker) (is (worker :drain 5000)))])))
+
   (testing "Monitor failures do not abandon leased messages"
     (clear-tq!)
     (let [handled (promise)]

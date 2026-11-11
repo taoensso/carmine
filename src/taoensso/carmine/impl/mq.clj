@@ -586,8 +586,7 @@
                   :handler-status (enc/typed-val status)}})))
           (finally
             ;; Deliberately doesn't re-set the interrupt flag: nothing in the
-            ;; worker consumes it, and handler threads are pooled, so it would
-            ;; only affect the remainder of this task
+            ;; worker consumes it, and it'd only break the thread's next sleep
             (when @interrupted?_
               (log! client
                 {:level :warn, :id :carmine.mq/handler-interrupted
@@ -628,12 +627,13 @@
      :ssb-handling-time-ns (stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/handling-time-ns)})}))
 
 (defn worker-summary
-  "Returns worker's {:keys [qname running? closed? nthreads-worker nthreads-handler]}."
+  "Returns worker's {:keys [qname running? closed? nthreads-handler ?nthreads-worker]}."
   [{:keys [qname worker-opts running?_ closed?_]}]
-  {:qname    qname
-   :running? @running?_, :closed? @closed?_
-   :nthreads-worker  (get worker-opts :nthreads-worker)
-   :nthreads-handler (get worker-opts :nthreads-handler)})
+  (enc/assoc-some
+    {:qname    qname
+     :running? @running?_, :closed? @closed?_
+     :nthreads-handler (get worker-opts :nthreads-handler)}
+    :nthreads-worker   (get worker-opts :nthreads-worker)))
 
 (defn worker-status
   "Returns worker's detailed status map, without connection info."
@@ -642,8 +642,8 @@
   {:qname    qname
    :running? @running?_, :closed? @closed?_
    :nthreads
-   {:worker  (get worker-opts :nthreads-worker)
-    :handler (get worker-opts :nthreads-handler)}
+   (enc/assoc-some {:handler (get worker-opts :nthreads-handler)}
+     :worker                 (get worker-opts :nthreads-worker))
 
    :opts worker-opts
    :stats
@@ -773,20 +773,18 @@
 
     (locking running?_
       (when (and (not @closed?_)
-                 (pos-int? (get worker-opts :nthreads-worker))
+                 (pos-int? (get worker-opts :nthreads-handler))
+                 (pos-int? (get worker-opts :nthreads-worker 1)) ; Back compatibility
                  (compare-and-set! running?_ false true))
         (log! client {:level :info, :id :carmine.mq/worker-starting, :data {:qname qname}})
         ;; Async, don't block start on a Redis round-trip
         (future (warn-on-clock-skew! client qname
                   (get worker-opts :default-lock-ms)))
         (let [generation (swap! generation_ inc)
-              {:keys [handler nthreads-worker]} worker-opts
+              {:keys [handler nthreads-handler]} worker-opts
               qk-ndry-runs (qkey qname :ndry-runs)
 
-              ;; Count consecutive errors across all loop threads, these may indicate
-              ;; an issue with Redis or handler fn (/ handler's supporting systems)
-              nconsecutive-errors* (enc/counter 0)
-              queue-size*          (enc/counter 0)
+              queue-size* (enc/counter 0)
 
               throttle-ms-fn ; (fn []) -> ?msecs
               (let [{:keys [throttle-ms]} worker-opts
@@ -805,9 +803,14 @@
                         (Thread/sleep (int (min remaining 100)))
                         (recur))))))
 
-              start-polling-loop!
+              run-handler-thread!
               (fn [^long thread-idx]
-                (let [;; thread-id (.getId (Thread/currentThread))
+                (let [handler-thread (Thread/currentThread)
+
+                      ;; Consecutive errors may indicate an issue with Redis or
+                      ;; handler fn (/ handler's supporting systems). Counted per
+                      ;; thread so that backoff doesn't grow with thread count.
+                      nconsecutive-errors* (enc/counter 0)
                       loop-error-backoff?_ (atom false)
                       loop-error!
                       (fn [throwable]
@@ -826,84 +829,99 @@
                                :error throwable})
                             (reset! loop-error-backoff?_ true))))]
 
-                  (when (> thread-idx 0)
-                    (sleep-while-running! (thread-desync-ms (or (throttle-ms-fn) 100))))
+                  (swap! handler-threads_ conj handler-thread)
+                  (try
+                    (when (> thread-idx 0)
+                      (sleep-while-running! (thread-desync-ms 100)))
 
-                  (loop [nloops 0]
-                    (when (and @running?_ (= generation @generation_))
+                    (loop []
+                      (when (and @running?_ (= generation @generation_))
 
-                      (when (compare-and-set! loop-error-backoff?_ true false)
-                        (let [^long nce @nconsecutive-errors*]
-                          (when (> nce 0)
-                            (let [backoff-ms
-                                  (enc/exp-backoff (min 12 nce)
-                                    {:factor (or (throttle-ms-fn) 200)})]
+                        (when (compare-and-set! loop-error-backoff?_ true false)
+                          (let [^long nce @nconsecutive-errors*]
+                            (when (> nce 0)
+                              (let [backoff-ms
+                                    (enc/exp-backoff (min 12 nce)
+                                      {:factor (or (throttle-ms-fn) 200)})]
 
-                              (log! client
-                                {:level :error, :id :carmine.mq/worker-backoff,
-                                 :msg "Thread will back off due to worker error/s",
-                                 :data
-                                 {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
-                                  :backoff-ms backoff-ms}})
+                                (log! client
+                                  {:level :error, :id :carmine.mq/worker-backoff,
+                                   :msg "Thread will back off due to worker error/s",
+                                   :data
+                                   {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
+                                    :backoff-ms backoff-ms}})
 
-                              (sleep-while-running! backoff-ms)))))
+                                (sleep-while-running! backoff-ms)))))
 
-                      ;; Reserve local handler capacity before acquiring a Redis
-                      ;; lease. A short timeout keeps shutdown responsive.
-                      (future-pool 100 nil
-                        (fn []
-                          (when (and @running?_ (= generation @generation_))
-                            (let [handler-thread (Thread/currentThread)
-                                  lease-token (enc/uuid-str)]
-                              (swap! handler-threads_ conj handler-thread)
-                              (try
-                                (let [[poll-reply ndry-runs & queue-counts]
-                                      (exec client
-                                        (into
-                                          [(req-dequeue qname worker-opts lease-token)
-                                           ["GET" qk-ndry-runs]]
-                                          (reqs-queue-counts qname)))
+                        (when (and @running?_ (= generation @generation_))
+                          (let [t0 (System/nanoTime)
+                                lease-token (enc/uuid-str)]
+                            (try
+                              (let [[poll-reply ndry-runs & queue-counts]
+                                    (exec client
+                                      (into
+                                        [(req-dequeue qname worker-opts lease-token)
+                                         ["GET" qk-ndry-runs]]
+                                        (reqs-queue-counts qname)))
 
-                                      {:keys [nqueued]} (-queue-status queue-counts)]
+                                    {:keys [nqueued]} (-queue-status queue-counts)]
 
-                                  (queue-size* :set nqueued)
-                                  (ssb-queue-size nqueued)
+                                (queue-size* :set nqueued)
+                                (ssb-queue-size nqueued)
 
-                                  (when monitor
-                                    (try
-                                      (monitor
-                                        {:queue-size      nqueued
-                                         :ndry-runs       (enc/as-int (or ndry-runs 0))
-                                         :poll-reply      poll-reply
-                                         :worker          worker})
-                                      (catch Throwable t
-                                        (inc-nstat! nstats_ :monitor/error)
-                                        (log! client
-                                          {:level :error, :id :carmine.mq/monitor-error
-                                           :data {:qname qname, :thread-id thread-idx}
-                                           :error t}))))
+                                (when monitor
+                                  (try
+                                    (monitor
+                                      {:queue-size      nqueued
+                                       :ndry-runs       (enc/as-int (or ndry-runs 0))
+                                       :poll-reply      poll-reply
+                                       :worker          worker})
+                                    (catch Throwable t
+                                      (inc-nstat! nstats_ :monitor/error)
+                                      (log! client
+                                        {:level :error, :id :carmine.mq/monitor-error
+                                         :data {:qname qname, :thread-id thread-idx}
+                                         :error t}))))
 
-                                  (handle1 client qname handler poll-reply
-                                    {:worker               worker
-                                     :queue-size           nqueued
-                                     :lease-token          lease-token
-                                     :nstats_              nstats_
-                                     :ssb-queueing-time-ms ssb-queueing-time-ms
-                                     :ssb-handling-time-ns ssb-handling-time-ns
-                                     :sleep-locally!       sleep-while-running!})
+                                (handle1 client qname handler poll-reply
+                                  {:worker               worker
+                                   :queue-size           nqueued
+                                   :lease-token          lease-token
+                                   :nstats_              nstats_
+                                   :ssb-queueing-time-ms ssb-queueing-time-ms
+                                   :ssb-handling-time-ns ssb-handling-time-ns
+                                   :sleep-locally!       sleep-while-running!})
 
-                                  (nconsecutive-errors* :set 0))
-                                (catch Throwable t (loop-error! t))
-                                (finally
-                                  (swap! handler-threads_ disj handler-thread)))))))
+                                (nconsecutive-errors* :set 0))
+                              (catch Throwable t (loop-error! t)))
 
-                      (when-let [ms (throttle-ms-fn)] (sleep-while-running! ms))
-                      (recur (inc nloops))))))]
+                            ;; Clear any interrupt flag left by handler, etc. so
+                            ;; that it can't break this long-lived thread's sleeps
+                            (Thread/interrupted)
 
+                            ;; Min time between starts of this thread's polls, so
+                            ;; time spent handling or sleeping counts toward it
+                            (when-let [ms (throttle-ms-fn)]
+                              (let [elapsed-ms (quot (- (System/nanoTime) t0) 1000000)
+                                    ms (- (long ms) elapsed-ms)]
+                                (when (pos? ms) (sleep-while-running! ms)))))
+                          (recur))))
+
+                    (finally
+                      (swap! handler-threads_ disj handler-thread)))))]
+
+          ;; Each handler thread loops over polls for as long as worker is
+          ;; running, holding its pool slot throughout. Polls are so never
+          ;; made (and leases never acquired) ahead of local handler capacity.
+          ;; Slots may still be held by handlers of an earlier run, so threads
+          ;; are started as slots become free.
           (reset! worker-futures_
-            (enc/reduce-n
-              (fn [v idx] (conj v (future (start-polling-loop! idx))))
-              [] nthreads-worker)))
+            [(future
+               (loop [idx 0]
+                 (when (and (< idx (long nthreads-handler)) @running?_ (= generation @generation_))
+                   (if (future-pool 100 nil (fn [] (run-handler-thread! idx)))
+                     (recur (inc idx))
+                     (recur      idx)))))]))
 
         true))))
 

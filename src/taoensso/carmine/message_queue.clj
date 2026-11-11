@@ -372,8 +372,10 @@
       handlers and call `lock-extend!` during legitimately long work.
 
     `:throttle-ms` (default `default-throttle-ms-fn`)
-      Thread sleep period (in milliseconds) between each poll.
-      Can be a (fn [queue-size]) -> ?sleep-msecs.
+      Min time (in milliseconds) between polls by each handler thread, incl.
+      any time spent handling or sleeping. So worker's max poll rate is
+      `:nthreads-handler` per `:throttle-ms`.
+      Can be a (fn [queue-size]) -> ?msecs.
 
     `:eoq-backoff-ms` (default `exp-backoff`)
       Max time (in milliseconds) to sleep thread each time end of queue is reached.
@@ -382,14 +384,11 @@
       If present, connection read timeout should be comfortably > max msecs
       (e.g. by >= 250ms)!
 
-    `:nthreads-worker`  - Number of threads to monitor and maintain queue.
-    `:nthreads-handler` - Number of threads to handle queue messages with handler fn.
+    `:nthreads-handler` - Number of threads to poll queue and handle messages,
+      i.e. max number of concurrent handlers.
 
-      Worker threads submit polls, paced by `:throttle-ms`. Each poll runs on
-      a handler thread and holds that slot through handling or idle sleep.
-      Concurrent polls/handlers are limited by `:nthreads-handler`; even one
-      worker thread can fill multiple handler slots. No free slot means no
-      poll, preventing leases from being acquired ahead of handler capacity."
+    `:nthreads-worker` - Deprecated, no longer used except that 0 prevents
+      worker from starting. Handler threads now do their own polling."
 
   ([conn-opts qname] (worker conn-opts qname nil))
   ([conn-opts qname
