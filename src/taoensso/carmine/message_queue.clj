@@ -369,7 +369,17 @@
 
       Lease expiry permits another worker to receive the message. This provides
       at-least-once delivery and can cause concurrent handling; use idempotent
-      handlers and call `lock-extend!` during legitimately long work.
+      handlers and call `lock-extend!` during legitimately long work, or see
+      `:lock-auto-extend-max-ms`.
+
+    `:lock-auto-extend-max-ms` (default nil => disabled)
+      If set, worker will automatically keep extending a message's lease while
+      its handler is running, for up to this long (in milliseconds) after
+      handler started. After that the lease is left to expire as usual, as a
+      guard against stalled handlers.
+
+      Allows a short `:lock-ms` (so that messages held by a dead worker are
+      soon retried) with less risk of double handling for slow handlers.
 
     `:throttle-ms` (default `default-throttle-ms-fn`)
       Min time (in milliseconds) between polls by each handler thread, incl.

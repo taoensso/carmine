@@ -481,10 +481,60 @@
            (exec1 client ["BRPOP" (qkey qname :isleep-a) (qkey qname :isleep-b) secs-dbl])
            (catch Throwable _ nil)))))))
 
+(defn- lock-extender
+  "Returns a single-threaded scheduler for automatic lock extensions. Its
+  (daemon) thread ends when idle, so no shutdown is needed."
+  ^java.util.concurrent.ScheduledThreadPoolExecutor [qname]
+  (doto
+    (java.util.concurrent.ScheduledThreadPoolExecutor. 1
+      (reify java.util.concurrent.ThreadFactory
+        (newThread [_ r]
+          (doto (Thread. r (str "carmine-mq-lock-extender-" (enc/as-qname qname)))
+            (.setDaemon true)))))
+    (.setKeepAliveTime 10 java.util.concurrent.TimeUnit/SECONDS)
+    (.allowCoreThreadTimeOut   true)
+    (.setRemoveOnCancelPolicy  true)))
+
+(defn- auto-extend-lock!
+  "Schedules periodic extension of given lease for up to `max-ms`, or until
+  the lease is superseded. Returns a nullary fn to end the extensions."
+  [client qname mid attempt lease-token lock-ms
+   ^java.util.concurrent.ScheduledThreadPoolExecutor lock-extender max-ms]
+  (let [t0          (System/nanoTime)
+        interval-ms (max 1 (quot (long lock-ms) 3))
+        future_     (atom nil)
+        end!        (fn [] (when-let [^java.util.concurrent.Future f @future_] (.cancel f false)))
+        data        {:qname qname, :mid mid, :attempt attempt}]
+
+    (reset! future_
+      (.scheduleWithFixedDelay lock-extender
+        (fn []
+          (try
+            (enc/cond
+              (>= (quot (- (System/nanoTime) t0) 1000000) (long max-ms))
+              (do
+                (end!)
+                (log! client
+                  {:level :warn, :id :carmine.mq/lock-auto-extend-ended
+                   :msg "Handler exceeded max time for automatic lock extension, lock may now expire"
+                   :data (assoc data :max-ms max-ms)}))
+
+              (not (open? client)) (end!)
+              (not (extend-lock client qname mid lease-token lock-ms))
+              (end!)) ; Lease superseded
+
+            (catch Throwable t ; Will retry
+              (log! client
+                {:level :warn, :id :carmine.mq/lock-auto-extend-error
+                 :data data, :error t}))))
+
+        interval-ms interval-ms java.util.concurrent.TimeUnit/MILLISECONDS))
+    end!))
+
 (defn handle1
   [client qname handler poll-reply
    {:keys [worker queue-size lease-token nstats_ ssb-queueing-time-ms ssb-handling-time-ns
-           sleep-locally!]
+           sleep-locally! lock-extender lock-auto-extend-max-ms]
     :or   {queue-size -1}}]
 
   (let [[kind] (when (vector? poll-reply) poll-reply)
@@ -520,6 +570,11 @@
 
             interrupted?_ (volatile! false)
             t0 (enc/now-nano*)
+
+            end-auto-extend!
+            (enc/when-let [le lock-extender, max-ms lock-auto-extend-max-ms]
+              (auto-extend-lock! client qname mid attempt lease-token lock-ms le max-ms))
+
             result
             (try
               (handler mq-msg)
@@ -527,7 +582,9 @@
                 (vreset! interrupted?_ true)
                 {:status :error, :throwable t})
               (catch Throwable t
-                {:status :error :throwable t}))
+                {:status :error :throwable t})
+              (finally
+                (when end-auto-extend! (end-auto-extend!))))
 
             handling-time-ns (- (enc/now-nano*) t0)
 
@@ -619,6 +676,7 @@
      :worker-futures_  (atom [])
      :handler-threads_ (atom #{})
      :drain-wake_      (atom nil)
+     :lock-extender    (when (get worker-opts :lock-auto-extend-max-ms) (lock-extender qname))
      :nstats_          (atom {})
 
      ;; :sstats-init opts below allow for manual persistent sstats, currently undocumented
@@ -764,7 +822,7 @@
   object, as provided to handler and monitor fns."
   [state worker]
   (let [{:keys [client qname worker-opts monitor running?_ closed?_ generation_ future-pool
-                worker-futures_ handler-threads_ nstats_
+                worker-futures_ handler-threads_ nstats_ lock-extender
                 ssb-queue-size ssb-queueing-time-ms ssb-handling-time-ns]} state]
 
     (when-not (open? client)
@@ -890,7 +948,10 @@
                                    :nstats_              nstats_
                                    :ssb-queueing-time-ms ssb-queueing-time-ms
                                    :ssb-handling-time-ns ssb-handling-time-ns
-                                   :sleep-locally!       sleep-while-running!})
+                                   :sleep-locally!       sleep-while-running!
+                                   :lock-extender        lock-extender
+                                   :lock-auto-extend-max-ms
+                                   (get worker-opts :lock-auto-extend-max-ms)})
 
                                 (nconsecutive-errors* :set 0))
                               (catch Throwable t (loop-error! t)))

@@ -737,6 +737,33 @@
         [(is (wait-for #(= @nhandling* 3)) "Not limited to 1 poll per throttle period")
          (do (deliver release true) (mq/stop worker) (is (worker :drain 5000)))])))
 
+  (testing "Automatic lock extension"
+    (doseq [[max-ms expected-attempts]
+            [[5000 [1]]     ; Lease kept throughout slow handling
+             [250  [1 2]]]] ; Extended, then left to expire once max time exceeded
+      (clear-tq!)
+      (let [attempts_ (atom [])
+            started   (promise)
+            release   (promise)]
+        (with-open [^java.io.Closeable worker
+                    (mq/worker conn-opts tq
+                      {:handler
+                       (fn [{:keys [attempt]}]
+                         (swap! attempts_ conj attempt)
+                         (when (= attempt 1)
+                           (deliver started true)
+                           (deref release 5000 nil))
+                         {:status :success})
+                       :lock-ms 300, :lock-auto-extend-max-ms max-ms
+                       :nthreads-handler 2, :throttle-ms 10, :eoq-backoff-ms 20})]
+          (wcar* (enqueue tq :msg {:mid :mid1}))
+          (is (= (deref started 2000 :timeout) true))
+          (if (= expected-attempts [1])
+            (do (Thread/sleep 1200) ; 4x lock-ms
+                (is (= @attempts_ [1])))
+            (is (wait-for #(= @attempts_ expected-attempts))))
+          (deliver release true)))))
+
   (testing "Monitor failures do not abandon leased messages"
     (clear-tq!)
     (let [handled (promise)]
