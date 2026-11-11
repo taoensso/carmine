@@ -4,6 +4,7 @@
    [taoensso.encore  :as enc]
    [taoensso.carmine :as car  :refer [wcar]]
    [taoensso.carmine.message-queue :as mq]
+   [taoensso.carmine.impl.mq :as impl]
    [taoensso.nippy.tools :as nippy-tools]
    [taoensso.carmine.tests.config :as config]))
 
@@ -32,6 +33,7 @@
 (defmacro wcar* [& body] `(car/wcar conn-opts ~@body))
 
 (def tq "carmine-test-queue")
+(def client (#'mq/client conn-opts))
 (defn clear-tq! [] (mq/queues-clear!! conn-opts [tq]))
 
 (defn test-fixture [f] (f) (clear-tq!))
@@ -48,14 +50,14 @@
     (defn- dequeue
       ([qname]                  (dequeue qname nil (enc/uuid-str)))
       ([qname opts]             (dequeue qname opts (enc/uuid-str)))
-      ([qname opts lease-token] (#'mq/dequeue qname (conj default-opts opts) lease-token)))))
+      ([qname opts lease-token] (#'mq/send-req (impl/req-dequeue qname (conj default-opts opts) lease-token))))))
 
 (defn sleep
   ([          n] (sleep nil n))
   ([isleep-on n]
    (let [n (int (case n :eoq (* 2.5 eoq-backoff-ms) n))]
      (if-let [on isleep-on]
-       (#'mq/interruptible-sleep conn-opts tq on n)
+       (impl/interruptible-sleep client tq n)
        (Thread/sleep                             n))
 
      (if-let [on isleep-on]
@@ -82,7 +84,7 @@
       [(is (= (subvec reply 0 2) ["sleep" "end-of-circle"]))
        (is (contains? #{"a" "b"} (get reply 2)))
        (is (= (get reply 3) eoq-backoff-ms))
-       (is (subvec? (#'mq/handle1 conn-opts tq (fn hf [_] (throw!)) reply {})
+       (is (subvec? (impl/handle1 client tq (fn hf [_] (throw!)) reply {})
              [:slept "end-of-circle" (get reply 2) #_eoq-backoff-ms]))])))
 
 ;;;;
@@ -98,7 +100,7 @@
      (is (= (wcar* (enqueue tq :msg1b {:mid :mid1 :can-update? true})) {:success? true,  :action :updated, :mid :mid1}))
 
      (is (= (wcar* (msg-status tq :mid1)) :queued))
-     (is (enc/submap? (#'mq/queue-mids conn-opts tq)
+     (is (enc/submap? (impl/queue-mids client tq)
            {:ready  ["mid1"]
             :circle ["end-of-circle"]}))
 
@@ -116,7 +118,7 @@
      (is (= (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 500})) {:success? true, :action :added, :mid :mid1}))
      (is (= (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 100})) {:success? true, :action :added, :mid :mid2}))
 
-     (is (enc/submap? (#'mq/queue-mids conn-opts tq)
+     (is (enc/submap? (impl/queue-mids client tq)
            {:ready  []
             :circle ["mid2" "mid1" "end-of-circle"]}))
 
@@ -164,7 +166,7 @@
          handler-arg_ (promise)
          handle1
          (fn []
-           (#'mq/handle1 conn-opts tq
+           (impl/handle1 client tq
              (fn [m] (deliver handler-arg_ m) (hf m))
              poll-reply {:lease-token lease-token}))
 
@@ -346,9 +348,9 @@
 
 (deftest server-time
   (testing "`server-udt` converts Redis `TIME` replies to epoch msecs"
-    [(is (= (#'mq/server-udt ["1784523705" "818999"]) 1784523705818) "Micros floored to msecs")
-     (is (= (#'mq/server-udt ["1784523705"      "0"]) 1784523705000))
-     (is (= (#'mq/server-udt ["1784523705"    "999"]) 1784523705000) "Sub-msec micros discarded")])
+    [(is (= (impl/server-udt ["1784523705" "818999"]) 1784523705818) "Micros floored to msecs")
+     (is (= (impl/server-udt ["1784523705"      "0"]) 1784523705000))
+     (is (= (impl/server-udt ["1784523705"    "999"]) 1784523705000) "Sub-msec micros discarded")])
 
   (testing "Queue scripts take their time from the Redis server"
     (mapv
@@ -375,7 +377,7 @@
     (clear-tq!)
     (is (:success? (wcar* (enqueue tq :msg1 {:mid :mid1}))))
     (let [[_pr _ha hr] (test-handler (fn [_m] {:status :retry :backoff-ms 2000.9}))
-          stored       (second (wcar* (car/hgetall (#'mq/qkey tq :backoffs))))]
+          stored       (second (wcar* (car/hgetall (impl/qkey tq :backoffs))))]
       [(is (= hr [:handled :retry]))
        (is (re-matches #"\d+" (str stored))
          "Fractional `:backoff-ms` shouldn't produce a fractional expiry")])))
@@ -383,11 +385,11 @@
 (deftest hardening
   (testing "End-of-circle sleep blocks and enqueue wakes it"
     (clear-tq!)
-    (let [reply (wcar* (#'mq/dequeue tq {:eoq-backoff-ms 10000} (enc/uuid-str)))
+    (let [reply (wcar* (#'mq/send-req (impl/req-dequeue tq {:eoq-backoff-ms 10000} (enc/uuid-str))))
           started (promise)
           sleeper (future
                     (deliver started true)
-                    (#'mq/handle1 conn-opts tq identity reply {}))]
+                    (impl/handle1 client tq identity reply {}))]
       [(is (= (deref started 5000 :timeout) true))
        (Thread/sleep 75)
        (is (not (realized? sleeper)))
@@ -396,17 +398,17 @@
 
   (testing "Repeated pre-block enqueues cannot cancel the wake signal"
     (clear-tq!)
-    (let [reply (wcar* (#'mq/dequeue tq {:eoq-backoff-ms 1000} (enc/uuid-str)))
+    (let [reply (wcar* (#'mq/send-req (impl/req-dequeue tq {:eoq-backoff-ms 1000} (enc/uuid-str))))
           enqueue-replies
           (wcar*
             (enqueue tq :wake-a {:mid :wake-a})
             (enqueue tq :wake-b {:mid :wake-b}))
           sleep-reply
-          (#'mq/interruptible-sleep conn-opts tq (get reply 2) 1000)]
+          (impl/interruptible-sleep client tq 1000)]
       [(is (every? :success? enqueue-replies))
        (is (= (peek sleep-reply) "_")
          "BRPOP consumes a notification sent before the blocking call")
-       (is (enc/submap? (#'mq/queue-mids conn-opts tq)
+       (is (enc/submap? (impl/queue-mids client tq)
              {:ready ["wake-b" "wake-a"]
               :circle ["end-of-circle"]}))]))
 
@@ -423,7 +425,7 @@
             release (promise)
             handler-b
             (future
-              (#'mq/handle1 conn-opts tq
+              (impl/handle1 client tq
                 (fn [{:keys [lock-extend!]}]
                   (deliver started (lock-extend!))
                   (deref release 3000 nil)
@@ -432,7 +434,7 @@
         [(is (= (subvec lease-a 0 5) ["handle" "mid1" :msg 1 200]))
          (is (= (subvec lease-b 0 5) ["handle" "mid1" :msg 2 200]))
          (is (= (deref started 5000 :timeout) true))
-         (is (= (#'mq/handle1 conn-opts tq (constantly {:status :success}) lease-a
+         (is (= (impl/handle1 client tq (constantly {:status :success}) lease-a
                   {:lease-token token-a})
                [:handled :success]))
          (is (= (wcar* (msg-status tq :mid1)) :locked))
@@ -454,11 +456,11 @@
           (wcar* (dequeue tq nil "token-b")) ; Supersede lease-a's token
 
           ;; Stale token => fenced, no status/backoff counts
-          (#'mq/handle1 conn-opts tq (constantly result) lease-a
+          (impl/handle1 client tq (constantly result) lease-a
             {:lease-token "token-a", :nstats_ fenced_})
 
           ;; Current token => normal accounting
-          (#'mq/handle1 conn-opts tq (constantly result) lease-a
+          (impl/handle1 client tq (constantly result) lease-a
             {:lease-token "token-b", :nstats_ normal_})
 
           [(is (= (:handler/fenced @fenced_) 1)
@@ -489,11 +491,11 @@
       (wcar* (enqueue tq :new {:mid :mid1 :lock-ms 1000}))
       (let [token-b "after-clear"
             lease-b (wcar* (dequeue tq nil token-b))]
-        [(is (= (#'mq/handle1 conn-opts tq (constantly {:status :success}) lease-a
+        [(is (= (impl/handle1 client tq (constantly {:status :success}) lease-a
                   {:lease-token token-a})
                [:handled :success]))
          (is (= (wcar* (msg-status tq :mid1)) :locked))
-         (is (= (#'mq/handle1 conn-opts tq (constantly {:status :success}) lease-b
+         (is (= (impl/handle1 client tq (constantly {:status :success}) lease-b
                   {:lease-token token-b})
                [:handled :success]))
          (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))])))
@@ -506,10 +508,10 @@
           expiry #(Long/parseLong
                     (wcar* (car/hget (car/key :carmine :mq tq :locks) :mid1)))
           original (expiry)
-          extended (#'mq/extend-lock conn-opts tq "mid1" lease-token 10000)]
+          extended (impl/extend-lock client tq "mid1" lease-token 10000)]
       (is (> extended original))
       (is (= extended (expiry)))
-      (is (= extended (#'mq/extend-lock conn-opts tq "mid1" lease-token 1)))
+      (is (= extended (impl/extend-lock client tq "mid1" lease-token 1)))
       (is (= extended (expiry)))))
 
   (testing "A stale token cannot renew a successor's lease"
@@ -521,7 +523,7 @@
     (wcar* (dequeue tq)) ; End-of-circle
     (wcar* (dequeue tq nil "new"))
     (let [expiry (wcar* (car/hget (car/key :carmine :mq tq :locks) :mid1))]
-      (is (nil? (#'mq/extend-lock conn-opts tq "mid1" "old" 10000000)))
+      (is (nil? (impl/extend-lock client tq "mid1" "old" 10000000)))
       (is (= expiry (wcar* (car/hget (car/key :carmine :mq tq :locks) :mid1))))))
 
   (testing "Expired but unsuperseded ownership can renew or finalize"
@@ -531,9 +533,9 @@
       (wcar* (dequeue tq nil "owner"))
       (wcar* (car/hset (car/key :carmine :mq tq :locks) :mid1 0))
       (when renew?
-        (is (number? (#'mq/extend-lock conn-opts tq "mid1" "owner" 5000)))
+        (is (number? (impl/extend-lock client tq "mid1" "owner" 5000)))
         (is (= (wcar* (msg-status tq :mid1)) :locked)))
-      (is (= (#'mq/finalize conn-opts tq "mid1" "owner" true nil) ["finalized"]))
+      (is (= (impl/finalize client tq "mid1" "owner" true nil) ["finalized"]))
       (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))))
 
   (testing "Finalization is fenced by token only: own extensions can't fence the owner"
@@ -544,8 +546,8 @@
       ;; Extend server-side as if the handler's extend reply were lost: the
       ;; stored expiry no longer matches the expiry known at lease time.
       [(is (= (subvec lease 0 3) ["handle" "mid1" :msg]))
-       (is (#'mq/extend-lock conn-opts tq "mid1" lease-token 5000))
-       (is (= (#'mq/handle1 conn-opts tq (constantly {:status :success}) lease
+       (is (impl/extend-lock client tq "mid1" lease-token 5000))
+       (is (= (impl/handle1 client tq (constantly {:status :success}) lease
                 {:lease-token lease-token})
              [:handled :success]))
        (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc)
@@ -561,7 +563,7 @@
        (is (= (wcar* (enqueue tq :new {:mid :mid1 :can-update? true}))
              {:success? true, :action :updated, :mid :mid1}))
        ;; The stalled handler completes, but must be fenced:
-       (is (= (#'mq/handle1 conn-opts tq (constantly {:status :success}) lease-a
+       (is (= (impl/handle1 client tq (constantly {:status :success}) lease-a
                 {:lease-token lease-token})
              [:handled :success]))
        (is (= (wcar* (msg-status tq :mid1)) :queued)
@@ -585,7 +587,7 @@
       [(is (= (subvec lease-a 0 3) ["handle" "mid1" :msg]))
        (is (= (wcar* (enqueue tq :msg {:mid :mid1 :reset-init-backoff? true}))
              {:success? true, :action :updated, :mid :mid1}))
-       (is (= (#'mq/handle1 conn-opts tq (constantly {:status :success}) lease-a
+       (is (= (impl/handle1 client tq (constantly {:status :success}) lease-a
                 {:lease-token lease-token})
              [:handled :success]))
        (is (= (wcar* (msg-status tq :mid1)) :queued)
@@ -715,7 +717,7 @@
           worker (mq/worker conn-opts tq
                    {:auto-start false, :nthreads 1, :throttle-ms 1, :eoq-backoff-ms 20
                     :handler (fn [_] (deliver handled true) {:status :success})})
-          running (.-running?_ ^taoensso.carmine.message_queue.CarmineMessageQueueWorker worker)
+          running (:running?_ (.-state ^taoensso.carmine.message_queue.CarmineMessageQueueWorker worker))
           paused (promise), release (promise), restarting (promise)]
       (try
         (mq/start worker)
@@ -744,7 +746,7 @@
     (clear-tq!)
     (let [worker (mq/worker conn-opts tq {:auto-start false, :nthreads 1
                                         :throttle-ms 1, :eoq-backoff-ms 20})
-          running (.-running?_ ^taoensso.carmine.message_queue.CarmineMessageQueueWorker worker)
+          running (:running?_ (.-state ^taoensso.carmine.message_queue.CarmineMessageQueueWorker worker))
           paused (promise), release (promise), closing (promise)]
       (try
         (add-watch running ::pause-start

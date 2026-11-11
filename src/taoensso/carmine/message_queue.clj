@@ -54,8 +54,8 @@
    [clojure.string        :as str]
    [taoensso.encore       :as enc]
    [taoensso.truss        :as truss]
-   [taoensso.encore.stats :as stats]
    [taoensso.carmine      :as car :refer [wcar]]
+   [taoensso.carmine.impl.mq :as impl]
    [taoensso.nippy.tools  :as nippy-tools]
    [taoensso.trove        :as trove]))
 
@@ -68,30 +68,35 @@
 
 (comment (mapv #(exp-backoff % {}) (range 5)))
 
-(let [cluster-support? false] ; TODO Cluster support
-  (def ^:private qkey
-    (enc/fmemoize
-      (fn [qname k]
-        (car/key :carmine :mq
-          (if cluster-support?
-            (str "{" (enc/as-qname qname) "}")
-            (do                    qname))
-          k)))))
+(defn- send-req
+  "Sends given `impl/IClient` request within current `wcar` context."
+  [req]
+  (if (identical? (nth req 0) :lua)
+    (let [[_ script keys args] req] (car/lua script keys args))
+    (car/redis-call req)))
 
-(comment (enc/qb 1e6 (qkey :qname :qk)))
+(defn- client
+  "Returns `impl/IClient` for given `conn-opts`."
+  [conn-opts]
+  (reify impl/IClient
+    (exec [_ reqs]
+      (let [replies (wcar conn-opts :as-pipeline (enc/run! send-req reqs))]
+        (if-let [t (enc/rfirst #(instance? Throwable %) replies)]
+          (throw t)
+          replies)))
+
+    (open?        [_] true)
+    (log-ns       [_] "taoensso.carmine.message-queue")
+    (sleep-cap-ms [_] nil)))
 
 ;;;; Admin
 
-(let [idx-qname-start (inc (count (car/key :carmine :mq))) ; "carmine:mq:"
-      suffix-len      (count ":messages")]
-
-  (defn queue-names
-    "Returns a non-empty set of existing queue names, or nil.
-    Executes a Redis scan command, so O(n) of the number of keys in db."
-    ([conn-opts        ] (queue-names conn-opts "*"))
-    ([conn-opts pattern]
-     (when-let [qks (not-empty (car/scan-keys conn-opts (qkey pattern :messages)))]
-       (into #{} (map #(enc/substr % idx-qname-start (- (count %) suffix-len))) qks)))))
+(defn queue-names
+  "Returns a non-empty set of existing queue names, or nil.
+  Executes a Redis scan command, so O(n) of the number of keys in db."
+  ([conn-opts        ] (queue-names conn-opts "*"))
+  ([conn-opts pattern]
+   (impl/qkeys->qnames (car/scan-keys conn-opts (impl/qkey pattern :messages)))))
 
 (comment (queue-names {}))
 
@@ -108,31 +113,7 @@
             x1
             more))]
 
-    (when (seq qnames)
-      (wcar conn-opts
-        (enc/run!
-          (fn [qname]
-            (when qname
-              (let [qk (partial qkey qname)]
-                (car/del
-                  (qk :messages)
-                  (qk :messages-rq)
-                  (qk :lock-times)
-                  (qk :lock-times-rq)
-                  (qk :udts)
-                  (qk :locks)
-                  (qk :lock-tokens)
-                  (qk :backoffs)
-                  (qk :nattempts)
-                  (qk :done)
-                  (qk :requeue)
-                  (qk :mids-ready)
-                  (qk :mid-circle)
-                  (qk :ndry-runs)
-                  (qk :isleep-a)
-                  (qk :isleep-b)))))
-          qnames))
-      qnames)))
+    (impl/queues-clear! (client conn-opts) qnames)))
 
 (defn queues-clear-all!!!
   "**DANGER**!
@@ -142,96 +123,12 @@
   (when-let [qnames (queue-names conn-opts "*")]
     (queues-clear!! conn-opts qnames)))
 
-(defn- kvs->map [kvs]
-  (if (empty? kvs)
-    {}
-    (persistent! (enc/reduce-kvs assoc! (transient {}) kvs))))
-
-(defn- server-udt
-  "Redis `TIME` reply [<unix-secs> <micros>] -> server clock as epoch msecs"
-  ^long [[secs micros]]
-  (+ (* (enc/as-int secs) 1000) (quot (enc/as-int micros) 1000)))
-
-(defn- max-clock-skew-ms
-  "Local/server clock difference beyond which `worker` logs a warning.
-  Deliberately generous, since an NTP-synced host is within msecs and queue
-  expiries are anyway evaluated against the Redis server clock. Scaled down
-  for short locks, where a smaller skew is already material."
-  ^long [lock-ms]
-  (min (enc/ms :secs 30) (quot (long lock-ms) 4)))
-
-(defn- warn-on-clock-skew!
-  "Diagnostic only, never throws. Logs a warning when the local clock
-  differs materially from the Redis server clock, which can distort
-  handler `:age-ms` and (for queues shared with older clients) the
-  effective duration of message locks."
-  [conn-opts qname lock-ms]
-  (enc/catching
-    (let [t0      (enc/now-udt)
-          server  (long (wcar conn-opts (car/parse server-udt (car/time))))
-          t1      (enc/now-udt)
-          local   (quot (+ t0 t1) 2) ; Midpoint, to discount round-trip
-          skew    (- server local)
-          max-ms  (max-clock-skew-ms lock-ms)]
-
-      (when (> (Math/abs skew) max-ms)
-        (trove/log!
-          {:level :warn, :id :carmine.mq/clock-skew
-           :msg "Local clock differs materially from Redis server clock"
-           :data
-           {:qname qname, :skew-ms skew,
-            :max-skew-ms max-ms, :lock-ms lock-ms}})))))
-
-;;;;
-
-(defn- ->message-status
-  "[<?base-status-str> <backoff?> <requeue?>] -> <status-kw>"
-  ([?base-status-str backoff? requeue?]
-   (case ?base-status-str
-     "nx"     nil
-     "queued" (if backoff? :queued-with-backoff :queued)
-     "locked" (if requeue? :locked-with-requeue :locked)
-     "done"
-     (enc/cond
-       requeue? :done-with-requeue
-       backoff? :done-with-backoff
-       :else    :done-awaiting-gc)
-     (do        :unknown)))
-
-  ([reply]
-   (if (vector? reply)
-     (let [[?bss bo? rq?] reply] (->message-status ?bss bo? rq?))
-     :unknown)))
-
-(comment        (->message-status ["queued" "1" nil]))
-(comment (wcar {} (message-status "qname" "mid1")))
-
-(defn- -queue-counts
-  "[nlocked nbackoff nready ncircle ndone]"
-  [qname]
-  (let [qk (partial qkey qname)]
-    (car/hlen  (qk :locks))
-    (car/hlen  (qk :backoffs))
-    (car/llen  (qk :mids-ready))
-    (car/llen  (qk :mid-circle))
-    (car/scard (qk :done))))
-
-(defn- -queue-status [queue-counts]
-  (let [[^long nlocked ^long nbackoff ^long nready ^long ncircle ^long ndone] queue-counts
-        ntotal  (max 0 (dec (+ nready ncircle))) ; dec for eoq
-        nqueued (max 0 (- ntotal (+ nlocked nbackoff ndone)))]
-
-    {:nqueued  nqueued  ; Also called "queue-size"
-     :nlocked  nlocked  ; Approx, may contain expired entries
-     :nbackoff nbackoff ; Approx, may contain expired entries
-     :ntotal   ntotal}))
-
 (defn queue-status
   "Returns in O(1) the approx {:keys [nqueued nlocked nbackoff ntotal]}
   counts for given named queue.
 
   `nlocked` and `nbackoff` may include expired entries!"
-  [conn-opts qname] (-queue-status (wcar conn-opts (-queue-counts qname))))
+  [conn-opts qname] (impl/queue-status (client conn-opts) qname))
 
 (comment (queue-status {} "qname"))
 
@@ -247,94 +144,11 @@
   message currently in queue.
 
   O(n_mids) and expensive, avoid use in production."
-  [conn-opts qname]
-  (let [qk (partial qkey qname)
-
-        {:keys [now messages messages-rq
-                lock-times lock-times-rq
-                udts locks backoffs nattempts
-                done requeue]}
-        (zipmap
-          [:now :messages :messages-rq
-           :lock-times :lock-times-rq
-           :udts :locks :backoffs :nattempts
-           :done :requeue]
-
-          (wcar conn-opts
-            (car/parse server-udt (car/time)) ; Clock that writes new expiries
-            (car/parse kvs->map
-              (car/hgetall (qk :messages))
-              (car/hgetall (qk :messages-rq))
-              (car/hgetall (qk :lock-times))
-              (car/hgetall (qk :lock-times-rq))
-              (car/hgetall (qk :udts))
-              (car/hgetall (qk :locks))
-              (car/hgetall (qk :backoffs))
-              (car/hgetall (qk :nattempts)))
-
-            (->> (car/smembers (qk :done))    (car/parse set))
-            (->> (car/smembers (qk :requeue)) (car/parse set))))]
-
-    (persistent! ; {<mid> {:keys [message status ...]}}
-      (reduce-kv
-        (fn [m mid mcontent]
-          (assoc! m mid
-            (let [exp-lock    (enc/as-int (get locks    mid 0))
-                  exp-backoff (enc/as-int (get backoffs mid 0))
-
-                  locked?  (< now exp-lock)
-                  backoff? (< now exp-backoff)
-                  done?    (contains? done mid)
-                  requeue?
-                  (or
-                    (contains? messages-rq mid)
-                    (contains? requeue     mid))
-
-                  backoff-ms (when backoff? (- exp-backoff now))
-                  age-ms     (when-let [udt (get udts mid)]
-                               (- now (enc/as-int udt)))
-
-                  base-status
-                  (enc/cond
-                    done?   "done"
-                    locked? "locked"
-                    :else   "queued")]
-
-              (enc/assoc-some
-                {:message   mcontent
-                 :status    (->message-status base-status backoff? requeue?)
-                 :nattempts (get nattempts mid 0)}
-                :backoff-ms backoff-ms
-                :age-ms     age-ms))))
-
-        (transient messages)
-        (do        messages)))))
+  [conn-opts qname] (impl/queue-content (client conn-opts) qname))
 
 (comment (queue-content {} "qname"))
 
-(defn- queue-mids
-  "Returns {:ready [<mid> ...], :circle [<mid> ...], :next-mid <?mid>} state
-  for given named queue in O(n_mids). Used mostly for debugging/tests."
-  [conn-opts qname]
-  (let [[ready circle]
-        (wcar conn-opts
-          (car/lrange (qkey qname :mids-ready) 0 -1)
-          (car/lrange (qkey qname :mid-circle) 0 -1))]
-
-    {:ready              ready
-     :circle                          circle
-     :next-mid (or (peek ready) (peek circle))}))
-
-(comment (queue-mids {} "qname"))
-
 ;;;; Implementation
-
-(do ; Lua scripts
-  (def ^:private lua-msg-status_  (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/msg-status.lua"))))
-  (def ^:private lua-enqueue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/enqueue.lua"))))
-  (def ^:private lua-dequeue_     (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/dequeue.lua"))))
-  (def ^:private lua-finalize_    (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/finalize.lua"))))
-  (def ^:private lua-extend-lock_ (delay (truss/have (enc/slurp-resource "taoensso/carmine/lua/mq/extend-lock.lua")))))
 
 (defn message-status
   "Returns current message status, e/o:
@@ -348,15 +162,10 @@
                                but skip until dedupe backoff expired
       `:done-with-requeue`   - Will requeue, but skip until dedupe backoff expired"
   [qname mid]
-  (car/parse ->message-status
-    (car/lua @lua-msg-status_
-      {:qk-messages    (qkey qname :messages)
-       :qk-messages-rq (qkey qname :messages-rq)
-       :qk-locks       (qkey qname :locks)
-       :qk-backoffs    (qkey qname :backoffs)
-       :qk-done        (qkey qname :done)
-       :qk-requeue     (qkey qname :requeue)}
-      {:mid mid})))
+  (car/parse impl/->message-status
+    (send-req (impl/req-message-status qname mid))))
+
+(comment (wcar {} (message-status "qname" "mid1")))
 
 (defn enqueue
   "Pushes given message (any Clojure data type) to named queue and returns
@@ -404,17 +213,7 @@
             {:mid          x1
              :can-requeue? x2}))
 
-        parse-fn
-        (fn [mid reply]
-          (enc/cond
-            :let [[action error] (when (vector? reply) reply)]
-            error  {:success? false, :error  (keyword error)}
-            action {:success? true,  :action (keyword action), :mid mid}
-            :else  {:success? false, :error  :unknown}))
-
-        {:keys [mid init-backoff-ms lock-ms
-                can-update? can-requeue? reset-init-backoff?]}
-        opts
+        {:keys [mid init-backoff-ms can-requeue?]} opts
 
         ;;; Back compatibility
         mid             (or mid             (get opts :unique-message-id))
@@ -424,560 +223,53 @@
         mid (or mid (enc/uuid-str))]
 
     (car/parse
-      (partial parse-fn mid)
-      (car/lua @lua-enqueue_
-        {:qk-messages      (qkey qname :messages)
-         :qk-messages-rq   (qkey qname :messages-rq)
-         :qk-lock-times    (qkey qname :lock-times)
-         :qk-lock-times-rq (qkey qname :lock-times-rq)
-         :qk-udts          (qkey qname :udts)
-         :qk-locks         (qkey qname :locks)
-         :qk-lock-tokens   (qkey qname :lock-tokens)
-         :qk-backoffs      (qkey qname :backoffs)
-         :qk-nattempts     (qkey qname :nattempts)
-         :qk-done          (qkey qname :done)
-         :qk-requeue       (qkey qname :requeue)
-         :qk-mids-ready    (qkey qname :mids-ready)
-         :qk-mid-circle    (qkey qname :mid-circle)
-         :qk-isleep-a      (qkey qname :isleep-a)
-         :qk-isleep-b      (qkey qname :isleep-b)}
+      (partial impl/enqueue-result mid)
+      (send-req
+        (impl/req-enqueue qname mid
+          (if (nippy-tools/wrapped-for-freezing? message)
+            (do         message)
+            (car/freeze message))
 
-        {:mid        mid
-         :init-bo    (or init-backoff-ms 0)
-         :lock-ms    (or lock-ms        -1)
-         :can-upd?   (if can-update?         "1" "0")
-         :can-rq?    (if can-requeue?        "1" "0")
-         :reset-ibo? (if reset-init-backoff? "1" "0")
-         :mcnt
-         (if (nippy-tools/wrapped-for-freezing? message)
-           (do         message)
-           (car/freeze message))}))))
-
-(defn- dequeue
-  "Processes next mid and returns:
-    - [\"skip\"   <reason>]                                   ; Worker thread should skip
-    - [\"sleep\"  <reason> <msecs>]                           ; Worker thread should sleep
-    - [\"handle\" <mid> <mcontent> <attempt> <lock-ms> <udt>] ; Worker thread should handle"
-  [qname
-   {:keys [default-lock-ms eoq-backoff-ms]
-    :or   {default-lock-ms (enc/ms :mins 60)
-           eoq-backoff-ms  exp-backoff}}
-   lease-token]
-
-  (let [;; Precompute 5 backoffs so that `dequeue.lua` can init the backoff atomically
-        [bo1 bo2 bo3 bo4 bo5]
-        (cond
-          (fn?     eoq-backoff-ms) (mapv           eoq-backoff-ms (range 5))
-          (number? eoq-backoff-ms) (repeat 5 (long eoq-backoff-ms))
-          :else
-          (truss/ex-info!
-            (str "[Carmine/mq] Unexpected `eoq-backoff-ms` arg: " eoq-backoff-ms)
-            {:arg (enc/typed-val eoq-backoff-ms)}))]
-
-    (car/lua @lua-dequeue_
-      {:qk-messages      (qkey qname :messages)
-       :qk-messages-rq   (qkey qname :messages-rq)
-       :qk-lock-times    (qkey qname :lock-times)
-       :qk-lock-times-rq (qkey qname :lock-times-rq)
-       :qk-udts          (qkey qname :udts)
-       :qk-locks         (qkey qname :locks)
-       :qk-lock-tokens   (qkey qname :lock-tokens)
-       :qk-backoffs      (qkey qname :backoffs)
-       :qk-nattempts     (qkey qname :nattempts)
-       :qk-done          (qkey qname :done)
-       :qk-requeue       (qkey qname :requeue)
-       :qk-mids-ready    (qkey qname :mids-ready)
-       :qk-mid-circle    (qkey qname :mid-circle)
-       :qk-ndry-runs     (qkey qname :ndry-runs)
-       :qk-isleep-a      (qkey qname :isleep-a)
-       :qk-isleep-b      (qkey qname :isleep-b)}
-
-      {:lease-token      lease-token
-       :default-lock-ms  default-lock-ms
-       :eoq-bo1          bo1
-       :eoq-bo2          bo2
-       :eoq-bo3          bo3
-       :eoq-bo4          bo4
-       :eoq-bo5          bo5})))
-
-(defn- finalize
-  ;; Fenced by lease token only: tokens are rotated on every dequeue and
-  ;; cleared on supersedure (producer update, clear), so token equality
-  ;; proves ownership. Expiry equality would wrongly fence an owner whose
-  ;; own extend reply was lost or is still in flight.
-  [conn-opts qname mid lease-token done? backoff-ms]
-  (let [qk (partial qkey qname)]
-    (wcar conn-opts
-      (car/lua @lua-finalize_
-        {:qk-locks       (qk :locks)
-         :qk-lock-tokens (qk :lock-tokens)
-         :qk-backoffs    (qk :backoffs)
-         :qk-done        (qk :done)}
-        {:mid         mid
-         :lease-token lease-token
-         :done?       (if done? "1" "0")
-         :backoff-ms  (if (some? backoff-ms) (long backoff-ms) -1)}))))
-
-(defn- extend-lock
-  [conn-opts qname mid lease-token lock-ms]
-  (let [qk (partial qkey qname)]
-    (let [[action lock-expiry]
-          (wcar conn-opts
-            (car/lua @lua-extend-lock_
-              {:qk-locks       (qk :locks)
-               :qk-lock-tokens (qk :lock-tokens)}
-              {:mid         mid
-               :lease-token lease-token
-               :lock-ms     (long lock-ms)}))]
-      (when (= action "extended") (long lock-expiry)))))
-
-(defn- wake-sleepers!
-  "Pushes n sleep sentinels to wake up to n sleeping workers.
-  `enqueue` deliberately leaves only a single sentinel, which can wake only
-  one worker. Shutdown wants them all, so this over-signals; any surplus is
-  discarded by the next end-of-circle poll."
-  [conn-opts qname n]
-  (let [qk-isleep-a (qkey qname :isleep-a)]
-    (wcar conn-opts
-      (dotimes [_ (long n)]
-        (car/lpush qk-isleep-a "_")))))
+          (assoc opts
+            :init-backoff-ms init-backoff-ms
+            :can-requeue?    can-requeue?))))))
 
 (comment
   (queues-clear!! {} :q1)
   (wcar {} (enqueue :q1 :msg1 :mid1))
-  (wcar {} (message-status :q1 :mid1))
-  (wcar {} (dequeue :q1 {} (enc/uuid-str))))
-
-(defn- inc-nstat!
-  ([nstats_ k1   ] (when nstats_ (swap! nstats_ (fn [m] (enc/update-in m [k1]    (fn [?n] (inc (long (or ?n 0)))))))))
-  ([nstats_ k1 k2] (when nstats_ (swap! nstats_ (fn [m] (enc/update-in m [k1 k2] (fn [?n] (inc (long (or ?n 0))))))))))
-
-(comment (inc-nstat! (atom {}) :k1))
-
-(defn- thread-desync-ms
-  "Returns ms ± 20%"
-  [ms]
-  (let [r (+ 0.8 (* 0.4 ^double (rand)))]
-    (int (* r (long ms)))))
-
-(comment (repeatedly 5 #(thread-desync-ms 500)))
-
-(defn- interruptible-sleep
-  "To provide an interruptible thread sleep mechanism, we:
-
-    - On dequeue: atomically clear both signal lists after observing no work.
-    - On enqueue: leave one persistent sentinel in either signal list.
-    - On sleep: block on both lists and consume whichever sentinel arrives.
-
-  A signal sent after the dequeue decision therefore remains consumable even
-  before the blocking call begins. Repeated enqueues may move the sentinel
-  between lists, but cannot cancel it.
-
-  Note that `conn-opts` should allow a read timeout comfortably > msecs
-  (Redis's blocking timeout resolution is ~100ms with default `hz` 10),
-  otherwise sleep will be interrupted prematurely by timeout."
-
-  [conn-opts qname _isleep-on ms]
-  (let [secs-dbl
-        (let [ms (max (long ms) 10)]
-          (/ (double ms) 1000.0))]
-
-    (try ; NB conn's read-timeout may be insufficient!
-      (wcar conn-opts
-        (car/brpop (qkey qname :isleep-a) (qkey qname :isleep-b) secs-dbl))
-      (catch Throwable _ nil))))
-
-(comment (interruptible-sleep {} :foo :a 2000))
-
-(defn- handle1
-  [conn-opts qname handler poll-reply
-   {:keys [worker queue-size lease-token nstats_ ssb-queueing-time-ms ssb-handling-time-ns]
-    :or   {queue-size -1}}]
-
-  (let [[kind] (when (vector? poll-reply) poll-reply)
-        qname  (enc/as-qname qname)]
-
-    (case kind
-      "skip"
-      (let [[_kind reason] poll-reply]
-        #_(inc-nstat! nstats_ (keyword "skip" reason)) ; Noisy
-        [:skipped reason])
-
-      "sleep"
-      (let [[_kind reason isleep-on ttl-ms] poll-reply
-            ttl-ms (thread-desync-ms (long ttl-ms))]
-
-        (inc-nstat! nstats_ (keyword "sleep" reason))
-        (interruptible-sleep conn-opts qname isleep-on ttl-ms)
-        [:slept reason                       isleep-on ttl-ms])
-
-      "handle"
-      (let [[_kind mid mcontent attempt lock-ms udt] poll-reply
-
-            age-ms
-            (when-let [udt (enc/as-?udt udt)]
-              (- (enc/now-udt) ^long udt))
-
-            mq-msg
-            {:qname qname, :mid mid, :message mcontent, :attempt attempt
-             :lock-ms lock-ms, :age-ms age-ms, :worker worker, :queue-size queue-size
-             :lock-extend!
-             #(when (extend-lock conn-opts qname mid lease-token lock-ms)
-                true)}
-
-            interrupted?_ (volatile! false)
-            t0 (enc/now-nano*)
-            result
-            (try
-              (handler mq-msg)
-              (catch InterruptedException t
-                (vreset! interrupted?_ true)
-                {:status :error, :throwable t})
-              (catch Throwable t
-                {:status :error :throwable t}))
-
-            handling-time-ns (- (enc/now-nano*) t0)
-
-            {:keys [status throwable backoff-ms]
-             :or   {status :success}}
-            (when (map? result) result)
-
-            status-nstat-k ; Status may be any value, incl. nil
-            (case status
-              (:success :error :retry) (keyword "handler" (name status))
-              :handler/unexpected)
-
-            fin
-            (fn [mid done? backoff-ms]
-              (let [reply (finalize conn-opts qname mid lease-token done? backoff-ms)]
-                ;; Counters are disjoint: a fenced result had no effect on the
-                ;; queue, so don't also count it as a completed handling
-                (if (= reply ["stale"])
-                  (do
-                    (inc-nstat! nstats_ :handler/fenced)
-                    (trove/log!
-                      {:level :warn, :id :carmine.mq/stale-handler-fenced
-                       :data {:qname qname, :mid mid, :attempt attempt}}))
-
-                  (do              (inc-nstat! nstats_ status-nstat-k)
-                    (when backoff-ms (inc-nstat! nstats_ :handler/backoff))))
-                reply))]
-
-        (when (== ^long attempt 1)
-          ;; queueing-time => time till handler, not time till successful handling
-          (enc/when-let [ssb ssb-queueing-time-ms, ms age-ms]           (ssb ms)))
-        (enc/when-let   [ssb ssb-handling-time-ns, ns handling-time-ns] (ssb ns))
-
-        (try
-          ;; Effects
-          (case status
-            :success (fin mid true  backoff-ms)
-            :retry   (fin mid false backoff-ms)
-            :error
-            (do
-              ;; Log first, so that the handler error isn't lost if `fin` throws
-              (trove/log!
-                {:level :error, :id :carmine.mq/handler-error,
-                 :data {:qname qname, :mid mid, :attempt attempt, :message mcontent}
-                 :error throwable})
-              (fin mid true nil))
-
-            ;; else
-            (do
-              (fin mid true nil) ; For backwards-comp with old API
-              (trove/log!
-                {:level :warn, :id :carmine.mq/unexpected-handler-status
-                 :data
-                 {:qname qname, :mid mid, :attempt attempt, :message mcontent,
-                  :handler-result (enc/typed-val result)
-                  :handler-status (enc/typed-val status)}})))
-          (finally
-            ;; Deliberately doesn't re-set the interrupt flag: nothing in the
-            ;; worker consumes it, and handler threads are pooled, so it would
-            ;; only affect the remainder of this task
-            (when @interrupted?_
-              (trove/log!
-                {:level :warn, :id :carmine.mq/handler-interrupted
-                 :data {:qname qname, :mid mid, :attempt attempt}}))))
-
-        [:handled status])
-
-      ;; else
-      (do
-        (inc-nstat! nstats_ :poll/unexpected)
-        (truss/ex-info! "[Carmine/mq] Unexpected poll reply"
-          {:reply (enc/typed-val poll-reply)})))))
+  (wcar {} (message-status :q1 :mid1)))
 
 ;;;; Workers
-
-(defn- drain-handlers!
-  "Waits for active handler tasks of a stopped worker. Returns true iff
-  drained, false if worker is running (or restarted), called by a handler,
-  or timed out."
-  [future-pool running?_ generation_ handler-threads_ wake-future_
-   conn-opts qname nthreads-handler ?timeout-ms]
-  (enc/cond
-    (not future-pool) true
-    (contains? @handler-threads_ (Thread/currentThread)) false
-    :let [;; Read together, so that a concurrent restart can't slip between
-          ?generation (locking running?_ (when-not @running?_ @generation_))]
-    (nil? ?generation) false ; Running
-    :let [generation ?generation
-          deadline (when ?timeout-ms (+ (System/nanoTime) (* 1000000 (long ?timeout-ms))))
-          ;; Wake asynchronously, since a borrow/reply may block (e.g. when
-          ;; sleeping handlers hold every pooled connection). At most one
-          ;; wake in flight per worker, shared by concurrent/repeated drains.
-          wake!
-          (fn []
-            (locking wake-future_
-              (let [f @wake-future_]
-                (when (or (nil? f) (realized? f))
-                  (enc/catching ; E.g. executor rejection after `shutdown-agents`
-                    (reset! wake-future_
-                      (future
-                        (enc/catching
-                          (wake-sleepers! conn-opts qname nthreads-handler)))))))))]
-    :else
-    ;; Re-signal until drained. Sentinels live on queue-global keys, so
-    ;; a single push isn't enough: another worker on the same queue may
-    ;; consume them, and a poll that reaches `dequeue` after we push
-    ;; will clear them itself before blocking.
-    (loop [wait-ms 0] ; Check (and wake) before first wait
-      (enc/cond
-        (not= generation @generation_) false ; Restarted
-
-        (future-pool wait-ms nil)
-        (locking running?_ (and (not @running?_) (= generation @generation_)))
-
-        :let [rem-ms (when deadline (quot (- (long deadline) (System/nanoTime)) 1000000))]
-        (and rem-ms (<= (long rem-ms) 0)) false
-        :else (do (wake!) (recur (if rem-ms (min 250 (long rem-ms)) 250)))))))
 
 (defprotocol IWorker
   "Private, please don't use this."
   (^:no-doc start [this])
   (^:no-doc stop  [this]))
 
-(deftype CarmineMessageQueueWorker
-  [qname worker-opts conn-opts running?_ closed?_ generation_ future-pool worker-futures_ handler-threads_
-   drain-wake_ nstats_ ssb-queue-size ssb-queueing-time-ms ssb-handling-time-ns]
-
+(deftype CarmineMessageQueueWorker [conn-opts state]
   java.io.Closeable
-  (close [this]
-    (locking running?_
-      (reset! closed?_ true))
-    (stop this))
+  (close [this] (impl/worker-close! state))
+
   Object
   (toString [this]
     (enc/str-impl this "taoensso.carmine.CarmineMessageQueueWorker"
-      {:qname    qname
-       :running? @running?_, :closed? @closed?_
-       :nthreads-worker  (get worker-opts :nthreads-worker)
-       :nthreads-handler (get worker-opts :nthreads-handler)}))
+      (impl/worker-summary state)))
 
   clojure.lang.IDeref
-  (deref [this]
-    {:qname    qname
-     :running? @running?_, :closed? @closed?_
-     :nthreads
-     {:worker  (get worker-opts :nthreads-worker)
-      :handler (get worker-opts :nthreads-handler)}
-
-     :conn-opts conn-opts
-     :opts    worker-opts
-     :stats
-     {:queue-size       (when-let [ss @ssb-queue-size]       @ss)
-      :queueing-time-ms (when-let [ss @ssb-queueing-time-ms] @ss)
-      :handling-time-ns (when-let [ss @ssb-handling-time-ns] @ss)
-      :counts           @nstats_}})
+  (deref [this] (assoc (impl/worker-status state) :conn-opts conn-opts))
 
   clojure.lang.IFn
   (invoke [this cmd]
     (case cmd
-      :start         (start this)
-      :stop          (stop  this)
-      :queue-size    (queue-size    conn-opts  qname)
-      :queue-status  (queue-status  conn-opts  qname)
-      :queue-content (queue-content conn-opts  qname)
-      :queue-mids    (queue-mids    conn-opts  qname) ; Undocumented
-      :queue-clear!!                                  ; Undocumented
-      (do
-        (queues-clear!! conn-opts [qname])
-        (this :stats-clear!)
-        nil)
+      :start (start this)
+      :stop  (stop  this)
+      (impl/worker-command state cmd)))
 
-      :stats-clear! ; Undocumented
-      (do
-        (reset! nstats_ {})
-        (stats/summary-stats-clear! ssb-queue-size)
-        (stats/summary-stats-clear! ssb-queueing-time-ms)
-        (stats/summary-stats-clear! ssb-handling-time-ns)
-        nil)
-
-      :drain (this :drain nil) ; Waits for active handler tasks
-
-      (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
-        {:command (enc/typed-val cmd)})))
-
-  (invoke [this cmd arg]
-    (case cmd
-      :drain
-      (drain-handlers! future-pool running?_ generation_ handler-threads_ drain-wake_ conn-opts qname
-        (get worker-opts :nthreads-handler)
-        (truss/have [:or nil? nat-int?] arg))
-
-      (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
-        {:command (enc/typed-val cmd), :arg (enc/typed-val arg)})))
+  (invoke [this cmd arg] (impl/worker-command state cmd arg))
 
   IWorker
-  (stop [_]
-    ;; Publish lifecycle transitions and capture their futures under the same
-    ;; lock as start/close. Never wait for threads while holding this lock.
-    (when-let [worker-futures
-               (locking running?_
-                 (when (compare-and-set! running?_ true false)
-                   (swap! generation_ inc)
-                   @worker-futures_))]
-      (trove/log! {:level :info, :id :carmine.mq/worker-will-shut-down, :data {:qname qname}})
-      (let [called-from-handler? (contains? @handler-threads_ (Thread/currentThread))]
-        (when-not called-from-handler?
-          (run! deref worker-futures))
-        (trove/log!
-          {:level :info, :id :carmine.mq/worker-did-shut-down
-           :data {:qname qname, :handlers-drained? (empty? @handler-threads_)
-                  :called-from-handler? called-from-handler?}}))
-      true))
-
-  (start [this]
-    (locking running?_
-      (when (and (not @closed?_)
-                 (pos-int? (get worker-opts :nthreads-worker))
-                 (compare-and-set! running?_ false true))
-        (trove/log! {:level :info, :id :carmine.mq/worker-starting, :data {:qname qname}})
-        ;; Async, don't block start on a Redis round-trip
-        (future (warn-on-clock-skew! conn-opts qname
-                  (get worker-opts :default-lock-ms)))
-        (let [generation (swap! generation_ inc)
-              {:keys [handler monitor nthreads-worker]} worker-opts
-              qk (partial qkey qname)
-
-              ;; Count consecutive errors across all loop threads, these may indicate
-              ;; an issue with Redis or handler fn (/ handler's supporting systems)
-              nconsecutive-errors* (enc/counter 0)
-              queue-size*          (enc/counter 0)
-
-              throttle-ms-fn ; (fn []) -> ?msecs
-              (let [{:keys [throttle-ms]} worker-opts
-                    as-?pos (fn [x] (when x (when (> (long x) 0) x)))]
-
-                (if (fn? throttle-ms)
-                  (do                                  (fn [] (as-?pos (throttle-ms @queue-size*))))
-                  (if-let [ms (as-?pos throttle-ms)] (fn [] ms) (fn [] nil))))
-
-              sleep-while-running! ; So that `stop` needn't wait for long sleeps
-              (fn [ms]
-                (let [deadline (+ (System/nanoTime) (* 1000000 (long ms)))]
-                  (loop []
-                    (let [remaining (quot (- deadline (System/nanoTime)) 1000000)]
-                      (when (and (pos? remaining) @running?_ (= generation @generation_))
-                        (Thread/sleep (int (min remaining 100)))
-                        (recur))))))
-
-              start-polling-loop!
-              (fn [^long thread-idx]
-                (let [;; thread-id (.getId (Thread/currentThread))
-                      loop-error-backoff?_ (atom false)
-                      loop-error!
-                      (fn [throwable]
-                        (let [^long nce (nconsecutive-errors*)]
-                          (trove/log!
-                            {:level :error, :id :carmine.mq/worker-error, :msg "Will backoff and retry",
-                             :data {:qname qname, :thread-id thread-idx, :nconsecutive-errors (inc nce)},
-                             :error throwable}))
-                        (reset! loop-error-backoff?_ true))]
-
-                  (when (> thread-idx 0)
-                    (sleep-while-running! (thread-desync-ms (or (throttle-ms-fn) 100))))
-
-                  (loop [nloops 0]
-                    (when (and @running?_ (= generation @generation_))
-
-                      (when (compare-and-set! loop-error-backoff?_ true false)
-                        (let [^long nce @nconsecutive-errors*]
-                          (when (> nce 0)
-                            (let [backoff-ms
-                                  (exp-backoff (min 12 nce)
-                                    {:factor (or (throttle-ms-fn) 200)})]
-
-                              (trove/log!
-                                {:level :error, :id :carmine.mq/worker-backoff,
-                                 :msg "Thread will back off due to worker error/s",
-                                 :data
-                                 {:qname qname, :thread-id thread-idx, :nconsecutive-errors nce,
-                                  :backoff-ms backoff-ms}})
-
-                              (sleep-while-running! backoff-ms)))))
-
-                      ;; Reserve local handler capacity before acquiring a Redis
-                      ;; lease. A short timeout keeps shutdown responsive.
-                      (future-pool 100 nil
-                        (fn []
-                          (when (and @running?_ (= generation @generation_))
-                            (let [handler-thread (Thread/currentThread)
-                                  lease-token (enc/uuid-str)]
-                              (swap! handler-threads_ conj handler-thread)
-                              (try
-                                (let [resp
-                                      (wcar conn-opts
-                                        (dequeue qname worker-opts lease-token)
-                                        (car/get (qk :ndry-runs))
-                                        (-queue-counts qname))]
-
-                                  (if-let [t (enc/rfirst #(instance? Throwable %) resp)]
-                                    (throw t)
-                                    (let [[poll-reply ndry-runs & queue-counts] resp
-                                          {:keys [nqueued]} (-queue-status queue-counts)]
-
-                                      (queue-size* :set nqueued)
-                                      (ssb-queue-size nqueued)
-
-                                      (when monitor
-                                        (try
-                                          (monitor
-                                            {:queue-size      nqueued
-                                             :mid-circle-size nqueued ; Back compatibility
-                                             :ndry-runs       (enc/as-int (or ndry-runs 0))
-                                             :poll-reply      poll-reply
-                                             :worker          this})
-                                          (catch Throwable t
-                                            (inc-nstat! nstats_ :monitor/error)
-                                            (trove/log!
-                                              {:level :error, :id :carmine.mq/monitor-error
-                                               :data {:qname qname, :thread-id thread-idx}
-                                               :error t}))))
-
-                                      (handle1 conn-opts qname handler poll-reply
-                                        {:worker               this
-                                         :queue-size           nqueued
-                                         :lease-token          lease-token
-                                         :nstats_              nstats_
-                                         :ssb-queueing-time-ms ssb-queueing-time-ms
-                                         :ssb-handling-time-ns ssb-handling-time-ns})
-
-                                      (nconsecutive-errors* :set 0))))
-                                (catch Throwable t (loop-error! t))
-                                (finally
-                                  (swap! handler-threads_ disj handler-thread)))))))
-
-                      (when-let [ms (throttle-ms-fn)] (sleep-while-running! ms))
-                      (recur (inc nloops))))))]
-
-          (reset! worker-futures_
-            (enc/reduce-n
-              (fn [v idx] (conj v (future (start-polling-loop! idx))))
-              [] nthreads-worker)))
-
-        true))))
+  (stop  [this] (impl/worker-stop!  state))
+  (start [this] (impl/worker-start! state this)))
 
 (enc/def-print-impl [x CarmineMessageQueueWorker] (str "#" x))
 (defn ^:no-doc worker? [x] (instance? CarmineMessageQueueWorker x))
@@ -986,29 +278,13 @@
   "Returns a worker monitor fn that warns when queue exceeds the prescribed
   size. A backoff timeout can be provided to rate-limit this warning."
   [qname max-queue-size warn-backoff-ms]
-  (let [qname (enc/as-qname qname)
-        udt-last-warning_ (atom 0)]
-    (fn [{:keys [queue-size]}]
-      (when (> (long queue-size) (long max-queue-size))
-        (let [instant (enc/now-udt)
-              udt-last-warning (long @udt-last-warning_)]
-          (when (> (- instant udt-last-warning) (long (or warn-backoff-ms 0)))
-            (when (compare-and-set! udt-last-warning_ udt-last-warning instant)
-              (trove/log!
-                {:level :warn, :id :carmine.mq/monitor-size-warning,
-                 :data {:qname qname, :queue-size {:max max-queue-size, :current queue-size}}}))))))))
+  (impl/monitor-fn "taoensso.carmine.message-queue"
+    qname max-queue-size warn-backoff-ms))
 
-(defn default-throttle-ms-fn
-  "Default/example (fn [queue-size]) -> ?throttle-msecs"
-  [queue-size]
-  (let [queue-size (long queue-size)]
-    (enc/cond
-      (> queue-size 256)  50 ; 20/sec * nthreads (~12 secs to clear)
-      (> queue-size 128) 100 ; 10/sec * nthreads (~12 secs to clear)
-      :else              200 ;  5/sec * nthreads (~25 secs to clear)
-      )))
+(enc/defalias default-throttle-ms-fn impl/default-throttle-ms-fn)
 
 (comment (default-throttle-ms-fn 0))
+
 
 (defn worker
   "Returns a stateful threaded `CarmineMessageQueueWorker` to handle messages
@@ -1152,22 +428,12 @@
               default-throttle-ms-fn
               throttle-ms)})
 
-         w
-         (CarmineMessageQueueWorker.
-           qname worker-opts conn-opts
-           (atom false)
-           (atom false)
-           (atom 0)
-           (when (pos-int? nthreads-handler) (enc/future-pool nthreads-handler))
-           (atom [])
-           (atom #{})
-           (atom nil) ; drain-wake_
-           (atom {})
+         state
+         (impl/worker-state (client conn-opts) qname worker-opts
+           (when monitor
+             (fn [m] (monitor (assoc m :mid-circle-size (get m :queue-size)))))) ; Back compatibility
 
-           ;; :sstats-init opts below allow for manual persistent sstats, currently undocumented
-           (stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queue-size)})
-           (stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/queueing-time-ms)})
-           (stats/summary-stats-buffered {:buffer-size 10000 :sstats-init (get worker-opts :sstats-init/handling-time-ns)}))
+         w (CarmineMessageQueueWorker. conn-opts state)
 
          ;; Back compatibility
          auto-start (get worker-opts :auto-start? auto-start)]
