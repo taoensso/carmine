@@ -109,6 +109,13 @@ if (status == 'nx') then
 
    if reset_init_backoff() then
       redis.call('lpush', _:qk-mid-circle, _:mid); -- -> Maintenance queue
+
+      -- Ensure that workers sleep no later than this backoff's expiry
+      local due      = now + tonumber(_:init-bo);
+      local next_due = tonumber(redis.call('get', _:qk-next-due));
+      if ((not next_due) or (due < next_due)) then
+         redis.call('set', _:qk-next-due, due);
+      end
    else
       redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Priority queue
    end

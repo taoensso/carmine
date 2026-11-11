@@ -97,6 +97,7 @@
                  (qk :mids-ready)
                  (qk :mid-circle)
                  (qk :ndry-runs)
+                 (qk :next-due)
                  (qk :isleep-a)
                  (qk :isleep-b)]))))
         [] qnames))
@@ -312,6 +313,7 @@
     :qk-requeue       (qkey qname :requeue)
     :qk-mids-ready    (qkey qname :mids-ready)
     :qk-mid-circle    (qkey qname :mid-circle)
+    :qk-next-due      (qkey qname :next-due)
     :qk-isleep-a      (qkey qname :isleep-a)
     :qk-isleep-b      (qkey qname :isleep-b)}
 
@@ -376,6 +378,7 @@
       :qk-mids-ready    (qkey qname :mids-ready)
       :qk-mid-circle    (qkey qname :mid-circle)
       :qk-ndry-runs     (qkey qname :ndry-runs)
+      :qk-next-due      (qkey qname :next-due)
       :qk-isleep-a      (qkey qname :isleep-a)
       :qk-isleep-b      (qkey qname :isleep-b)}
 
@@ -449,6 +452,7 @@
 
     - On dequeue: atomically clear both signal lists after observing no work.
     - On enqueue: leave one persistent sentinel in either signal list.
+    - On dequeue of a mid while more are ready: likewise, to wake a helper.
     - On sleep: block on both lists and consume whichever sentinel arrives.
 
   A signal sent after the dequeue decision therefore remains consumable even

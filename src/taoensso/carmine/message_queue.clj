@@ -41,6 +41,8 @@
     * mids-ready    - list: mids for immediate handling     (push to left, pop from right)
     * mid-circle    - list: mids for maintenance processing (push to left, pop from right)
     * ndry-runs     - int: num times worker(s) have lapped queue w/o work to do
+    * next-due      - int: earliest known time that a mid skipped during the
+                      current lap will need attention, caps end-of-circle sleep
 
     * isleep-a      - list: 0/1 sentinel element for `interruptible-sleep`
     * isleep-b      - list: 0/1 sentinel element for `interruptible-sleep`

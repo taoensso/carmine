@@ -9,6 +9,17 @@ redis.replicate_commands();
 local t   = redis.call('TIME'); -- Server clock, avoids client clock skew
 local now = (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000); -- Epoch msecs
 
+-- Earliest known time at which a mid skipped during the current circle lap
+-- will need attention (backoff or lock expiry). Only a hint, used to shorten
+-- the end-of-circle sleep.
+local next_due = tonumber(redis.call('get', _:qk-next-due));
+local function note_due(udt)
+   if ((not next_due) or (udt < next_due)) then
+      next_due = udt;
+      redis.call('set', _:qk-next-due, udt);
+   end
+end
+
 -- Processes given mid and returns e/o {'skip' ...}, {'handle' ...}, {'unexpected' ...}
 -- With `defer`, a circle mid that's ready for handling is instead moved to the
 -- back of the ready list.
@@ -18,12 +29,14 @@ local function process(mid, mid_src, defer)
    local status  = nil; -- base status e/o nil, done, queued, locked
    local is_bo = false; -- backoff flag for: done, queued
    local is_rq = false; -- requeue flag for: done, locked
+   local exp_lock = 0;
+   local exp_bo   = 0;
    -- 8x cases: nil, done(bo/rq), queued(bo), locked(rq)
    -- Describe with: {status, $bo, $rq} with $ prefixes e/o: _, +, -, *
 
    if (redis.call('hexists', _:qk-messages, mid) == 1) then
-      local exp_lock = tonumber(redis.call('hget', _:qk-locks,    mid)) or 0;
-      local exp_bo   = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
+      exp_lock = tonumber(redis.call('hget', _:qk-locks,    mid)) or 0;
+      exp_bo   = tonumber(redis.call('hget', _:qk-backoffs, mid)) or 0;
 
       is_bo = (now < exp_bo);
       is_rq = (redis.call('sismember', _:qk-requeue,     mid) == 1) or -- Deprecated
@@ -44,9 +57,9 @@ local function process(mid, mid_src, defer)
       else
          return {'skip', 'unexpected'};
       end
-   elseif  (status == 'locked')            then return {'skip', 'locked'};
-   elseif ((status == 'queued') and is_bo) then return {'skip', 'queued-with-backoff'};
-   elseif ((status == 'done')   and is_bo) then return {'skip', 'done-with-backoff'};
+   elseif  (status == 'locked')            then note_due(exp_lock); return {'skip', 'locked'};
+   elseif ((status == 'queued') and is_bo) then note_due(exp_bo);   return {'skip', 'queued-with-backoff'};
+   elseif ((status == 'done')   and is_bo) then note_due(exp_bo);   return {'skip', 'done-with-backoff'};
    end
 
    redis.call('set', _:qk-ndry-runs, 0); -- Doing useful work
@@ -156,6 +169,12 @@ for step = 1, max_steps do
    end
 
    if ((not mid) or (mid == 'end-of-circle')) then -- Uninit'd or eoq
+      local lap_due = next_due;
+      if next_due then -- Reset for next lap
+         next_due = nil;
+         redis.call('del', _:qk-next-due);
+      end
+
       if ready then
          -- Don't sleep, continue with circle until back here, then ready mids
          neocs  = neocs + 1;
@@ -167,6 +186,12 @@ for step = 1, max_steps do
          local eoq_backoff_ms = tonumber(eoq_ms_tab[math.min(5, (ndry_runs + 1))]);
          redis.call('incr', _:qk-ndry-runs);
 
+         -- Don't sleep past the earliest time that a mid skipped during
+         -- this lap will need attention
+         if lap_due then
+            eoq_backoff_ms = math.max(1, math.min(eoq_backoff_ms, (lap_due - now)));
+         end
+
          -- Discard signals already accounted for by this atomic poll. Any later
          -- enqueue leaves one persistent sentinel on A or B for the blocking client.
          redis.call('del', _:qk-isleep-a, _:qk-isleep-b);
@@ -175,7 +200,16 @@ for step = 1, max_steps do
       end
    else
       reply = process(mid, mid_src, (ready and (mid_src == 'circle')));
-      if (reply[1] ~= 'skip') then return reply; end
+      if (reply[1] ~= 'skip') then
+         if ((reply[1] == 'handle') and (redis.call('llen', _:qk-mids-ready) > 0)) then
+            -- More mids are ready, so wake another sleeping worker (if any) to
+            -- help. As in enqueue.lua: leaves at most one persistent sentinel.
+            if     redis.call('rpoplpush', _:qk-isleep-a, _:qk-isleep-b) then
+            elseif redis.call('rpoplpush', _:qk-isleep-b, _:qk-isleep-a) then
+            else   redis.call('lpush',     _:qk-isleep-a, '_'); end
+         end
+         return reply;
+      end
    end
 end
 

@@ -78,14 +78,16 @@
 ;;;;
 
 (defn throw! [] (throw (Exception.)))
-(defn handle-end-of-circle []
+(defn handle-end-of-circle
+  ([] (handle-end-of-circle eoq-backoff-ms))
+  ([sleep-ms]
   (let [reply (wcar* (dequeue tq))]
     (every? identity
       [(is (= (subvec reply 0 2) ["sleep" "end-of-circle"]))
        (is (contains? #{"a" "b"} (get reply 2)))
-       (is (= (get reply 3) eoq-backoff-ms))
+       (is (= (get reply 3) sleep-ms))
        (is (subvec? (impl/handle1 client tq (fn hf [_] (throw!)) reply {})
-             [:slept "end-of-circle" (get reply 2) #_eoq-backoff-ms]))])))
+             [:slept "end-of-circle" (get reply 2) #_eoq-backoff-ms]))]))))
 
 ;;;;
 
@@ -149,7 +151,7 @@
      (is (= (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 500 :reset-init-backoff? true}))
            {:success? true, :action :updated, :mid :mid2}) "Reset init backoff")
 
-     (handle-end-of-circle)
+     (handle-end-of-circle 1) ; Capped by due hint from enqueue
 
      (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1 1 default-lock-ms #_udt]))
      (is (= (wcar* (msg-status tq :mid1)) :locked))
@@ -221,7 +223,7 @@
 
       (sleep 2500) ; > handler backoff
       (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
-      (handle-end-of-circle)
+      (handle-end-of-circle 1) ; Skipped mid is now due
 
       (is (= (wcar* (dequeue tq)) ["skip" "did-gc"]))])
 
@@ -239,7 +241,7 @@
 
       (sleep 2500) ; > handler backoff
       (is (= (wcar* (msg-status tq :mid1)) :queued))
-      (handle-end-of-circle)
+      (handle-end-of-circle 1) ; Skipped mid is now due
 
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1 2 default-lock-ms #_udt]))])
 
@@ -346,7 +348,51 @@
     [(is (subvec? (wcar* (dequeue tq {:max-poll-steps 16})) ["handle" "mid2" :msg2 1]))
      (is (= (:ready (impl/queue-mids client tq)) ["mid1"]) "Retry waits in turn behind ready mids")
      (is (subvec? (wcar* (dequeue tq {:max-poll-steps 16})) ["handle" "mid1" :msg1 2]))
-     (is (= (subvec (wcar* (dequeue tq {:max-poll-steps 16})) 0 2) ["sleep" "end-of-circle"]))]))
+     (is (= (subvec (wcar* (dequeue tq {:max-poll-steps 16})) 0 2) ["sleep" "end-of-circle"]))])
+
+  (testing "Handling a mid wakes another sleeper iff more mids are ready"
+    (clear-tq!)
+    (wcar* (enqueue tq :msg1 {:mid :mid1}))
+    (wcar* (enqueue tq :msg2 {:mid :mid2}))
+    (wcar* (enqueue tq :msg3 {:mid :mid3}))
+    (let [nsignals
+          (fn [] (reduce + (wcar* (car/llen (impl/qkey tq :isleep-a))
+                                  (car/llen (impl/qkey tq :isleep-b)))))]
+      (wcar* (car/del (impl/qkey tq :isleep-a) (impl/qkey tq :isleep-b))) ; Discard enqueue signals
+      [(is (subvec? (wcar* (dequeue tq)) ["handle" "mid1"]))
+       (is (= (nsignals) 1) "More mids ready")
+       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid2"]))
+       (is (= (nsignals) 1) "More mids ready, but at most one persistent signal")
+       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid3"]))
+       (is (= (nsignals) 1) "No more mids ready, existing signal untouched")
+       (is (= (subvec (wcar* (dequeue tq)) 0 2) ["sleep" "end-of-circle"]))
+       (is (= (nsignals) 0))
+
+       (do (wcar* (enqueue tq :msg4 {:mid :mid4}))
+           (wcar* (car/del (impl/qkey tq :isleep-a) (impl/qkey tq :isleep-b)))
+           (is (subvec? (wcar* (dequeue tq)) ["handle" "mid4"])))
+       (is (= (nsignals) 0) "No more mids ready")])))
+
+(deftest end-of-circle-sleep-cap
+  (testing "End-of-circle sleep is capped by the earliest skipped backoff or lock expiry"
+    (let [eoq-ms 60000
+          poll!  (fn [] (wcar* (dequeue tq {:eoq-backoff-ms eoq-ms, :max-poll-steps 16})))]
+
+      (clear-tq!)
+      (wcar* (enqueue tq :msg1 {:mid :mid1 :init-backoff-ms 4000}))
+      (wcar* (enqueue tq :msg2 {:mid :mid2 :init-backoff-ms 2000}))
+      [(let [[kind reason _ ms] (poll!)]
+         [(is (= [kind reason] ["sleep" "end-of-circle"]))
+          (is (<= 1 ms 2000) "Nothing skipped yet, capped by enqueue")])
+       (let [[kind reason _ ms] (poll!)]
+         [(is (= [kind reason] ["sleep" "end-of-circle"]))
+          (is (<= 1 ms 2000) "Capped by earliest backoff")])]
+
+      (clear-tq!)
+      (wcar* (enqueue tq :msg1 {:mid :mid1}))
+      [(is (subvec? (wcar* (dequeue tq {:default-lock-ms 2000})) ["handle" "mid1"]))
+       (is (= (poll!) ["sleep" "end-of-circle" "a" eoq-ms]))
+       (let [[_ _ _ ms] (poll!)] (is (<= 1 ms 2000) "Capped by lock expiry"))])))
 
 (deftest workers
   (testing "Basic worker functionality"
