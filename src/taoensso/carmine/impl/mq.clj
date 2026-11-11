@@ -333,14 +333,22 @@
     :else  {:success? false, :error  :unknown}))
 
 (defn req-dequeue
-  "Returns request to process next mid, with reply e/o:
+  "Returns request to process next mid/s, with reply e/o:
     - [\"skip\"   <reason>]                                   ; Worker thread should skip
     - [\"sleep\"  <reason> <msecs>]                           ; Worker thread should sleep
-    - [\"handle\" <mid> <mcontent> <attempt> <lock-ms> <udt>] ; Worker thread should handle"
+    - [\"handle\" <mid> <mcontent> <attempt> <lock-ms> <udt>] ; Worker thread should handle
+
+  Processes up to `max-poll-steps` mids, stopping at the first non-skip
+  reply. So a single poll can do several maintenance steps (GC, requeue,
+  skipping over locked or backing-off mids) before returning something to
+  handle. With > 1 step, spare steps are used for circle maintenance before
+  taking a mid from the ready list, so that maintenance can't be starved
+  by a steady stream of new mids."
   [qname
-   {:keys [default-lock-ms eoq-backoff-ms]
+   {:keys [default-lock-ms eoq-backoff-ms max-poll-steps]
     :or   {default-lock-ms (enc/ms :mins 60)
-           eoq-backoff-ms  enc/exp-backoff}}
+           eoq-backoff-ms  enc/exp-backoff
+           max-poll-steps  16}}
    lease-token]
 
   (let [;; Precompute 5 backoffs so that `dequeue.lua` can init the backoff atomically
@@ -372,6 +380,7 @@
       :qk-isleep-b      (qkey qname :isleep-b)}
 
      {:lease-token      lease-token
+      :max-steps        (long max-poll-steps)
       :default-lock-ms  default-lock-ms
       :eoq-bo1          bo1
       :eoq-bo2          bo2

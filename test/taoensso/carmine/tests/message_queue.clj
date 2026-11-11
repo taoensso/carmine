@@ -46,7 +46,7 @@
   (def enqueue    mq/enqueue)
   (def msg-status mq/message-status)
 
-  (let [default-opts {:eoq-backoff-ms eoq-backoff-ms}]
+  (let [default-opts {:eoq-backoff-ms eoq-backoff-ms, :max-poll-steps 1}] ; Single-step polls
     (defn- dequeue
       ([qname]                  (dequeue qname nil (enc/uuid-str)))
       ([qname opts]             (dequeue qname opts (enc/uuid-str)))
@@ -311,6 +311,42 @@
 
       (is (=       (wcar* (dequeue tq)) ["skip" "did-requeue"]))
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1c 1 500 #_udt]))])])
+
+(deftest multi-step-polls
+  (testing "Poll can do several maintenance steps"
+    (clear-tq!)
+    (wcar* (enqueue tq :msg1 {:mid :mid1}))
+    (wcar* (dequeue tq nil "owner"))
+    [(is (= (impl/finalize client tq "mid1" "owner" true nil) ["finalized"]))
+     (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+     (is (= (subvec (wcar* (dequeue tq {:max-poll-steps 16})) 0 2) ["sleep" "end-of-circle"]))
+     (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+     (is (= (subvec (wcar* (dequeue tq {:max-poll-steps 16})) 0 2) ["sleep" "end-of-circle"])
+       "GC, then end of circle")
+     (is (= (wcar* (msg-status tq :mid1)) nil))])
+
+  (testing "Ready mids can't starve circle maintenance"
+    (doseq [max-steps [1 16]]
+      (clear-tq!)
+      (wcar* (enqueue tq :msg1 {:mid :mid1}))
+      (wcar* (dequeue tq nil "owner"))
+      (impl/finalize client tq "mid1" "owner" true nil)
+      (wcar* (enqueue tq :msg2 {:mid :mid2}))
+      (is (subvec? (wcar* (dequeue tq {:max-poll-steps max-steps})) ["handle" "mid2"]))
+      (is (= (wcar* (msg-status tq :mid1))
+            (if (= max-steps 1) :done-awaiting-gc nil))
+        "Single-step poll takes ready mid without touching circle")))
+
+  (testing "Retries in circle and ready mids can't starve each other"
+    (clear-tq!)
+    (wcar* (enqueue tq :msg1 {:mid :mid1}))
+    (wcar* (dequeue tq nil "owner"))
+    (impl/finalize client tq "mid1" "owner" false nil) ; Retry without backoff
+    (wcar* (enqueue tq :msg2 {:mid :mid2}))
+    [(is (subvec? (wcar* (dequeue tq {:max-poll-steps 16})) ["handle" "mid2" :msg2 1]))
+     (is (= (:ready (impl/queue-mids client tq)) ["mid1"]) "Retry waits in turn behind ready mids")
+     (is (subvec? (wcar* (dequeue tq {:max-poll-steps 16})) ["handle" "mid1" :msg1 2]))
+     (is (= (subvec (wcar* (dequeue tq {:max-poll-steps 16})) 0 2) ["sleep" "end-of-circle"]))]))
 
 (deftest workers
   (testing "Basic worker functionality"
