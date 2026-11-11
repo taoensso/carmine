@@ -534,7 +534,8 @@
 (defn handle1
   [client qname handler poll-reply
    {:keys [worker queue-size lease-token nstats_ ssb-queueing-time-ms ssb-handling-time-ns
-           sleep-locally! lock-extender lock-auto-extend-max-ms]
+           sleep-locally! lock-extender lock-auto-extend-max-ms
+           max-attempts error-retry-backoff-ms on-give-up]
     :or   {queue-size -1}}]
 
   (let [[kind] (when (vector? poll-reply) poll-reply)
@@ -556,6 +557,7 @@
 
       "handle"
       (let [[_kind mid mcontent attempt lock-ms udt] poll-reply
+            attempt (long attempt)
 
             age-ms
             (when-let [udt (enc/as-?udt udt)]
@@ -568,37 +570,79 @@
              #(when (extend-lock client qname mid lease-token lock-ms)
                 true)}
 
+            max-attempts  (when max-attempts (long max-attempts))
             interrupted?_ (volatile! false)
-            t0 (enc/now-nano*)
+            log-data      {:qname qname, :mid mid, :attempt attempt}
 
             end-auto-extend!
             (enc/when-let [le lock-extender, max-ms lock-auto-extend-max-ms]
               (auto-extend-lock! client qname mid attempt lease-token lock-ms le max-ms))
 
-            result
+            ;; Lease is kept (and auto extended) while handler and any give-up hook run
+            [result status throwable backoff-ms handling-time-ns
+             give-up-reason retry-backoff-ms give-up-error]
             (try
-              (handler mq-msg)
-              (catch InterruptedException t
-                (vreset! interrupted?_ true)
-                {:status :error, :throwable t})
-              (catch Throwable t
-                {:status :error :throwable t})
+              (let [;; Possible when earlier attempts all ended by lock expiry (worker died, etc.)
+                    over-max? (and max-attempts (> attempt (long max-attempts)))
+                    t0        (enc/now-nano*)
+                    result
+                    (when-not over-max?
+                      (try
+                        (handler mq-msg)
+                        (catch InterruptedException t
+                          (vreset! interrupted?_ true)
+                          {:status :error, :throwable t})
+                        (catch Throwable t
+                          {:status :error, :throwable t})))
+
+                    handling-time-ns (when-not over-max? (- (enc/now-nano*) t0))
+                    last-attempt?    (and max-attempts (>= attempt (long max-attempts)))
+
+                    {:keys [status throwable backoff-ms]
+                     :or   {status :success}} ; Status may be any value, incl. nil
+                    (when (map? result) result)
+
+                    retry-backoff-ms ; For `:error` status
+                    (when (and (= status :error) (not last-attempt?))
+                      (when-let [ms error-retry-backoff-ms]
+                        (long (or backoff-ms (if (fn? ms) (ms attempt) ms) 0))))
+
+                    give-up-reason
+                    (enc/cond
+                      over-max?        :max-attempts
+                      (= status :retry) (when last-attempt? :max-attempts)
+                      (= status :error)
+                      (enc/cond
+                        retry-backoff-ms nil
+                        (and last-attempt? error-retry-backoff-ms) :max-attempts
+                        :else            :error))
+
+                    give-up-error
+                    (enc/when-let [reason give-up-reason, f on-give-up]
+                      (try
+                        ;; Skip hook if lease was superseded (message cancelled, etc.),
+                        ;; in which case the finalize below will also be fenced
+                        (when (= (exec1 client ["HGET" (qkey qname :lock-tokens) mid]) lease-token)
+                          (f (enc/assoc-some (assoc mq-msg :reason reason) :throwable throwable)))
+                        nil
+                        (catch InterruptedException t (vreset! interrupted?_ true) t)
+                        (catch Throwable            t                              t)))]
+
+                [result status throwable backoff-ms handling-time-ns
+                 give-up-reason retry-backoff-ms give-up-error])
               (finally
                 (when end-auto-extend! (end-auto-extend!))))
 
-            handling-time-ns (- (enc/now-nano*) t0)
+            handled? (some? handling-time-ns)
 
-            {:keys [status throwable backoff-ms]
-             :or   {status :success}}
-            (when (map? result) result)
-
-            status-nstat-k ; Status may be any value, incl. nil
-            (case status
-              (:success :error :retry) (keyword "handler" (name status))
-              :handler/unexpected)
+            status-nstat-k
+            (when handled?
+              (case status
+                (:success :error :retry) (keyword "handler" (name status))
+                :handler/unexpected))
 
             fin
-            (fn [mid done? backoff-ms]
+            (fn [done? backoff-ms gave-up?]
               (let [reply (finalize client qname mid lease-token done? backoff-ms)]
                 ;; Counters are disjoint: a fenced result had no effect on the
                 ;; queue, so don't also count it as a completed handling
@@ -607,49 +651,73 @@
                     (inc-nstat! nstats_ :handler/fenced)
                     (log! client
                       {:level :warn, :id :carmine.mq/stale-handler-fenced
-                       :data {:qname qname, :mid mid, :attempt attempt}}))
+                       :data log-data}))
 
-                  (do              (inc-nstat! nstats_ status-nstat-k)
-                    (when backoff-ms (inc-nstat! nstats_ :handler/backoff))))
+                  (do
+                    (when status-nstat-k (inc-nstat! nstats_ status-nstat-k))
+                    (when backoff-ms     (inc-nstat! nstats_ :handler/backoff))
+                    (when gave-up?       (inc-nstat! nstats_ :handler/gave-up))))
                 reply))]
 
-        (when (== ^long attempt 1)
+        (when (and handled? (== attempt 1))
           ;; queueing-time => time till handler, not time till successful handling
           (enc/when-let [ssb ssb-queueing-time-ms, ms age-ms]           (ssb ms)))
         (enc/when-let   [ssb ssb-handling-time-ns, ns handling-time-ns] (ssb ns))
 
         (try
-          ;; Effects
-          (case status
-            :success (fin mid true  backoff-ms)
-            :retry   (fin mid false backoff-ms)
-            :error
-            (do
-              ;; Log first, so that the handler error isn't lost if `fin` throws
-              (log! client
-                {:level :error, :id :carmine.mq/handler-error,
-                 :data {:qname qname, :mid mid, :attempt attempt, :message mcontent}
-                 :error throwable})
-              (fin mid true nil))
+          ;; Log first, so that the handler error isn't lost if `fin` throws
+          (when (and handled? (= status :error))
+            (log! client
+              {:level :error, :id :carmine.mq/handler-error,
+               :data (assoc log-data :message mcontent)
+               :error throwable}))
 
-            ;; else
+          ;; Effects
+          (enc/cond
+            give-up-error
             (do
-              (fin mid true nil) ; For backwards-comp with old API
+              ;; Message is kept until hook succeeds
+              (log! client
+                {:level :error, :id :carmine.mq/give-up-error, :msg "Will backoff and retry"
+                 :data (assoc log-data :message mcontent, :reason give-up-reason)
+                 :error give-up-error})
+              (fin false
+                (enc/exp-backoff
+                  (if (= give-up-reason :max-attempts)
+                    (max 1 (- attempt (dec (long max-attempts)))) ; Num tries since max reached
+                    (do       attempt))
+                  {:max (enc/ms :mins 1)})
+                false))
+
+            give-up-reason
+            (do
+              (when (= give-up-reason :max-attempts)
+                (log! client
+                  {:level :warn, :id :carmine.mq/max-attempts-reached
+                   :data (assoc log-data :message mcontent, :max-attempts max-attempts)}))
+              (fin true nil true))
+
+            (= status :success)     (fin true  backoff-ms       false)
+            (= status :retry)       (fin false backoff-ms       false)
+            (= status :error)       (fin false retry-backoff-ms false)
+            :else
+            (do
+              (fin true nil false) ; For backwards-comp with old API
               (log! client
                 {:level :warn, :id :carmine.mq/unexpected-handler-status
                  :data
-                 {:qname qname, :mid mid, :attempt attempt, :message mcontent,
-                  :handler-result (enc/typed-val result)
-                  :handler-status (enc/typed-val status)}})))
+                 (assoc log-data :message mcontent
+                   :handler-result (enc/typed-val result)
+                   :handler-status (enc/typed-val status))})))
           (finally
             ;; Deliberately doesn't re-set the interrupt flag: nothing in the
             ;; worker consumes it, and it'd only break the thread's next sleep
             (when @interrupted?_
               (log! client
                 {:level :warn, :id :carmine.mq/handler-interrupted
-                 :data {:qname qname, :mid mid, :attempt attempt}}))))
+                 :data log-data}))))
 
-        [:handled status])
+        [:handled (if handled? status :gave-up)])
 
       ;; else
       (do
@@ -951,7 +1019,10 @@
                                    :sleep-locally!       sleep-while-running!
                                    :lock-extender        lock-extender
                                    :lock-auto-extend-max-ms
-                                   (get worker-opts :lock-auto-extend-max-ms)})
+                                   (get worker-opts :lock-auto-extend-max-ms)
+                                   :max-attempts           (get worker-opts :max-attempts)
+                                   :error-retry-backoff-ms (get worker-opts :error-retry-backoff-ms)
+                                   :on-give-up             (get worker-opts :on-give-up)})
 
                                 (nconsecutive-errors* :set 0))
                               (catch Throwable t (loop-error! t)))

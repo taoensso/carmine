@@ -245,6 +245,88 @@
 
       (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1 2 default-lock-ms #_udt]))])
 
+   (testing "Max attempts, error retry, give-up hook"
+     (let [gave-up_ (atom [])
+           ncalls_  (atom 0)
+           on-give-up
+           (fn [{:keys [mid attempt reason throwable]}]
+             (swap! gave-up_ conj [mid attempt reason (some? throwable)]))
+
+           handle ; Handles next message, returns [<attempt> <handle1-result>]
+           (fn [hf opts]
+             (let [lease-token (enc/uuid-str)
+                   poll-reply
+                   (loop [n 0]
+                     (let [reply (wcar* (dequeue tq nil lease-token))]
+                       (if (or (= (first reply) "handle") (>= n 8))
+                         reply
+                         (recur (inc n)))))]
+               [(get poll-reply 3)
+                (impl/handle1 client tq (fn [m] (swap! ncalls_ inc) (hf m)) poll-reply
+                  (assoc opts :lease-token lease-token))]))
+
+           reset!! (fn [] (clear-tq!) (reset! gave-up_ []) (reset! ncalls_ 0)
+                     (wcar* (enqueue tq :msg1 {:mid :mid1})))]
+
+       [(testing "Retries are limited by max attempts"
+          (reset!!)
+          (let [opts {:max-attempts 2, :on-give-up on-give-up}
+                hf   (fn [_] {:status :retry})]
+            [(is (= (handle hf opts) [1 [:handled :retry]]))
+             (is (= (wcar* (msg-status tq :mid1)) :queued))
+             (is (= @gave-up_ []))
+             (is (= (handle hf opts) [2 [:handled :retry]]))
+             (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+             (is (= @gave-up_ [["mid1" 2 :max-attempts false]]))]))
+
+        (testing "Errors are final by default"
+          (reset!!)
+          [(is (= (handle (fn [_] (throw!)) {:max-attempts 2, :on-give-up on-give-up}) [1 [:handled :error]]))
+           (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+           (is (= @gave-up_ [["mid1" 1 :error true]]))])
+
+        (testing "Errors can be retried, with backoff"
+          (reset!!)
+          (let [opts {:max-attempts 2, :on-give-up on-give-up, :error-retry-backoff-ms 0}
+                hf   (fn [_] (throw!))]
+            [(is (= (handle hf opts) [1 [:handled :error]]))
+             (is (= (wcar* (msg-status tq :mid1)) :queued))
+             (is (= @gave-up_ []))
+             (is (= (handle hf opts) [2 [:handled :error]]))
+             (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+             (is (= @gave-up_ [["mid1" 2 :max-attempts true]]))])
+
+          (reset!!)
+          [(is (= (handle (fn [_] (throw!)) {:error-retry-backoff-ms (fn [attempt] (* 2000 (long attempt)))})
+                 [1 [:handled :error]]))
+           (is (= (wcar* (msg-status tq :mid1)) :queued-with-backoff))])
+
+        (testing "Message is kept if give-up hook throws"
+          (reset!!)
+          (let [nstats_ (atom {})
+                opts    {:max-attempts 1, :nstats_ nstats_}]
+            [(is (= (handle (fn [_] {:status :retry}) (assoc opts :on-give-up (fn [_] (throw!))))
+                   [1 [:handled :retry]]))
+             (is (= (wcar* (msg-status tq :mid1)) :queued-with-backoff))
+             (is (= (get @nstats_ :handler/gave-up) nil))
+             (do (sleep 2100) true) ; > max first backoff
+             (is (= (handle (fn [_] {:status :retry}) (assoc opts :on-give-up on-give-up))
+                   [2 [:handled :gave-up]]) "Hook retried, without handler")
+             (is (= @ncalls_ 1))
+             (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+             (is (= @gave-up_ [["mid1" 2 :max-attempts false]]))
+             (is (= (get @nstats_ :handler/gave-up) 1))]))
+
+        (testing "Attempts ended by lock expiry count toward max attempts"
+          (reset!!)
+          [(is (subvec? (wcar* (dequeue tq {:default-lock-ms 1})) ["handle" "mid1" :msg1 1 1]))
+           (do (sleep 20) true)
+           (is (= (handle (fn [_] {:status :success}) {:max-attempts 1, :on-give-up on-give-up})
+                 [2 [:handled :gave-up]]))
+           (is (= @ncalls_ 0) "Handler not called")
+           (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+           (is (= @gave-up_ [["mid1" 2 :max-attempts false]]))])]))
+
    (testing "Handler => lock timeout"
 
      (testing "Default lock time"
@@ -676,6 +758,9 @@
          "Re-asserted message survives the stale finalization")])))
 
 (deftest worker-hardening
+  (testing "Invalid `:max-attempts` is rejected"
+    (is (thrown? Exception (mq/worker conn-opts tq {:max-attempts 0, :auto-start false}))))
+
   (testing "Monitor retains the six-element handle reply"
     (clear-tq!)
     (let [handled (promise)

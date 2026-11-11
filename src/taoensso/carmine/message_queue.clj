@@ -323,7 +323,10 @@
           `:handler/error`      - Number of handler results with `:error`   status
           `:handler/retry`      - Number of handler results with `:retry`   status
           `:handler/unexpected` - Number of handler results with any other status
-          `:handler/backoff`    - Number of the above that supplied a `:backoff-ms`
+          `:handler/backoff`    - Number of messages returned to queue (or marked
+                                  done) with a backoff
+          `:handler/gave-up`    - Number of messages dropped without success, see
+                                  `:on-give-up`
           `:handler/fenced`     - Number of stale handler results safely ignored
 
             The status counts are disjoint from `:handler/fenced`: a fenced
@@ -350,9 +353,9 @@
         `:backoff-ms` - Optional time (in milliseconds) to backoff
                         for dedupe or before retrying
 
-      If handler throws ANY `Throwable`, will assume `:error` status and NOT retry.
-      For custom error handling, make sure to use an appropriate try/catch
-      within your handler fn!
+      If handler throws ANY `Throwable`, will assume `:error` status and NOT retry
+      (unless `:error-retry-backoff-ms` is set). For custom error handling, make
+      sure to use an appropriate try/catch within your handler fn!
 
     `:monitor` - (fn [{:keys [queue-size ndry-runs poll-reply]}])
       Called on each worker loop iteration. Useful for queue monitoring/logging.
@@ -380,6 +383,31 @@
 
       Allows a short `:lock-ms` (so that messages held by a dead worker are
       soon retried) with less risk of double handling for slow handlers.
+
+    `:max-attempts` (default nil => unlimited)
+      Max number of times that a message will be handled, counted across all
+      workers (incl. attempts that ended by lock expiry). A message that still
+      needs a retry after this many attempts is instead dropped, see `:on-give-up`.
+
+    `:error-retry-backoff-ms` (default nil => don't retry)
+      If set, a message with `:error` status (incl. handler throwing) will be
+      retried after this long (in milliseconds), rather than dropped.
+      Can be a (fn [attempt]) -> msecs, e.g.:
+        (fn [attempt] (exp-backoff attempt {:max 60000}))
+
+      A `:backoff-ms` in handler's result takes precedence.
+      Best used with `:max-attempts`!
+
+    `:on-give-up` - (fn [{:keys [qname mid message attempt reason throwable]}])
+      Called just before worker drops a message for one of the reasons below,
+      e.g. to log or to store message elsewhere (\"dead letters\").
+      `:reason` is e/o:
+        `:error`        - `:error` status that won't be retried
+        `:max-attempts` - Retry needed, but `:max-attempts` reached
+
+      If this fn throws, message is kept and retried later (incl. by handler,
+      unless `:max-attempts` was reached). As with handler, may be called more
+      than once for the same message.
 
     `:throttle-ms` (default `default-throttle-ms-fn`)
       Min time (in milliseconds) between polls by each handler thread, incl.
@@ -424,6 +452,8 @@
            (truss/ex-info!
              "[Carmine/mq] Positive worker threads require positive handler threads"
              {:nthreads-worker nthreads-worker, :nthreads-handler nthreads-handler}))
+
+         _ (truss/have [:or nil? pos-int?] (get worker-opts :max-attempts))
 
          qname (enc/as-qname qname)
          worker-opts
