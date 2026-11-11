@@ -45,6 +45,17 @@
   [client opts] `(trove/log! ~(assoc opts :ns `(log-ns ~client))))
 
 ;;;; Store
+;; Design note: messages due later (backoffs, expired locks) are found by
+;; walking the `mid-circle` list, so a lap costs O(n) in queue size and
+;; done messages are GC'd only once the lap reaches them.
+;;
+;; Possible alternative: a sorted set of mid -> due time as source of truth
+;; (with a ready list) in place of the circle. Benefits: O(log n) scheduling,
+;; no lap or scan cost, no idle polling of delayed messages, immediate GC.
+;;
+;; Cost: a new key layout that released clients can't share, so it'd need a
+;; breaking release and a migration (new workers draining old-layout queues,
+;; with care for mids that are live in both layouts).
 
 (defn redis-key
   "Same as v3 `taoensso.carmine/key`."
