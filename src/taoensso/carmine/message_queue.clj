@@ -335,8 +335,8 @@
 
   API:
     - (deref <worker>)          => Detailed worker status map (see \"Debugging\" below).
-    - (<worker> :start)         => Same as calling (start <worker>).
-    - (<worker> :stop)          => Same as calling (stop  <worker>).
+    - (<worker> :start)         => Same as calling `start`.
+    - (<worker> :stop)          => Same as calling `stop`.
     - (<worker> :queue-size)    => Same as calling `queue-size`    for given qname.
     - (<worker> :queue-status)  => Same as calling `queue-status`  for given qname.
     - (<worker> :queue-content) => Same as calling `queue-content` for given qname.
@@ -345,6 +345,13 @@
     - (<worker> :drain <msecs>) => Like `:drain`, but returns false on timeout.
     - (.close <worker>)         => Permanently stops worker. Like `stop`, doesn't
                                    wait for active handler tasks, see `:drain`.
+
+    For graceful shutdown: stop worker, then `drain` (usu. with a timeout)
+    before exiting.
+
+    Messages whose handlers hadn't completed when the process exited will be
+    retried after their lock expires. For faster recovery, prefer a short
+    `:lock-ms` with `:lock-auto-extend-max-ms`.
 
   Debugging:
 
