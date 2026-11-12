@@ -2,6 +2,49 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v4.0.0-alpha1` (TODO / unreleased)
+
+- **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/4.0.0-alpha1)
+- **Versioning**: [Break Versioning](https://www.taoensso.com/break-versioning)
+
+This is the **first public preview of Carmine v4**: a substantial rewrite of Carmine's core that adds support for RESP3, Redis Sentinel and Redis Cluster. See the [v4 preview guide](https://github.com/taoensso/carmine/wiki/5-Carmine-v4) for motivation, examples, limitations and migration info.
+
+**For v3 users**: there are no breaking changes to the v3 API (`taoensso.carmine`), so this is a safe update from `v3.7.1`. V4 lives in its own `taoensso.carmine-v4` namespace alongside v3. The two can run in the same process and share Redis data (including message queues), so you can migrate one part of an application at a time, or not at all.
+
+**For v4 testers**: v4 is not a drop-in namespace replacement for v3, and its API **may still change** before the final release. Please use it for evaluation and feedback rather than production.
+
+Please report any unexpected problems on [GitHub](https://github.com/taoensso/carmine/issues), thanks! 🙏
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Since `v3.7.1` (TODO)
+
+### New
+
+- \[new] \[v4] **RESP3**: used by default, with richer reply types (e.g. maps), attributes and pushes. RESP2 is still supported [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Redis Sentinel**: master discovery and failover [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Redis Cluster**: routing by key, and handling of Cluster redirects [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Connection managers**: explicit pooled and unpooled managers replace hidden global pools, each with its own options, statistics and callbacks [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Errors that are hard to miss**: a Redis error reply now throws by default, use `:error-mode :return` to get errors as values [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Read timeout by default**: reads time out after 10 seconds (v3 had no limit), so a hung server can't block callers forever. Use a higher or nil `:read-timeout-ms` for blocking commands like `BLPOP` [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Clearer connection errors**: connection failures include the server's address and the underlying cause, e.g. a wrong password [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Simpler transactions**: `transact!` runs WATCH/MULTI/EXEC and retries on conflict [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Simpler Pub/Sub**: listeners reconnect and resubscribe on their own [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] `lua-local` is now safe across server restarts, and new `scan-reduce` and `scan-reduce-kv` replace `reduce-scan` and `reduce-hscan` (de-duplication is now opt-in) [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] **Faster pipelines**: about the same speed as v3 for single commands, often faster for large pipelines [[fd2d0caf](https://github.com/taoensso/carmine/commit/fd2d0caf)]
+- \[new] \[v4] \[mq] **Message queue** (`taoensso.carmine-v4.message-queue`): a port of the v3 MQ to v4 connection managers, with RESP3 and Sentinel support. Includes all v3.7 MQ improvements, and shares queues with v3 clients. See the [v4 preview guide](https://github.com/taoensso/carmine/wiki/5-Carmine-v4#message-queue) for changes and migration [[21213a2f](https://github.com/taoensso/carmine/commit/21213a2f)]
+- \[new] \[v4] \[mq] `enqueue`, `message-status` and `cancel` can also be called with a connection manager as first argument, outside a request context [[21213a2f](https://github.com/taoensso/carmine/commit/21213a2f)]
+- \[new] \[v4] \[mq] `enqueue` and `worker` reject unknown (e.g. misspelled) options, which would otherwise be silently ignored [[21213a2f](https://github.com/taoensso/carmine/commit/21213a2f)]
+- \[doc] \[v4] New [v4 preview guide](https://github.com/taoensso/carmine/wiki/5-Carmine-v4)
+
+### Current v4 limitations
+
+- **Not supported with Cluster**: replica reads, transactions, Pub/Sub, the message queue, and `lua-local`.
+- **Not ported to v4**: distributed locks, Ring sessions, and Tundra. The v3 versions still work alongside v4.
+- **Performance**: `HGETALL` and other map replies are currently slightly slower than v3 with RESP3 (the v4 default), since they're returned as maps.
+
+---
+
 # `v3.7.1` (2026-11-21)
 
 - **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.7.1)
@@ -37,7 +80,7 @@ As usual please **test before updating production** and report any unexpected pr
 
 This is a **major feature and maintenance release** focused on Carmine's message queue.
 
-As usual please **test before updating production** and report any unexpected problems to the [Slack channel](http://taoensso.com/carmine/slack) or [GitHub](https://github.com/taoensso/carmine/issues), thanks! 🙏
+As usual please **test before updating production** and report any unexpected problems on [GitHub](https://github.com/taoensso/carmine/issues), thanks! 🙏
 
 \- [Peter Taoussanis](https://www.taoensso.com)
 
@@ -116,7 +159,7 @@ Please **test carefully before updating production** (particularly MQ workloads)
 - **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.5.0)
 - **Versioning**: [Break Versioning](https://www.taoensso.com/break-versioning)
 
-This is a **major maintenance release** with many improvements. It includes a [breaking change](https://github.com/taoensso/carmine/commit/ee75844c6515f6e692fd6fdb2c6fe57ee7aaede1) regarding Carmine's logging. Please report any unexpected problems to the [Slack channel](http://taoensso.com/carmine/slack) or [GitHub](https://github.com/taoensso/carmine/issues).
+This is a **major maintenance release** with many improvements. It includes a [breaking change](https://github.com/taoensso/carmine/commit/ee75844c6515f6e692fd6fdb2c6fe57ee7aaede1) regarding Carmine's logging. Please report any unexpected problems on [GitHub](https://github.com/taoensso/carmine/issues).
 
 A big thanks to all contributors and testers on this release! 🙏
 

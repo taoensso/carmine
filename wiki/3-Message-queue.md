@@ -1,3 +1,8 @@
+> This page documents the v3 message queue. Carmine v4 includes a port of it
+> (`taoensso.carmine-v4.message-queue`) with the same delivery semantics and
+> Redis data, so v3 and v4 clients can share queues. See the
+> [v4 preview guide](./5-Carmine-v4#message-queue) for changes and migration.
+
 Carmine includes a simple **distributed message queue** originally inspired by a [post](http://oldblog.antirez.com/post/250) by Redis's original author Salvatore Sanfilippo.
 
 # API
