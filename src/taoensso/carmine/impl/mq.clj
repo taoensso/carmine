@@ -369,7 +369,7 @@
     :or   {default-lock-ms (enc/ms :mins 60)
            eoq-backoff-ms  enc/exp-backoff
            max-poll-steps  16}}
-   lease-token]
+   lock-token]
 
   (let [;; Precompute 5 backoffs so that `dequeue.lua` can init the backoff atomically
         [bo1 bo2 bo3 bo4 bo5]
@@ -400,7 +400,7 @@
       :qk-isleep-a      (qkey qname :isleep-a)
       :qk-isleep-b      (qkey qname :isleep-b)}
 
-     {:lease-token      lease-token
+     {:lock-token      lock-token
       :max-steps        (long max-poll-steps)
       :default-lock-ms  default-lock-ms
       :eoq-bo1          bo1
@@ -410,11 +410,11 @@
       :eoq-bo5          bo5}]))
 
 (defn finalize
-  ;; Fenced by lease token only: tokens are rotated on every dequeue and
-  ;; cleared on supersedure (producer update, clear), so token equality
+  ;; Fenced by lock token only: tokens are rotated on every dequeue and
+  ;; cleared on supersedure (producer update, cancel, clear), so token equality
   ;; proves ownership. Expiry equality would wrongly fence an owner whose
   ;; own extend reply was lost or is still in flight.
-  [client qname mid lease-token done? backoff-ms]
+  [client qname mid lock-token done? backoff-ms]
   (let [qk (partial qkey qname)]
     (exec1 client
       [:lua @lua-finalize_
@@ -423,12 +423,12 @@
         :qk-backoffs    (qk :backoffs)
         :qk-done        (qk :done)}
        {:mid         mid
-        :lease-token lease-token
+        :lock-token lock-token
         :done?       (if done? "1" "0")
         :backoff-ms  (if (some? backoff-ms) (long backoff-ms) -1)}])))
 
 (defn extend-lock
-  [client qname mid lease-token lock-ms]
+  [client qname mid lock-token lock-ms]
   (let [qk (partial qkey qname)]
     (let [[action lock-expiry]
           (exec1 client
@@ -436,7 +436,7 @@
              {:qk-locks       (qk :locks)
               :qk-lock-tokens (qk :lock-tokens)}
              {:mid         mid
-              :lease-token lease-token
+              :lock-token lock-token
               :lock-ms     (long lock-ms)}])]
       (when (= action "extended") (long lock-expiry)))))
 
@@ -514,9 +514,9 @@
     (.setRemoveOnCancelPolicy  true)))
 
 (defn- auto-extend-lock!
-  "Schedules periodic extension of given lease for up to `max-ms`, or until
-  the lease is superseded. Returns a nullary fn to end the extensions."
-  [client qname mid attempt lease-token lock-ms
+  "Schedules periodic extension of given lock for up to `max-ms`, or until
+  the lock is superseded. Returns a nullary fn to end the extensions."
+  [client qname mid attempt lock-token lock-ms
    ^java.util.concurrent.ScheduledThreadPoolExecutor lock-extender max-ms]
   (let [t0          (System/nanoTime)
         interval-ms (max 1 (quot (long lock-ms) 3))
@@ -538,8 +538,8 @@
                    :data (assoc data :max-ms max-ms)}))
 
               (not (open? client)) (end!)
-              (not (extend-lock client qname mid lease-token lock-ms))
-              (end!)) ; Lease superseded
+              (not (extend-lock client qname mid lock-token lock-ms))
+              (end!)) ; Lock superseded
 
             (catch Throwable t ; Will retry
               (log! client
@@ -551,7 +551,7 @@
 
 (defn handle1
   [client qname handler poll-reply
-   {:keys [worker queue-size lease-token server-udt nstats_ ssb-queueing-time-ms ssb-handling-time-ns
+   {:keys [worker queue-size lock-token server-udt nstats_ ssb-queueing-time-ms ssb-handling-time-ns
            sleep-locally! lock-extender lock-auto-extend-max-ms
            max-attempts error-retry-backoff-ms on-give-up]
     :or   {queue-size -1}}]
@@ -585,7 +585,7 @@
             {:qname qname, :mid mid, :message mcontent, :attempt attempt
              :lock-ms lock-ms, :age-ms age-ms, :worker worker, :queue-size queue-size
              :lock-extend!
-             #(when (extend-lock client qname mid lease-token lock-ms)
+             #(when (extend-lock client qname mid lock-token lock-ms)
                 true)}
 
             max-attempts  (when max-attempts (long max-attempts))
@@ -594,9 +594,9 @@
 
             end-auto-extend!
             (enc/when-let [le lock-extender, max-ms lock-auto-extend-max-ms]
-              (auto-extend-lock! client qname mid attempt lease-token lock-ms le max-ms))
+              (auto-extend-lock! client qname mid attempt lock-token lock-ms le max-ms))
 
-            ;; Lease is kept (and auto extended) while handler and any give-up hook run
+            ;; Lock is kept (and auto extended) while handler and any give-up hook run
             [result status throwable backoff-ms handling-time-ns
              give-up-reason retry-backoff-ms give-up-error]
             (try
@@ -642,9 +642,9 @@
                     give-up-error
                     (enc/when-let [reason give-up-reason, f on-give-up]
                       (try
-                        ;; Skip hook if lease was superseded (message cancelled, etc.),
+                        ;; Skip hook if lock was superseded (message cancelled, etc.),
                         ;; in which case the finalize below will also be fenced
-                        (when (= (exec1 client ["HGET" (qkey qname :lock-tokens) mid]) lease-token)
+                        (when (= (exec1 client ["HGET" (qkey qname :lock-tokens) mid]) lock-token)
                           (f (enc/assoc-some (assoc mq-msg :reason reason) :throwable throwable)))
                         nil
                         (catch InterruptedException t (vreset! interrupted?_ true) t)
@@ -665,7 +665,7 @@
 
             fin
             (fn [done? backoff-ms gave-up?]
-              (let [reply (finalize client qname mid lease-token done? backoff-ms)]
+              (let [reply (finalize client qname mid lock-token done? backoff-ms)]
                 ;; Counters are disjoint: a fenced result had no effect on the
                 ;; queue, so don't also count it as a completed handling
                 (if (= reply ["stale"])
@@ -1000,12 +1000,12 @@
 
                         (when (and @running?_ (= generation @generation_))
                           (let [t0 (System/nanoTime)
-                                lease-token (enc/uuid-str)]
+                                lock-token (enc/uuid-str)]
                             (try
                               (let [[poll-reply server-time ndry-runs & queue-counts]
                                     (exec client
                                       (into
-                                        [(req-dequeue qname worker-opts lease-token)
+                                        [(req-dequeue qname worker-opts lock-token)
                                          ["TIME"] ; For handler `:age-ms`
                                          ["GET" qk-ndry-runs]]
                                         (reqs-queue-counts qname)))
@@ -1032,7 +1032,7 @@
                                 (handle1 client qname handler poll-reply
                                   {:worker               worker
                                    :queue-size           nqueued
-                                   :lease-token          lease-token
+                                   :lock-token          lock-token
                                    :server-udt           (server-udt server-time)
                                    :nstats_              nstats_
                                    :ssb-queueing-time-ms ssb-queueing-time-ms
@@ -1065,7 +1065,7 @@
 
           ;; Each handler thread loops over polls for as long as worker is
           ;; running, holding its pool slot throughout. Polls are so never
-          ;; made (and leases never acquired) ahead of local handler capacity.
+          ;; made (and locks never acquired) ahead of local handler capacity.
           ;; Slots may still be held by handlers of an earlier run, so threads
           ;; are started as slots become free.
           (reset! worker-futures_

@@ -1,4 +1,4 @@
--- Extend a lease only while its fencing token remains current.
+-- Extend a lock only while its fencing token remains current.
 
 -- Must precede this script's first write so that the `TIME` call below is
 -- permitted on servers with `lua-replicate-commands no` (Redis 6 and older).
@@ -11,7 +11,7 @@ local now = (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000); -- Epoc
 
 local token = redis.call('hget', _:qk-lock-tokens, _:mid);
 local current_expiry = tonumber(redis.call('hget', _:qk-locks, _:mid));
-if ((not token) or (token ~= _:lease-token) or (not current_expiry)) then
+if ((not token) or (token ~= _:lock-token) or (not current_expiry)) then
    return {'stale'};
 end
 

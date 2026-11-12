@@ -1,6 +1,6 @@
--- Atomically finalize a handler result only while its lease is current.
+-- Atomically finalize a handler result only while its lock is current.
 -- The token is a fresh random value per dequeue and is cleared whenever a
--- lease is superseded (re-dequeue, producer update, clear), so token
+-- lock is superseded (re-dequeue, producer update, cancel, clear), so token
 -- equality alone proves ownership. NB an expiry-equality check would
 -- wrongly fence an owner whose own `extend-lock` reply was lost/racing.
 
@@ -15,7 +15,7 @@ local now = (tonumber(t[1]) * 1000) + math.floor(tonumber(t[2]) / 1000); -- Epoc
 
 local token = redis.call('hget', _:qk-lock-tokens, _:mid);
 local lock_expiry = redis.call('hget', _:qk-locks, _:mid);
-if ((not token) or (token ~= _:lease-token) or (not lock_expiry)) then
+if ((not token) or (token ~= _:lock-token) or (not lock_expiry)) then
    return {'stale'};
 end
 

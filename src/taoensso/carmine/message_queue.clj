@@ -5,10 +5,10 @@
   Uses an optimized message circle architecture that is simple, reliable,
   and has pretty good throughput and latency.
 
-  Delivery is lease-based and at-least-once. A message may be handled more than
-  once when a lease expires, though lease-ownership checks prevent a stale
-  handler from finalizing or deleting a successor's lease. Handlers should be
-  idempotent. Lease timing uses the Redis server clock, so it doesn't depend
+  Delivery is lock-based and at-least-once. A message may be handled more than
+  once when a lock expires, though lock-ownership checks prevent a stale
+  handler from finalizing or deleting a successor's lock. Handlers should be
+  idempotent. Lock timing uses the Redis server clock, so it doesn't depend
   on agreement between client clocks.
 
   See `mq-architecture.svg` in repo for diagram of architecture,
@@ -32,7 +32,7 @@
     * lock-times-rq - hash: {mid lock-ms}  ; '' for requeues
     * udts          - hash: {mid  udt-first-enqueued}
     * locks         - hash: {mid    lock-expiry-time} ; Active locks
-    * lock-tokens   - hash: {mid unique-lease-token}  ; Fences stale handlers
+    * lock-tokens   - hash: {mid unique-lock-token}  ; Fences stale handlers
     * backoffs      - hash: {mid backoff-expiry-time} ; Active backoffs
     * nattempts     - hash: {mid attempt-count}
     * done          - mid set: awaiting gc, etc.
@@ -383,10 +383,10 @@
     `:handler`
       (fn [{:keys [qname mid message attempt lock-extend!]}]) called for each
       worker message. `lock-extend!` is a nullary fn that safely extends the
-      current lease by its original duration, returning true on success or nil
-      if the lease has already been superseded. Expiry alone permits another
+      current lock by its original duration, returning true on success or nil
+      if the lock has already been superseded. Expiry alone permits another
       delivery but does not invalidate ownership: an expired, unsuperseded
-      owner can still renew or finalize. Renewal never shortens the lease.
+      owner can still renew or finalize. Renewal never shortens the lock.
       Note that `lock-extend!` may also THROW on Redis connection errors.
       Should return a map with possible keys:
         `:status`     - ∈ {:success :error :retry}
@@ -411,15 +411,15 @@
 
       Can be overridden on a per-message basis via `enqueue`.
 
-      Lease expiry permits another worker to receive the message. This provides
+      Lock expiry permits another worker to receive the message. This provides
       at-least-once delivery and can cause concurrent handling; use idempotent
       handlers and call `lock-extend!` during legitimately long work, or see
       `:lock-auto-extend-max-ms`.
 
     `:lock-auto-extend-max-ms` (default nil => disabled)
-      If set, worker will automatically keep extending a message's lease while
+      If set, worker will automatically keep extending a message's lock while
       its handler is running, for up to this long (in milliseconds) after
-      handler started. After that the lease is left to expire as usual, as a
+      handler started. After that the lock is left to expire as usual, as a
       guard against stalled handlers.
 
       Allows a short `:lock-ms` (so that messages held by a dead worker are

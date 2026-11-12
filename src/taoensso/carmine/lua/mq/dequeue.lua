@@ -108,7 +108,7 @@ local function process(mid, mid_src, defer)
 
       local lock_expiry = now + lock_ms;
                         redis.call('hset',    _:qk-locks,       mid, lock_expiry); -- Acquire
-                        redis.call('hset',    _:qk-lock-tokens, mid, _:lease-token);
+                        redis.call('hset',    _:qk-lock-tokens, mid, _:lock-token);
       local mcontent  = redis.call('hget',    _:qk-messages,  mid);
       local udt       = redis.call('hget',    _:qk-udts,      mid);
       local nattempts = redis.call('hincrby', _:qk-nattempts, mid, 1);

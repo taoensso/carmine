@@ -87,7 +87,7 @@ local ensure_update_in_requeue = function()
 end
 
 local clear_stale_lock = function()
-   -- Status 'queued' means any lease has expired. Clear the stale lock +
+   -- Status 'queued' means any lock has expired. Clear the stale lock +
    -- fencing token when the producer re-asserts this message so that the
    -- previous (stalled) handler can no longer finalize or extend, which
    -- could otherwise discard the re-asserted work.

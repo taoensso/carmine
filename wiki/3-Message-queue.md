@@ -53,7 +53,7 @@ See linked docstrings below for features and usage:
 The following semantics are provided:
 
 - Messages are **persistent** (durable as per Redis config).
-- Delivery is **at-least-once** (lease based). Lease expiry permits redelivery and concurrent handling; handlers should be idempotent. Use `lock-extend!` to renew leases during long-running work.
+- Delivery is **at-least-once** (lock based). Lock expiry permits redelivery and concurrent handling; handlers should be idempotent. Use `lock-extend!` to renew locks during long-running work.
 - Messages are **handled in loose order** (exact order may be affected by the number of concurrent handler threads, and retry/backoff features, etc.).
 - Messages are **fault-tolerant** (preserved until acknowledged as handled).
 - Messages support optional per-message **de-duplication**, preventing the same message from being simultaneously queued more than once within a configurable per-message backoff period.
