@@ -1043,7 +1043,15 @@
         (let [[old-val ex sha]     (parse nil (with-replies (cas-get k)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (enc/swapped-vec (f old-val nx?))
+              swap-result          (f old-val nx?)
+              [new-val return-val] (enc/swapped-vec swap-result)
+              return-val
+              (cond
+                (enc/swapped? swap-result) return-val ; Explicit
+                (= new-val :swap/abort)    old-val
+                (= new-val :swap/delete)   nil
+                :else                      return-val)
+
               cas-success?
               (case new-val
                 :swap/abort true
@@ -1078,7 +1086,15 @@
         (let [[old-val ex sha]     (parse nil (with-replies (cas-hget k field)))
               nx?                  (= ex 0)
               ?sha                 (when-not (= sha "") sha)
-              [new-val return-val] (enc/swapped-vec (f old-val nx?))
+              swap-result          (f old-val nx?)
+              [new-val return-val] (enc/swapped-vec swap-result)
+              return-val
+              (cond
+                (enc/swapped? swap-result) return-val ; Explicit
+                (= new-val :swap/abort)    old-val
+                (= new-val :swap/delete)   nil
+                :else                      return-val)
+
               cas-success?
               (case new-val
                 :swap/abort true

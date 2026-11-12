@@ -1141,7 +1141,26 @@
                  2 :aborted)
 
                (car/hset  tk "field4" "val4")
-               (car/hvals tk)))))]))
+               (car/hvals tk)))))
+
+     (is (= ["OK" "old" :swap/abort "old" nil :swap/delete 0
+             1    "old" nil 0]
+           (let [tk (tkey "swap3")]
+             (wcar* (car/del tk))
+             (wcar*
+               (car/set    tk "old")
+               (car/swap   tk (fn [_ _] :swap/abort)) ; Returns old val
+               (car/swap   tk (fn [_ _] (enc/swapped :swap/abort  :swap/abort)))
+               (car/get    tk)
+               (car/swap   tk (fn [_ _] :swap/delete)) ; Returns nil
+               (car/swap   tk (fn [_ _] (enc/swapped :swap/delete :swap/delete)))
+               (car/exists tk)
+
+               (car/hset    tk "field" "old")
+               (car/hswap   tk "field" (fn [_ _] :swap/abort))
+               (car/hswap   tk "field" (fn [_ _] :swap/delete))
+               (car/hexists tk "field"))))
+       "Plain abort returns old val, plain delete returns nil")]))
 
 ;;;; Benching
 
