@@ -36,6 +36,29 @@
   [(is (= (wcar* (car/echo "Message")) "Message"))
    (is (= (wcar* (car/ping))           "PONG"))])
 
+(deftest conn-spec-uri-test
+  (let [ssl-fn (fn [_])]
+    [(is (= (conns/conn-spec {:uri "rediss://user:pass@x.y.com:9475/3"})
+           {:uri "rediss://user:pass@x.y.com:9475/3"
+            :host "x.y.com", :port 9475, :username "user", :password "pass"
+            :db 3, :ssl-fn :default}))
+     (is (= (select-keys
+              (conns/conn-spec
+                {:uri "rediss://user:pass@x.y.com:9475/3"
+                 :db 5, :password "other", :ssl-fn ssl-fn, :host "ignored"})
+              [:host :port :username :password :db :ssl-fn])
+           {:host "x.y.com", :port 9475, :username "user", :password "other"
+            :db 5, :ssl-fn ssl-fn})
+       "Explicit opts override URI credentials, db, and TLS")
+     (is (= (select-keys
+              (conns/conn-spec
+                {:uri "rediss://user:pass@x.y.com:9475/3"
+                 :db nil, :password nil, :ssl-fn nil})
+              [:host :port :username :password :db :ssl-fn])
+           {:host "x.y.com", :port 9475, :username "user", :password nil
+            :db nil, :ssl-fn nil})
+       "Explicit nil opts also override, e.g. to disable a URI's db or TLS")]))
+
 (deftest key-exists-test
   (let [_ (clear-tkeys!)
         k (tkey "exists")]

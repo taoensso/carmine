@@ -307,7 +307,11 @@
            spec-opts (if-let [timeout (:timeout spec-opts)] ; Deprecated opt
                        (assoc spec-opts :timeout-ms timeout)
                        spec-opts)]
-       (merge defaults spec-opts (parse-uri uri))))))
+       ;; URI credentials, db, and TLS act as defaults under explicit opts
+       (let [uri-opts (parse-uri uri)]
+         (merge defaults
+           (dissoc      uri-opts :host :port) spec-opts
+           (select-keys uri-opts [:host :port])))))))
 
 (defn pooled-conn "Returns [<open-pool> <pooled-connection>]"
   [{:as conn-opts pool-opts :pool spec-opts :spec}]
