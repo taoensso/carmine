@@ -780,6 +780,9 @@
   payload {:keys [error throwable listener]},
     :error e/o #{:conn-broken :handler-ex}. Intentional closure is silent.
 
+  Listeners do NOT reconnect: after a `:conn-broken` error, the listener is
+  finished and you'll need to create a new one (with new subscriptions).
+
   [1] You probably do *NOT* want a :timeout for your `conn-spec` here.
   `conn-spec` can include `:ping-ms`, which'll test conn every given msecs.
 
