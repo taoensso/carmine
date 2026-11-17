@@ -390,7 +390,8 @@
           :else
           (truss/ex-info!
             (str "[Carmine/mq] Unexpected `eoq-backoff-ms` arg: " eoq-backoff-ms)
-            {:arg (enc/typed-val eoq-backoff-ms)}))]
+            {:eid :carmine.mq/invalid-eoq-backoff-ms
+             :arg (enc/typed-val eoq-backoff-ms)}))]
 
     [:lua @lua-dequeue_
      {:qk-messages      (qkey qname :messages)
@@ -756,7 +757,8 @@
       (do
         (inc-nstat! nstats_ :poll/unexpected)
         (truss/ex-info! "[Carmine/mq] Unexpected poll reply"
-          {:reply (enc/typed-val poll-reply)})))))
+          {:eid :carmine.mq/unexpected-poll-reply
+           :reply (enc/typed-val poll-reply)})))))
 
 ;;;; Workers
 
@@ -883,13 +885,15 @@
        :drain (worker-command state :drain nil) ; Waits for active handler tasks
 
        (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
-         {:command (enc/typed-val cmd)}))))
+         {:eid :carmine.mq/invalid-worker-command
+          :command (enc/typed-val cmd)}))))
 
   ([state cmd arg]
    (case cmd
      :drain (drain-handlers! state (truss/have [:or nil? nat-int?] arg))
      (truss/ex-info! "[Carmine/mq] Unexpected queue worker command"
-       {:command (enc/typed-val cmd), :arg (enc/typed-val arg)}))))
+       {:eid :carmine.mq/invalid-worker-command
+        :command (enc/typed-val cmd), :arg (enc/typed-val arg)}))))
 
 (defn worker-stop!
   "Returns true iff worker was running."
