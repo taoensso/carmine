@@ -177,7 +177,7 @@
                   (== b1 62 #_(aget bs-clj 1)) ; :clj
                   (nippy-tools/thaw
                    (java.util.Arrays/copyOfRange ba 2 ba-size)
-                   (get :thaw-opts req-opts))
+                   (get req-opts :thaw-opts))
 
                   (== b1 60 #_(aget bs-bin 1)) ; :bin
                   (let [payload (java.util.Arrays/copyOfRange ba 2 ba-size)]
@@ -185,7 +185,7 @@
                           taoensso.carmine/issue-83-workaround?
                           (possible-nippy-bytes? payload))
                       (try
-                        (nippy-tools/thaw payload (get :thaw-opts req-opts))
+                        (nippy-tools/thaw payload (get req-opts :thaw-opts))
                         (catch Exception _ payload))
                       payload))
 
