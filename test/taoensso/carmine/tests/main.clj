@@ -36,6 +36,13 @@
   [(is (= (wcar* (car/echo "Message")) "Message"))
    (is (= (wcar* (car/ping))           "PONG"))])
 
+(deftest parse-nippy-opts-test
+  (let [k    (tkey "parse-nippy")
+        opts {:password [:cached "carmine-test-password"]}]
+    (wcar* (car/set k (car/freeze {:a 1} opts)))
+    (is (= (wcar* (car/parse-nippy opts (car/get k))) {:a 1})
+      "`parse-nippy` thaw opts are used")))
+
 (deftest conn-spec-uri-test
   (let [ssl-fn (fn [_])]
     [(is (= (conns/conn-spec {:uri "rediss://user:pass@x.y.com:9475/3"})
