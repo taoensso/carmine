@@ -443,7 +443,20 @@
       (sleep 2500) ; > handler backoff
 
       (is (=       (wcar* (dequeue tq)) ["skip" "did-requeue"]))
-      (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1c 1 500 #_udt]))])])
+      (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1c 1 500 #_udt]))])
+
+   (testing "Repeat enqueues while :done-with-requeue don't grow the ready list"
+     (clear-tq!)
+     (let [nready #(count (:ready (impl/queue-mids client tq)))]
+       [(is (:success? (wcar* (enqueue tq :msg1a {:mid :mid1}))))
+        (do (test-handler (fn [_m] {:status :success})) :ran-handler)
+        (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+        (is (= (wcar* (enqueue    tq :msg1b {:mid :mid1})) {:success? true, :action :added, :mid :mid1}))
+        (is (= (wcar* (msg-status tq :mid1)) :done-with-requeue))
+        (is (= (nready) 1))
+        (is (= (wcar* (enqueue tq :msg1c {:mid :mid1}))                    {:success? false, :error :already-queued}))
+        (is (= (wcar* (enqueue tq :msg1d {:mid :mid1, :can-update? true})) {:success? true, :action :updated, :mid :mid1}))
+        (is (= (nready) 1))]))])
 
 (deftest cancel
   [(testing "Nothing to cancel"
@@ -1018,6 +1031,20 @@
         [(is (:success? (wcar* (enqueue tq :msg {:mid :mid1}))))
          (is (= (deref handled 2000 :timeout) true))
          (is (wait-for #(= (wcar* (msg-status tq :mid1)) :done-awaiting-gc)))])))
+
+  (testing "A throwing `:throttle-ms` fn doesn't end its handler thread"
+    (clear-tq!)
+    (let [ncalls_ (atom 0)
+          handled (promise)]
+      (with-open [^java.io.Closeable worker
+                  (mq/worker conn-opts tq
+                    {:handler (fn [_] (deliver handled true) {:status :success})
+                     :throttle-ms
+                     (fn [_] (if (= (swap! ncalls_ inc) 1) (throw (Exception. "throttle")) 1))
+                     :eoq-backoff-ms 20})]
+        [(is (wait-for #(>= (long @ncalls_) 2)) "Polling continued after throw")
+         (is (:success? (wcar* (enqueue tq :msg {:mid :mid1}))))
+         (is (= (deref handled 2000 :timeout) true))])))
 
   (testing "A handler can stop its own worker without deadlocking"
     (clear-tq!)

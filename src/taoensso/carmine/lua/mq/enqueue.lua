@@ -158,9 +158,11 @@ elseif (status == 'done') then
       -- {done, -bo, *rq} -> ensure/update in requeue
       -- (We're appropriating the requeue mechanism here)
 
-      redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Priority queue
+      if not is_rq then -- Else already pending
+         redis.call('lpush', _:qk-mids-ready, _:mid); -- -> Priority queue
+         interrupt_sleep();
+      end
 
-      interrupt_sleep();
       return ensure_update_in_requeue();
    end
 
