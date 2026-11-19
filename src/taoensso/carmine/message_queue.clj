@@ -405,6 +405,9 @@
       (unless `:error-retry-backoff-ms` is set). For custom error handling, make
       sure to use an appropriate try/catch within your handler fn!
 
+      A message that can't be decoded is treated the same way, without
+      calling handler.
+
     `:monitor` - (fn [{:keys [queue-size ndry-runs poll-reply]}])
       Called on each worker loop iteration. Useful for queue monitoring/logging.
       `:poll-reply` retains its historical shape; \"handle\" replies contain

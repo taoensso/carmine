@@ -208,6 +208,43 @@
        (is (= (subvec (wcar* (dequeue tq)) 0 2) ["sleep" "end-of-circle"]))
        (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1b 2]) "Attempts kept")])))
 
+(deftest undecodable-messages
+  (let [gave-up_ (atom [])
+        handled_ (atom [])
+        handle
+        (fn [opts]
+          (let [lock-token (enc/uuid-str)
+                poll-reply
+                (loop [n 0]
+                  (let [reply (wcar* (dequeue tq nil lock-token))]
+                    (if (or (= (first reply) "handle") (>= n 8))
+                      reply
+                      (recur (inc n)))))]
+            (impl/handle1 client tq (fn [m] (swap! handled_ conj (:message m)) nil) poll-reply
+              (assoc opts :lock-token lock-token
+                :on-give-up (fn [m] (swap! gave-up_ conj (:reason m)))))))]
+
+    [(testing "Undecodable content skips handler, is treated as a handler error"
+       (clear-tq!)
+       (wcar*
+         (enqueue tq :msg1 {:mid :mid1})
+         (car/hset (impl/qkey tq :messages) "mid1" ; Corrupt stored content
+           (car/raw (byte-array (map byte [0 62 1 2 3]))))) ; Nippy marker + junk
+
+       [(is (= (handle {:error-retry-backoff-ms 0}) [:handled :error]))
+        (is (= (wcar* (msg-status tq :mid1)) :queued) "Retried like a handler error")
+        (is (= (handle {}) [:handled :error]))
+        (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+        (is (= [@handled_ @gave-up_] [[] [:error]]) "Handler never called")])
+
+     (testing "Exception content that decodes is handled like any other content"
+       (clear-tq!)
+       (reset! handled_ [])
+       (wcar* (enqueue tq (ex-info "Bad reply data: from app" {:a 1}) {:mid :mid1}))
+       [(is (= (handle {}) [:handled :success]))
+        (is (= (mapv (juxt ex-message ex-data) @handled_) [["Bad reply data: from app" {:a 1}]]))
+        (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))])]))
+
 (defn test-handler
   "Returns [<poll-reply> <handler-arg> <handle1-result>]"
   ([       hf] (test-handler false hf))

@@ -198,7 +198,8 @@
               (catch Exception e
                 (let [message (.getMessage e)]
                   (truss/ex-info (str "Bad reply data: " message)
-                    {:message message} e)))))))
+                    {:eid :carmine.read/bad-reply-data
+                     :message message} e)))))))
 
       (truss/ex-info! (str "Server returned unknown reply type: " reply-type)
         {:reply-type reply-type}))))
