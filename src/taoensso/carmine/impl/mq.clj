@@ -951,7 +951,14 @@
                     as-?pos (fn [x] (when x (when (> (long x) 0) x)))]
 
                 (if (fn? throttle-ms)
-                  (do                                  (fn [] (as-?pos (throttle-ms @queue-size*))))
+                  (fn []
+                    (try
+                      (as-?pos (throttle-ms @queue-size*))
+                      (catch Throwable t ; Mustn't end handler thread
+                        (log! client
+                          {:level :error, :id :carmine.mq/throttle-error
+                           :data {:qname qname}, :error t})
+                        200)))
                   (if-let [ms (as-?pos throttle-ms)] (fn [] ms) (fn [] nil))))
 
               sleep-while-running! ; So that `stop` needn't wait for long sleeps
