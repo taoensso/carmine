@@ -561,6 +561,16 @@
         interval-ms interval-ms java.util.concurrent.TimeUnit/MILLISECONDS))
     end!))
 
+(defn- decode-error?
+  "Returns true iff given message content is a Carmine decoding error."
+  [mcontent]
+  (and
+    (instance? clojure.lang.ExceptionInfo mcontent)
+    (or
+      (= (get (ex-data mcontent) :eid) :carmine.read/nippy-thaw-error)  ; v4
+      (str/starts-with? (str (ex-message mcontent)) "Bad reply data: ") ; v3
+      )))
+
 (defn handle1
   [client qname handler poll-reply
    {:keys [worker queue-size lock-token server-udt nstats_ ssb-queueing-time-ms ssb-handling-time-ns
@@ -602,7 +612,12 @@
 
             max-attempts  (when max-attempts (long max-attempts))
             interrupted?_ (volatile! false)
-            log-data      {:qname qname, :mid mid, :attempt attempt}
+
+            ;; Undecodable content skips the handler and is treated as a handler
+            ;; error. It's kept out of logs since Nippy errors may include thaw opts.
+            decode-error? (decode-error? mcontent)
+            log-data      (enc/assoc-when {:qname qname, :mid mid, :attempt attempt} :decode-error? decode-error?)
+            log-content   (if decode-error? :carmine.mq/undecodable mcontent)
 
             end-auto-extend!
             (enc/when-let [le lock-extender, max-ms lock-auto-extend-max-ms]
@@ -618,7 +633,9 @@
                     result
                     (when-not over-max?
                       (try
-                        (handler mq-msg)
+                        (if decode-error?
+                          {:status :error, :throwable mcontent}
+                          (handler mq-msg))
                         (catch InterruptedException t
                           (vreset! interrupted?_ true)
                           {:status :error, :throwable t})
@@ -703,8 +720,8 @@
           (when (and handled? (= status :error))
             (log! client
               {:level :error, :id :carmine.mq/handler-error,
-               :data (assoc log-data :message mcontent)
-               :error throwable}))
+               :data (assoc log-data :message log-content)
+               :error (when-not decode-error? throwable)}))
 
           ;; Effects
           (enc/cond
@@ -713,7 +730,7 @@
               ;; Message is kept until hook succeeds
               (log! client
                 {:level :error, :id :carmine.mq/give-up-error, :msg "Will backoff and retry"
-                 :data (assoc log-data :message mcontent, :reason give-up-reason)
+                 :data (assoc log-data :message log-content, :reason give-up-reason)
                  :error give-up-error})
               (fin false
                 (enc/exp-backoff
@@ -728,7 +745,7 @@
               (when (= give-up-reason :max-attempts)
                 (log! client
                   {:level :warn, :id :carmine.mq/max-attempts-reached
-                   :data (assoc log-data :message mcontent, :max-attempts max-attempts)}))
+                   :data (assoc log-data :message log-content, :max-attempts max-attempts)}))
               (fin true nil true))
 
             (= status :success)     (fin true  backoff-ms       false)
@@ -740,7 +757,7 @@
               (log! client
                 {:level :warn, :id :carmine.mq/unexpected-handler-status
                  :data
-                 (assoc log-data :message mcontent
+                 (assoc log-data :message log-content
                    :handler-result (enc/typed-val result)
                    :handler-status (enc/typed-val status))})))
           (finally

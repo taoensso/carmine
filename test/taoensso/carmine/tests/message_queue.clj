@@ -208,6 +208,31 @@
        (is (= (subvec (wcar* (dequeue tq)) 0 2) ["sleep" "end-of-circle"]))
        (is (subvec? (wcar* (dequeue tq)) ["handle" "mid1" :msg1b 2]) "Attempts kept")])))
 
+(deftest undecodable-messages
+  (let [gave-up_ (atom [])
+        ncalls_  (atom 0)
+        handle
+        (fn [opts]
+          (let [lock-token (enc/uuid-str)
+                poll-reply
+                (loop [n 0]
+                  (let [reply (wcar* (dequeue tq nil lock-token))]
+                    (if (or (= (first reply) "handle") (>= n 8))
+                      reply
+                      (recur (inc n)))))
+                poll-reply (assoc poll-reply 2 (ex-info "Bad reply data: thaw failed" {}))]
+            (impl/handle1 client tq (fn [_] (swap! ncalls_ inc)) poll-reply
+              (assoc opts :lock-token lock-token
+                :on-give-up (fn [m] (swap! gave-up_ conj (:reason m)))))))]
+
+    (clear-tq!)
+    (wcar* (enqueue tq :msg1 {:mid :mid1}))
+    [(is (= (handle {:error-retry-backoff-ms 0}) [:handled :error]))
+     (is (= (wcar* (msg-status tq :mid1)) :queued) "Retried like a handler error")
+     (is (= (handle {}) [:handled :error]))
+     (is (= (wcar* (msg-status tq :mid1)) :done-awaiting-gc))
+     (is (= [@ncalls_ @gave-up_] [0 [:error]]) "Handler never called")]))
+
 (defn test-handler
   "Returns [<poll-reply> <handler-arg> <handle1-result>]"
   ([       hf] (test-handler false hf))
