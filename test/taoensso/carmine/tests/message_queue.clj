@@ -772,6 +772,20 @@
              {:ready ["wake-b" "wake-a"]
               :circle ["end-of-circle"]}))]))
 
+  (testing "A failed blocking sleep is slept out locally"
+    (let [failing-client
+          (reify impl/IClient
+            (exec         [_ _] (throw (ex-info "Simulated failure" {})))
+            (open?        [_] true)
+            (log-ns       [_] "taoensso.carmine.tests")
+            (sleep-cap-ms [_] nil))
+          slept_ (atom [])
+          t0     (System/currentTimeMillis)]
+      [(is (nil? (impl/interruptible-sleep failing-client tq 150)))
+       (is (>= (- (System/currentTimeMillis) t0) 140))
+       (is (nil? (impl/interruptible-sleep failing-client tq 150 #(swap! slept_ conj %))))
+       (is (<= 140 (long (first @slept_)) 150) "Uses given local sleep fn")]))
+
   (testing "A stale handler cannot finalize a successor's lock"
     (clear-tq!)
     (is (:success? (wcar* (enqueue tq :msg {:mid :mid1 :lock-ms 200}))))
