@@ -496,7 +496,10 @@
 
   Without a cap, client should allow a read timeout comfortably > msecs
   (Redis's blocking timeout resolution is ~100ms with default `hz` 10),
-  otherwise sleep will be interrupted prematurely by timeout."
+  otherwise sleep will be interrupted prematurely by timeout.
+
+  If the blocking request fails (e.g. Redis < 6, which lacks fractional
+  blocking timeouts), the remaining time is slept locally instead."
 
   ([client qname ms] (interruptible-sleep client qname ms nil))
   ([client qname ms sleep-locally!]
@@ -506,10 +509,18 @@
      (if (and ?cap-ms (< (long ?cap-ms) 10))
        (do (if sleep-locally! (sleep-locally! ms) (Thread/sleep (int ms))) nil)
        (let [ms (if ?cap-ms (min ms (long ?cap-ms)) ms)
-             secs-dbl (/ (double ms) 1000.0)]
+             secs-dbl (/ (double ms) 1000.0)
+             t0 (System/nanoTime)]
          (try ; NB client's read timeout may be insufficient!
            (exec1 client ["BRPOP" (qkey qname :isleep-a) (qkey qname :isleep-b) secs-dbl])
-           (catch Throwable _ nil)))))))
+           (catch Throwable _
+             ;; Don't return early, callers would otherwise poll without pause
+             (let [remaining-ms (- ms (quot (- (System/nanoTime) t0) 1000000))]
+               (when (pos? remaining-ms)
+                 (if sleep-locally!
+                   (sleep-locally! remaining-ms)
+                   (Thread/sleep (int remaining-ms))))
+               nil))))))))
 
 (defn- lock-extender
   "Returns a single-threaded scheduler for automatic lock extensions. Its
