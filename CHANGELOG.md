@@ -2,6 +2,34 @@ This project uses [**Break Versioning**](https://www.taoensso.com/break-versioni
 
 ---
 
+# `v3.7.1` (2026-11-21)
+
+- **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.7.1)
+- **Versioning**: [Break Versioning](https://www.taoensso.com/break-versioning)
+
+This is a **maintenance release** with several fixes, mostly for Carmine's message queue. It should be a safe update for users of `v3.7.0`.
+
+As usual please **test before updating production** and report any unexpected problems to the [Slack channel](http://taoensso.com/carmine/slack) or [GitHub](https://github.com/taoensso/carmine/issues), thanks! 🙏
+
+\- [Peter Taoussanis](https://www.taoensso.com)
+
+## Since `v3.7.0` (2026-11-13)
+
+### Fixes
+
+- \[fix] \[mq] Idle workers could poll without pause when their blocking sleep failed (incl. all Redis < 6 servers) [[c41aa3cd](https://github.com/taoensso/carmine/commit/c41aa3cd)]
+- \[fix] \[mq] Undecodable messages now skip the handler and are treated as a handler error (previously could be marked done) [[78cfd5d5](https://github.com/taoensso/carmine/commit/78cfd5d5)]
+- \[fix] \[mq] A throwing `:throttle-ms` fn could silently stop a worker's polling [[03fb4d57](https://github.com/taoensso/carmine/commit/03fb4d57)]
+- \[fix] \[mq] Repeat enqueues of a message with a pending requeue could inflate the queue size [[03fb4d57](https://github.com/taoensso/carmine/commit/03fb4d57)]
+- \[fix] `parse-nippy` thaw opts were ignored [[210b189d](https://github.com/taoensso/carmine/commit/210b189d)]
+
+### New
+
+- \[new] \[mq] Add `:eid` to message queue errors [[4dc6374a](https://github.com/taoensso/carmine/commit/4dc6374a)]
+- \[doc] \[pubsub] Clarify listener connection behaviour re: reconnections [[aae9b3ab](https://github.com/taoensso/carmine/commit/aae9b3ab)]
+
+---
+
 # `v3.7.0` (2026-11-13)
 
 - **Dependency**: [on Clojars](https://clojars.org/com.taoensso/carmine/versions/3.7.0)
